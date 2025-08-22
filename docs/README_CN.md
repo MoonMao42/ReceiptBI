@@ -1,24 +1,20 @@
 <div align="center">
-  <img src="images/logo.png" width="300" alt="QueryGPT">
-</div>
-
-<p align="center">
-  <strong>基于 OpenInterpreter 的智能数据分析 Agent</strong><br/>
-  用自然语言与数据库对话
-</p>
-
-<p align="center">
-  <strong>🇨🇳 中文</strong> | 
-  <a href="../README.md">🇬🇧 English Documentation</a>
-</p>
-
-<div align="center">
-
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square&labelColor=black)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg?style=flat-square&labelColor=black)](https://www.python.org/)
-[![OpenInterpreter](https://img.shields.io/badge/OpenInterpreter-0.4.3-green.svg?style=flat-square&labelColor=black)](https://github.com/OpenInterpreter/open-interpreter)
-[![Stars](https://img.shields.io/github/stars/MoonMao42/ReceiptBI?color=ffcb47&labelColor=black&style=flat-square)](https://github.com/MoonMao42/ReceiptBI/stargazers)
-
+  <img src="images/logo.png" width="400" alt="QueryGPT">
+  
+  <p>
+    <strong>🇨🇳 中文</strong> | 
+    <a href="../README.md">🇬🇧 English Documentation</a>
+  </p>
+  
+  [![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square&labelColor=black)](LICENSE)
+  [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg?style=flat-square&labelColor=black)](https://www.python.org/)
+  [![OpenInterpreter](https://img.shields.io/badge/OpenInterpreter-0.4.3-green.svg?style=flat-square&labelColor=black)](https://github.com/OpenInterpreter/open-interpreter)
+  [![Stars](https://img.shields.io/github/stars/MoonMao42/ReceiptBI?color=ffcb47&labelColor=black&style=flat-square)](https://github.com/MoonMao42/ReceiptBI/stargazers)
+  
+  <p>
+    <strong>基于 OpenInterpreter 的智能数据分析 Agent</strong><br/>
+    用自然语言与数据库对话
+  </p>
 </div>
 
 ## 核心优势
