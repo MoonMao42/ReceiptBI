@@ -26,12 +26,78 @@
   
   <br/>
   
+  [![Build Status](https://img.shields.io/github/actions/workflow/status/MoonMao42/ReceiptBI/main.yml?style=for-the-badge&logo=github-actions&logoColor=white)](https://github.com/MoonMao42/ReceiptBI/actions)
+  [![Test Coverage](https://img.shields.io/codecov/c/github/MoonMao42/ReceiptBI?style=for-the-badge&logo=codecov&logoColor=white)](https://codecov.io/gh/MoonMao42/ReceiptBI)
+  [![Code Quality](https://img.shields.io/codacy/grade/MoonMao42/ReceiptBI?style=for-the-badge&logo=codacy)](https://www.codacy.com/gh/MoonMao42/ReceiptBI)
+  [![Dependencies Status](https://img.shields.io/librariesio/github/MoonMao42/ReceiptBI?style=for-the-badge)](https://libraries.io/github/MoonMao42/ReceiptBI)
+  
+  <br/>
+  
+  [![Docker Pulls](https://img.shields.io/docker/pulls/MoonMao42/ReceiptBI?style=for-the-badge&logo=docker&logoColor=white)](https://hub.docker.com/r/MoonMao42/ReceiptBI)
+  [![Docker Image Size](https://img.shields.io/docker/image-size/MoonMao42/ReceiptBI?style=for-the-badge&logo=docker&logoColor=white)](https://hub.docker.com/r/MoonMao42/ReceiptBI)
+  [![Contributors](https://img.shields.io/github/contributors/MoonMao42/ReceiptBI?style=for-the-badge&color=orange)](https://github.com/MoonMao42/ReceiptBI/graphs/contributors)
+  [![Last Commit](https://img.shields.io/github/last-commit/MoonMao42/ReceiptBI?style=for-the-badge)](https://github.com/MoonMao42/ReceiptBI/commits/main)
+  
+  <br/>
+  
+  [![Release Date](https://img.shields.io/github/release-date/MoonMao42/ReceiptBI?style=for-the-badge)](https://github.com/MoonMao42/ReceiptBI/releases)
+  [![Downloads](https://img.shields.io/github/downloads/MoonMao42/ReceiptBI/total?style=for-the-badge)](https://github.com/MoonMao42/ReceiptBI/releases)
+  [![Release Version](https://img.shields.io/github/v/release/MoonMao42/ReceiptBI?style=for-the-badge&include_prereleases)](https://github.com/MoonMao42/ReceiptBI/releases)
+  [![Issues](https://img.shields.io/github/issues/MoonMao42/ReceiptBI?style=for-the-badge)](https://github.com/MoonMao42/ReceiptBI/issues)
+  
+  <br/>
+  
   <h3>An intelligent data analysis Agent based on OpenInterpreter</h3>
   <p><i>Chat with your database in natural language</i></p>
   
 </div>
 
 <br/>
+
+## 🔗 Quick Links
+
+<div align="center">
+  
+| Documentation | Community | Resources |
+|:-------------:|:---------:|:---------:|
+| [📚 Documentation](https://github.com/MoonMao42/ReceiptBI/wiki) | [💬 Discussions](https://github.com/MoonMao42/ReceiptBI/discussions) | [📦 Releases](https://github.com/MoonMao42/ReceiptBI/releases) |
+| [📖 API Docs](https://github.com/MoonMao42/ReceiptBI/wiki/API-Documentation) | [🐛 Issue Tracker](https://github.com/MoonMao42/ReceiptBI/issues) | [🗺️ Roadmap](https://github.com/MoonMao42/ReceiptBI/projects) |
+| [🤝 Contributing](CONTRIBUTING.md) | [💡 Feature Requests](https://github.com/MoonMao42/ReceiptBI/issues/new?template=feature_request.md) | [📋 Changelog](CHANGELOG.md) |
+| [⚡ Quick Start](#-quick-start) | [🎯 Examples](https://github.com/MoonMao42/ReceiptBI/tree/main/examples) | [🔧 Configuration](#-configuration) |
+
+</div>
+
+## 💖 Sponsors
+
+<div align="center">
+  
+### 🌟 Gold Sponsors
+  
+<a href="#become-a-sponsor">
+  <img src="https://via.placeholder.com/150x50?text=Your+Logo+Here" alt="Become a Sponsor" />
+</a>
+
+### 🥈 Silver Sponsors
+
+<a href="#become-a-sponsor">
+  <img src="https://via.placeholder.com/100x40?text=Your+Logo" alt="Become a Sponsor" />
+</a>
+
+### Support This Project
+
+<a href="https://github.com/sponsors/MoonMao42">
+  <img src="https://img.shields.io/badge/Sponsor-%E2%9D%A4-red?style=for-the-badge&logo=github-sponsors" alt="Sponsor on GitHub" />
+</a>
+<a href="https://www.buymeacoffee.com/MoonMao42">
+  <img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-%23FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee" />
+</a>
+<a href="https://ko-fi.com/MoonMao42">
+  <img src="https://img.shields.io/badge/Ko--fi-%23FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support on Ko-fi" />
+</a>
+
+<sub>Want to become a sponsor? [Contact us](mailto:sponsor@querygpt.ai) or [sponsor on GitHub](https://github.com/sponsors/MoonMao42)</sub>
+
+</div>
 
 ---
 
