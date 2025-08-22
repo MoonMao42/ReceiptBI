@@ -325,15 +325,30 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ## ⭐ Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=MoonMao42/ReceiptBI&type=Date&t=202508)](https://star-history.com/#MoonMao42/ReceiptBI&Date)
+<div align="center">
+  <a href="https://star-history.com/#MoonMao42/ReceiptBI&Date">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=MoonMao42/ReceiptBI&type=Date&theme=dark" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=MoonMao42/ReceiptBI&type=Date" />
+      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=MoonMao42/ReceiptBI&type=Date" />
+    </picture>
+  </a>
+</div>
 
 ## 📊 Project Stats
 
-![GitHub stars](https://img.shields.io/github/stars/MoonMao42/ReceiptBI?style=social)
-![GitHub forks](https://img.shields.io/github/forks/MoonMao42/ReceiptBI?style=social)
-![GitHub watchers](https://img.shields.io/github/watchers/MoonMao42/ReceiptBI?style=social)
-![GitHub contributors](https://img.shields.io/github/contributors/MoonMao42/ReceiptBI)
-![GitHub last commit](https://img.shields.io/github/last-commit/MoonMao42/ReceiptBI)
+<div align="center">
+  
+  ![GitHub stars](https://img.shields.io/github/stars/MoonMao42/ReceiptBI?style=social)
+  ![GitHub forks](https://img.shields.io/github/forks/MoonMao42/ReceiptBI?style=social)
+  ![GitHub watchers](https://img.shields.io/github/watchers/MoonMao42/ReceiptBI?style=social)
+  
+  ![GitHub contributors](https://img.shields.io/github/contributors/MoonMao42/ReceiptBI)
+  ![GitHub last commit](https://img.shields.io/github/last-commit/MoonMao42/ReceiptBI)
+  ![GitHub issues](https://img.shields.io/github/issues/MoonMao42/ReceiptBI)
+  ![GitHub pull requests](https://img.shields.io/github/issues-pr/MoonMao42/ReceiptBI)
+  
+</div>
 
 ---
 
