@@ -5,7 +5,10 @@
       "id": "gpt-4.1",
       "name": "GPT-4.1",
       "status": "active",
-      "type": "OpenAI"
+      "type": "openai",
+      "api_key": "REDACTED",
+      "max_tokens": 4096,
+      "temperature": 0.7
     },
     {
       "api_base": "REDACTED",
@@ -23,13 +26,13 @@
     },
     {
       "api_base": "REDACTED",
+      "api_key": "REDACTED",
       "id": "qwen-3-coder",
+      "max_tokens": 4096,
       "name": "Qwen",
       "status": "active",
-      "type": "qwen",
-      "api_key": "REDACTED",
-      "max_tokens": 4096,
-      "temperature": 0.7
+      "temperature": 0.7,
+      "type": "qwen"
     }
   ]
 }
