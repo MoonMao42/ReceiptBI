@@ -43,16 +43,6 @@
       "status": "inactive",
       "temperature": 0.7,
       "type": "custom"
-    },
-    {
-      "api_base": "REDACTED",
-      "api_key": "REDACTED",
-      "id": "1",
-      "max_tokens": 4096,
-      "name": "1",
-      "status": "inactive",
-      "temperature": 0.7,
-      "type": "openai"
     }
   ]
 }
