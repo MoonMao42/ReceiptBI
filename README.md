@@ -241,8 +241,9 @@ MIT License - 详见 [LICENSE](LICENSE)
 
 ## 📧 联系方式
 
-- GitHub Issues: [提交问题](https://github.com/MoonMao42/ReceiptBI/issues)
+- GitHub Issues: [提交问题](https://github.com/MoonMao42/ReceiptBI/issues) 
 - Email: 202630065+MoonMao42@users.noreply.github.com
+- 这是作者第一个作品,有任何疑问或者可能需要的改动,都可以提交issue或者pr,我会尽可能进行调整
 
 ## ⭐ Star History
 
