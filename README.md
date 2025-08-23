@@ -5,8 +5,8 @@
   <br/>
   
   <p>
-    <a href="#">English</a> •
-    <a href="docs/README_CN.md">简体中文</a> •
+    <a href="#">简体中文</a> •
+    <a href="docs/README_EN.md">English</a> •
     <a href="docs/README/README_ZH-TW.md">繁體中文</a> •
     <a href="docs/README/README_JA.md">日本語</a> •
     <a href="docs/README/README_ES.md">Español</a> •
@@ -26,8 +26,8 @@
   
   <br/>
   
-  <h3>An intelligent data analysis Agent based on OpenInterpreter</h3>
-  <p><i>Chat with your database in natural language</i></p>
+  <h3>基于 OpenInterpreter 的智能数据分析 Agent</h3>
+  <p><i>用自然语言与数据库对话</i></p>
   
 </div>
 
@@ -35,315 +35,217 @@
 
 ---
 
-## ✨ Core Advantages
+## ✨ 核心优势
 
-**Think Like a Data Analyst**
-- **Autonomous Exploration**: Proactively examines table structures and sample data when encountering issues
-- **Multi-round Validation**: Re-checks when anomalies are found to ensure accurate results
-- **Complex Analysis**: Not just SQL, can execute Python for statistical analysis and machine learning
-- **Visible Thinking**: Real-time display of Agent's reasoning process (Chain-of-Thought)
+**像数据分析师一样思考**
+- **自主探索**：遇到问题会主动查看表结构、样本数据
+- **多轮验证**：发现异常会重新检查，确保结果准确
+- **复杂分析**：不只是 SQL，能执行 Python 做统计分析、机器学习
+- **思考可见**：实时显示 Agent 的推理过程（Chain-of-Thought）
 
-## 📸 System Screenshots
+## 📸 系统截图
 
 <table>
   <tr>
     <td align="center">
-      <img src="docs/images/agent-thinking-en.png" width="100%" alt="QueryGPT Interface"/>
-      <b>Real-time AI Thinking Process</b>
+      <img src="docs/images/agent-thinking.png" width="100%" alt="QueryGPT Interface"/>
+      <b>实时 AI 思考过程</b>
     </td>
   </tr>
   <tr>
     <td align="center">
-      <img src="docs/images/data-visualization-en.png" width="100%" alt="Data Visualization"/>
-      <b>Interactive Data Visualization</b>
+      <img src="docs/images/data-visualization.png" width="100%" alt="Data Visualization"/>
+      <b>交互式数据可视化</b>
     </td>
   </tr>
   <tr>
     <td align="center">
-      <img src="docs/images/developer-view-en.png" width="100%" alt="Developer View"/>
-      <b>Transparent Code Execution</b>
+      <img src="docs/images/developer-view.png" width="100%" alt="Developer View"/>
+      <b>透明代码执行</b>
     </td>
   </tr>
 </table>
 
-## 🌟 Key Features
+## 🌟 功能特性
 
-### Agent Core Capabilities
-- **Autonomous Data Exploration**: Agent proactively understands data structure and explores relationships
-- **Multi-round Reasoning**: Like an analyst, investigates deeply when issues arise
-- **Chain-of-Thought**: Real-time display of Agent's thinking process, intervention possible anytime
-- **Context Memory**: Understands conversation history, supports continuous multi-round analysis
+### Agent 核心能力
+- **自主数据探索**: Agent 会主动了解数据结构、探索数据关系
+- **多轮推理迭代**: 像分析师一样，发现问题会深入调查
+- **Chain-of-Thought**: 实时展示 Agent 思考过程，可随时介入纠正
+- **上下文记忆**: 理解对话历史，支持连续多轮分析
 
-### Data Analysis Capabilities
-- **SQL + Python**: Not limited to SQL, can execute complex Python data processing
-- **Statistical Analysis**: Automatic correlation analysis, trend prediction, anomaly detection
-- **Chinese Business Terms**: Native understanding of YoY, MoM, retention, repurchase concepts
-- **Smart Visualization**: Automatically selects best chart type based on data characteristics
+### 数据分析能力
+- **SQL + Python**: 不局限于 SQL，能执行复杂 Python 数据处理
+- **统计分析**: 自动进行相关性分析、趋势预测、异常检测
+- **中文业务术语**: 原生理解环比、同比、留存、复购等概念
+- **智能可视化**: 根据数据特征自动选择最佳图表类型
 
-### System Features
-- **Multi-model Support**: Switch freely between GPT-5, Claude, Gemini, Ollama local models
-- **Flexible Deployment**: Supports cloud API or Ollama local deployment, data never leaves premises
-- **History Records**: Saves analysis process, supports backtracking and sharing
-- **Data Security**: Read-only permissions, SQL injection protection, sensitive data masking
-- **Flexible Export**: Supports Excel, PDF, HTML and other formats
+### 系统特性
+- **多模型支持**: GPT-5、Claude、Gemini、Ollama 本地模型随意切换
+- **灵活部署**: 支持云端 API 或 Ollama 本地部署，数据永不出门
+- **历史记录**: 保存分析过程，支持回溯和分享
+- **数据安全**: 只读权限、SQL 注入防护、敏感数据脱敏
+- **灵活导出**: 支持 Excel、PDF、HTML 等多种格式
 
-## 📦 Technical Requirements
+## 📦 技术要求
 
-- Python 3.10.x (Required, OpenInterpreter 0.4.3 dependency)
-- doris database
-
-<br/>
-
-## 📊 Product Comparison
-
-| Comparison | **QueryGPT** | Vanna AI | DB-GPT | TableGPT | Text2SQL.AI |
-|------------|:------------:|:--------:|:------:|:--------:|:-----------:|
-| **Cost** | **✅ Free** | ⭕ Has paid version | ✅ Free | ❌ Paid | ❌ Paid |
-| **Open Source** | **✅** | ✅ | ✅ | ❌ | ❌ |
-| **Local Deployment** | **✅** | ✅ | ✅ | ❌ | ❌ |
-| **Execute Python Code** | **✅ Full environment** | ❌ | ❌ | ❌ | ❌ |
-| **Visualization** | **✅ Programmable** | ⭕ Preset charts | ✅ Rich charts | ✅ Rich charts | ⭕ Basic |
-| **Chinese Business Understanding** | **✅ Native** | ⭕ Basic | ✅ Good | ✅ Excellent | ⭕ Basic |
-| **Agent Autonomous Exploration** | **✅** | ❌ | ⭕ Basic | ⭕ Basic | ❌ |
-| **Real-time Thinking Display** | **✅** | ❌ | ❌ | ❌ | ❌ |
-| **Extensibility** | **✅ Unlimited** | ❌ | ❌ | ❌ | ❌ |
-
-### Our Core Differences
-
-> - **Complete Python Environment**: Not preset features, but a real Python execution environment, can write any code
-> - **Unlimited Extensibility**: Need new features? Just install new libraries, no waiting for product updates
-> - **Agent Autonomous Exploration**: Proactively investigates when encountering issues, not simple single queries
-> - **Transparent Thinking Process**: See what AI is thinking in real-time, can intervene and guide anytime
-> - **Truly Free and Open Source**: MIT license, no paywalls
+- Python 3.10.x（必需，OpenInterpreter 0.4.3 依赖）
+- MySQL 或兼容数据库
 
 <br/>
 
-## 🚀 Quick Start
+## 📊 产品对比
 
-### First Time Use
+| 对比维度 | **QueryGPT** | Vanna AI | DB-GPT | TableGPT | Text2SQL.AI |
+|---------|:------------:|:--------:|:------:|:--------:|:-----------:|
+| **费用** | **✅ 免费** | ⭕ 有付费版 | ✅ 免费 | ❌ 收费 | ❌ 收费 |
+| **开源** | **✅** | ✅ | ✅ | ❌ | ❌ |
+| **本地部署** | **✅** | ✅ | ✅ | ❌ | ❌ |
+| **执行 Python 代码** | **✅ 完整环境** | ❌ | ❌ | ❌ | ❌ |
+| **可视化能力** | **✅ 可编程** | ⭕ 预设图表 | ✅ 丰富图表 | ✅ 丰富图表 | ⭕ 基础 |
+| **中文业务理解** | **✅ 原生** | ⭕ 基础 | ✅ 良好 | ✅ 优秀 | ⭕ 基础 |
+| **Agent 自主探索** | **✅** | ❌ | ⭕ 基础 | ⭕ 基础 | ❌ |
+| **实时思考展示** | **✅** | ❌ | ❌ | ❌ | ❌ |
+| **扩展能力** | **✅ 无限扩展** | ❌ | ❌ | ❌ | ❌ |
 
+### 我们的核心差异
+- **完整 Python 环境**：不是预设功能，而是真正的 Python 执行环境，可以写任何代码
+- **无限扩展性**：需要新功能？直接安装新库，不用等产品更新
+- **Agent 自主探索**：遇到问题会主动调查，不是简单的单次查询
+- **思考过程透明**：实时看到 AI 在想什么，可以随时介入指导
+- **真正免费开源**：MIT 协议，没有任何付费墙
+
+## 🚀 快速开始
+
+### 环境要求
 ```bash
-# 1. Clone the project
+# Python 3.10.x (必需)
+python --version  # 应显示 3.10.x
+
+# MySQL 或兼容数据库
+mysql --version
+```
+
+### 安装步骤
+
+#### 1. 克隆项目
+```bash
 git clone https://github.com/MoonMao42/ReceiptBI.git
 cd QueryGPT
-
-# 2. Run setup script (automatically configures environment)
-./setup.sh
-
-# 3. Start the service
-./start.sh
 ```
 
-### Subsequent Use
-
+#### 2. 安装依赖
 ```bash
-# Quick start directly
+# 创建虚拟环境（推荐）
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# 或
+venv\Scripts\activate  # Windows
+
+# 安装依赖
+pip install -r requirements.txt
+```
+
+#### 3. 配置系统
+
+创建 `.env` 文件：
+```bash
+# LLM API 配置（选择一个）
+OPENAI_API_KEY=your_api_key_here
+OPENAI_BASE_URL=https://api.openai.com/v1  # 或其他兼容 API
+
+# 数据库配置
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=your_username
+DB_PASSWORD=your_password
+DB_NAME=your_database  # 可选，留空支持跨库查询
+```
+
+#### 4. 启动系统
+```bash
+# 快速启动
 ./quick_start.sh
+
+# 或手动启动
+python backend/app.py
 ```
 
-Service runs on http://localhost:5000 by default
+访问 `http://localhost:5000` 开始使用！
 
-> **Note**: If port 5000 is occupied (e.g., macOS AirPlay), the system will automatically select the next available port (5001-5010) and display the actual port used at startup.
-
-## ⚙️ Configuration
-
-### Basic Configuration
-
-1. **Copy environment configuration file**
-   ```bash
-   cp .env.example .env
-   ```
-
-2. **Edit .env file to configure the following**
-   - `OPENAI_API_KEY`: Your OpenAI API key
-   - `OPENAI_BASE_URL`: API endpoint (optional, defaults to official endpoint)
-   - Database connection information
-
-### Semantic Layer Configuration (Optional)
-
-The semantic layer enhances Chinese business term understanding, helping the system better understand your business language. **This is optional configuration and does not affect basic functionality.**
-
-1. **Copy example file**
-   ```bash
-   cp backend/semantic_layer.json.example backend/semantic_layer.json
-   ```
-
-2. **Modify configuration based on your business needs**
-   
-   Semantic layer configuration includes three parts:
-   - **Database Mapping**: Define business meaning of databases
-   - **Core Business Tables**: Map important business tables and fields
-   - **Quick Search Index**: Quick lookup for common terms
-
-3. **Configuration Example**
-   ```json
-   {
-     "Core Business Tables": {
-       "Order Management": {
-         "Table Path": "database.orders",
-         "Keywords": ["order", "sales", "transaction"],
-         "Required Fields": {
-           "order_id": "Order ID",
-           "amount": "Amount"
-         }
-       }
-     }
-   }
-   ```
-
-> **Note**: 
-> - Semantic layer files contain business-sensitive information and are added to `.gitignore`, not committed to version control
-> - System uses default configuration when semantic layer is not configured, normal data queries still work
-> - For detailed configuration instructions, see [backend/SEMANTIC_LAYER_SETUP.md](backend/SEMANTIC_LAYER_SETUP.md)
-
-## 📁 Project Structure
-
-```
-QueryGPT/
-├── backend/              # Backend services
-│   ├── app.py           # Flask application entry
-│   ├── database.py      # Database connection management
-│   ├── interpreter_manager.py  # Query interpreter
-│   ├── history_manager.py      # History management
-│   └── config_loader.py        # Configuration loader
-├── frontend/            # Frontend interface
-│   ├── templates/       # HTML templates
-│   └── static/          # Static resources
-│       ├── css/         # Style files
-│       └── js/          # JavaScript
-├── docs/                # Project documentation
-├── logs/                # Log directory
-├── output/              # Output files
-├── requirements.txt     # Python dependencies
-└── .env.example        # Configuration example
-```
-
-## 🔌 API Interface
-
-### Query Interface
-
-```http
-POST /api/chat
-Content-Type: application/json
-
-{
-  "message": "Query monthly sales total",
-  "model": "default"
-}
-```
-
-### Response Format
-
-```json
-{
-  "success": true,
-  "result": {
-    "content": [
-      {
-        "type": "text",
-        "content": "Query completed, generated visualization..."
-      },
-      {
-        "type": "chart",
-        "url": "/output/chart_20241230.html"
-      }
-    ]
-  },
-  "conversation_id": "uuid-xxx"
-}
-```
-
-### History Records
-
-```http
-GET /api/history/conversations    # Get history list
-GET /api/history/conversation/:id # Get details
-DELETE /api/history/conversation/:id # Delete record
-```
-
-### Health Check
-
-```http
-GET /api/health
-```
-
-## 🎯 Advanced Features
-
-### Custom Models
-
-Support for adding custom LLM models, configure in `config/models.json`:
-
-```json
-{
-  "name": "Custom Model",
-  "id": "custom-model",
-  "api_base": "http://localhost:11434/v1",
-  "api_key": "your-key"
-}
-```
-
-### Local Model Deployment
-
-Using Ollama for local deployment:
+## 🐳 Docker 部署
 
 ```bash
-# Install Ollama
-curl -fsSL https://ollama.ai/install.sh | sh
+# 使用 docker-compose（推荐）
+docker-compose up -d
 
-# Download model
-ollama pull qwen2.5
-
-# Configure QueryGPT to use local model
-# Set api_base to http://localhost:11434/v1 in config
+# 或单独运行
+docker build -t querygpt .
+docker run -p 5000:5000 --env-file .env querygpt
 ```
 
-## 🔒 Security Notes
+## 💡 使用示例
 
-- Only supports read-only queries (SELECT, SHOW, DESCRIBE)
-- Automatically filters dangerous SQL statements
-- Database user should be configured with read-only permissions
+### 基础查询
+- "显示最近一个月的销售数据"
+- "分析产品类别的销售占比"
+- "查找销售额最高的前10个客户"
 
-## ❓ FAQ
+### 高级分析
+- "对比今年和去年同期的销售增长"
+- "预测下个季度的销售趋势"
+- "找出异常的订单数据"
+- "分析客户购买行为模式"
 
-**Q: How to handle database connection failures?**
-A: Check database service status, verify connection parameters in .env file are correct.
+### 复杂任务
+- "生成月度销售报告，包含环比、同比和趋势图"
+- "分析客户流失原因并给出建议"
+- "构建 RFM 客户分层模型"
 
-**Q: Charts not displaying?**
-A: Ensure output directory has write permissions, check if browser blocks local file access.
+## 🔧 配置说明
 
-**Q: How to improve query accuracy?**
-A: Configure semantic layer to help system understand business terms; provide more detailed query descriptions.
+### 支持的模型
+- **OpenAI**: GPT-4, GPT-4-turbo, GPT-3.5
+- **Anthropic**: Claude 3 Opus, Sonnet, Haiku
+- **Google**: Gemini Pro, Gemini Ultra
+- **本地模型**: 通过 Ollama 支持 Llama, Mistral, Qwen 等
 
-## 🤝 Contributing
+### 数据库支持
+- MySQL 5.7+
+- MariaDB 10.3+
+- TiDB
+- OceanBase
+- 其他 MySQL 协议兼容数据库
 
-Welcome to submit Issues and Pull Requests.
+## 📚 文档
 
-1. Fork this project
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+- [完整文档](docs/)
+- [API 文档](docs/API.md)
+- [部署指南](docs/DEPLOYMENT.md)
+- [常见问题](docs/FAQ.md)
+- [配置说明](docs/CONFIGURATION.md)
 
-## 📄 License
+## 🤝 贡献
 
-MIT License - see [LICENSE](LICENSE) file for details
+欢迎提交 Issue 和 Pull Request！
 
-## 👨‍💻 Author
+## 📄 许可证
 
-- **Author**: MoonMao42
-- **GitHub**: [@MoonMao42](https://github.com/MoonMao42)
-- **Created**: August 2025
+MIT License - 详见 [LICENSE](LICENSE)
 
-## ⭐ Star History
+## 🙏 致谢
+
+- [OpenInterpreter](https://github.com/OpenInterpreter/open-interpreter) - 核心 AI 引擎
+- [Flask](https://flask.palletsprojects.com/) - Web 框架
+- [Plotly](https://plotly.com/) - 数据可视化
+
+## 📧 联系方式
+
+- GitHub Issues: [提交问题](https://github.com/MoonMao42/ReceiptBI/issues)
+- Email: 202630065+MoonMao42@users.noreply.github.com
+
+---
 
 <div align="center">
-  <a href="https://star-history.com/#MoonMao42/ReceiptBI&Date">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=MoonMao42/ReceiptBI&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=MoonMao42/ReceiptBI&type=Date" />
-      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=MoonMao42/ReceiptBI&type=Date" />
-    </picture>
-  </a>
+  <sub>如果觉得有用，请给个 ⭐ Star 支持一下！</sub>
 </div>
-
-
