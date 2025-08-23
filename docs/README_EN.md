@@ -244,6 +244,18 @@ MIT License - see [LICENSE](../LICENSE) for details
 - GitHub Issues: [Submit Issues](https://github.com/MoonMao42/ReceiptBI/issues)
 - Email: 202630065+MoonMao42@users.noreply.github.com
 
+## ⭐ Star History
+
+<div align="center">
+  <a href="https://star-history.com/#MoonMao42/ReceiptBI&Date">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=MoonMao42/ReceiptBI&type=Date&theme=dark" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=MoonMao42/ReceiptBI&type=Date" />
+      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=MoonMao42/ReceiptBI&type=Date" />
+    </picture>
+  </a>
+</div>
+
 ---
 
 <div align="center">
