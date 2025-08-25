@@ -127,73 +127,50 @@
 - **思考过程透明**：实时看到 AI 在想什么，可以随时介入指导
 - **真正免费开源**：MIT 协议，没有任何付费墙
 
-## 🚀 快速开始
+## 🚀 快速开始（懒人模式）
 
-### 环境要求
+### 首次使用
+
 ```bash
-# Python 3.10.x (必需)
-python --version  # 应显示 3.10.x
-
-# MySQL 或兼容数据库
-mysql --version
-```
-
-### 安装步骤
-
-#### 1. 克隆项目
-```bash
+# 1. 克隆项目
 git clone https://github.com/MoonMao42/ReceiptBI.git
 cd QueryGPT
+
+# 2. 运行安装脚本（自动配置环境）
+./setup.sh
+
+# 3. 启动服务
+./start.sh
 ```
 
-#### 2. 安装依赖
-```bash
-# 创建虚拟环境（推荐）
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# 或
-venv\Scripts\activate  # Windows
+### 后续使用
 
-# 安装依赖
-pip install -r requirements.txt
+```bash
+# 直接快速启动
+./quick_start.sh
 ```
 
-#### 3. 配置系统
+访问 `http://localhost:5000` 开始使用！
 
-创建 `.env` 文件：
+### 环境要求
+- Python 3.10.x（必需，OpenInterpreter 0.4.3 依赖）
+- MySQL 或兼容数据库
+
+### 手动配置（可选）
+
+如需手动配置，创建 `.env` 文件：
 ```bash
-# LLM API 配置（选择一个）
-OPENAI_API_KEY=your_api_key_here
-OPENAI_BASE_URL=https://api.openai.com/v1  # 或其他兼容 API
+# LLM API 配置
+API_KEY=your_api_key_here
+API_BASE_URL=https://api.openai.com/v1  # 或其他兼容 API
+DEFAULT_MODEL=gpt-4
 
 # 数据库配置
 DB_HOST=localhost
 DB_PORT=3306
 DB_USER=your_username
 DB_PASSWORD=your_password
-DB_NAME=your_database  # 可选，留空支持跨库查询
-```
-
-#### 4. 启动系统
-```bash
-# 快速启动
-./quick_start.sh
-
-# 或手动启动
-python backend/app.py
-```
-
-访问 `http://localhost:5000` 开始使用！
-
-## 🐳 Docker 部署
-
-```bash
-# 使用 docker-compose（推荐）  ps:但可能有点问题,因为作者对docker部署不太熟练都是跟着gpt学的
-docker-compose up -d
-
-# 或单独运行
-docker build -t querygpt .
-docker run -p 5000:5000 --env-file .env querygpt
+DB_DATABASE=your_database
 ```
 
 ## 💡 使用示例
