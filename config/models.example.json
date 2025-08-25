@@ -1,8 +1,8 @@
 {
   "models": [
     {
-      "api_base": "REDACTED",
-      "api_key": "REDACTED",
+      "api_base": "https://api.example.com/v1/",
+      "api_key": "sk-YOUR-API-KEY-HERE",
       "id": "gpt-4.1",
       "max_tokens": 4096,
       "name": "GPT-4.1",
@@ -11,8 +11,8 @@
       "type": "openai"
     },
     {
-      "api_base": "REDACTED",
-      "api_key": "REDACTED",
+      "api_base": "https://api.example.com/v1/",
+      "api_key": "sk-YOUR-API-KEY-HERE",
       "id": "claude-sonnet-4",
       "max_tokens": 4096,
       "name": "Claude Sonnet 4",
@@ -21,8 +21,8 @@
       "type": "anthropic"
     },
     {
-      "api_base": "REDACTED",
-      "api_key": "REDACTED",
+      "api_base": "https://api.example.com/v1/",
+      "api_key": "sk-YOUR-API-KEY-HERE",
       "id": "deepseek-r1",
       "max_tokens": 4096,
       "name": "DeepSeek R1",
@@ -31,8 +31,8 @@
       "type": "deepseek"
     },
     {
-      "api_base": "REDACTED",
-      "api_key": "REDACTED",
+      "api_base": "https://api.example.com/v1/",
+      "api_key": "sk-YOUR-API-KEY-HERE",
       "id": "qwen-flagship",
       "max_tokens": 4096,
       "name": "Qwen 旗舰模型",
