@@ -1,29 +1,7 @@
 {
-  "api_base": "REDACTED",
-  "api_key": "REDACTED",
-  "database": "REDACTED",
-  "default_model": "gpt-4.1",
-  "models": [
-    {
-      "id": "gpt-4.1",
-      "name": "GPT-4.1",
-      "type": "openai"
-    },
-    {
-      "id": "claude-sonnet-4",
-      "name": "Claude Sonnet 4",
-      "type": "anthropic"
-    },
-    {
-      "id": "deepseek-r1",
-      "name": "DeepSeek R1",
-      "type": "deepseek"
-    },
-    {
-      "id": "qwen-flagship",
-      "name": "Qwen 旗舰模型",
-      "type": "qwen"
+  "features": {
+    "smart_routing": {
+      "enabled": true
     }
-  ],
-  "current_model": "gpt-4.1"
+  }
 }
