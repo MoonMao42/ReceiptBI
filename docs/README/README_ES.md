@@ -194,6 +194,8 @@ El servicio se ejecuta en http://localhost:5000 por defecto
 
 > **Nota**: Si el puerto 5000 está ocupado, el sistema seleccionará automáticamente el siguiente puerto disponible (5001-5010).
 
+> Windows: Ejecuta dentro de WSL (no ejecutes scripts desde PowerShell/CMD).
+
 ### Configuración de Base de Datos
 
 1. **Crear usuario de solo lectura** (recomendado por seguridad):
@@ -404,3 +406,7 @@ Si encuentras útil QueryGPT, considera:
     <a href="https://github.com/MoonMao42/ReceiptBI/discussions">Discusiones</a>
   </p>
 </div>
+
+## 🆕 Últimas novedades
+
+- 2025-09-05 – Optimización de arranque: se eliminó la prueba automática de modelos en la primera visita para reducir solicitudes iniciales y evitar cambios de estado no deseados.
