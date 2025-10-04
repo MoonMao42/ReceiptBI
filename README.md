@@ -134,6 +134,7 @@ git clone https://github.com/MoonMao42/ReceiptBI.git
 cd QueryGPT
 
 # 2. 运行脚本
+chmod +x setup.sh start.sh
 ./setup.sh   # 自动安装所有依赖（2-5分钟）
 ./start.sh   # 启动服务
 ```
