@@ -1,6 +1,6 @@
 <div align="center">
   
-  <img src="../../images/logo.png" width="400" alt="QueryGPT">
+  <img src="../images/logo.png" width="400" alt="QueryGPT">
   
   <br/>
   
@@ -15,7 +15,7 @@
   [![License](https://img.shields.io/badge/Licencia-MIT-yellow.svg?style=for-the-badge)](LICENSE)
   [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
   [![OpenInterpreter](https://img.shields.io/badge/OpenInterpreter-0.4.3-green.svg?style=for-the-badge)](https://github.com/OpenInterpreter/open-interpreter)
-  [![Stars](https://img.shields.io/github/stars/MoonMao42/ReceiptBI?style=for-the-badge&color=yellow)](https://github.com/MoonMao42/ReceiptBI/stargazers)
+  [![Stars](https://img.shields.io/badge/Stars-MoonMao42/ReceiptBI-yellow.svg?style=for-the-badge&color=yellow)](https://github.com/MoonMao42/ReceiptBI/stargazers)
   
   <br/>
   
@@ -24,376 +24,247 @@
   
 </div>
 
-<br/>
+## ✨ Ventajas Principales
 
----
-
-## 📋 Descripción del Proyecto
-
-**QueryGPT** es un sistema inteligente de consulta y análisis de datos que revoluciona la forma en que interactuamos con bases de datos. Utilizando tecnología de IA de vanguardia, permite a usuarios de todos los niveles técnicos realizar análisis complejos de datos simplemente escribiendo en lenguaje natural.
-
-### ¿Qué es QueryGPT?
-
-QueryGPT es un agente de IA que actúa como tu analista de datos personal. No solo convierte lenguaje natural en SQL, sino que:
-- **Explora autónomamente** tus datos para entender su estructura
-- **Razona como un analista humano** investigando anomalías y validando resultados
-- **Ejecuta código Python** para análisis estadísticos avanzados y machine learning
-- **Visualiza automáticamente** los resultados en gráficos interactivos
-- **Muestra su proceso de pensamiento** en tiempo real (Chain-of-Thought)
-
-## ✨ Características Principales
-
-### 🤖 Capacidades del Agente IA
-
-#### Exploración Autónoma de Datos
-- El agente examina proactivamente la estructura de tablas y datos de muestra
-- Descubre relaciones entre tablas automáticamente
-- Identifica patrones y anomalías sin intervención humana
-
-#### Razonamiento Multi-ronda
-- Cuando encuentra problemas, investiga profundamente como un analista real
-- Valida resultados mediante múltiples verificaciones
-- Auto-corrige errores y optimiza consultas
-
-#### Proceso de Pensamiento Transparente
-- Visualización en tiempo real del razonamiento del agente (Chain-of-Thought)
-- Posibilidad de intervenir y guiar el proceso en cualquier momento
-- Historial completo de decisiones y acciones tomadas
-
-### 📊 Análisis de Datos Avanzado
-
-#### SQL + Python Integrado
-- No limitado a consultas SQL simples
-- Ejecuta código Python complejo para:
-  - Análisis estadístico avanzado
-  - Machine learning y predicciones
-  - Procesamiento de datos personalizado
-  - Cálculos matemáticos complejos
-
-#### Visualización Inteligente
-- Selección automática del mejor tipo de gráfico según los datos
-- Gráficos interactivos con Plotly
-- Dashboards personalizables
-- Exportación en múltiples formatos (HTML, PNG, PDF)
-
-#### Comprensión de Términos de Negocio
-- Entiende conceptos empresariales nativamente:
-  - Crecimiento interanual (YoY) y mensual (MoM)
-  - Tasas de retención y conversión
-  - Análisis de cohortes
-  - KPIs y métricas empresariales
-
-### 🌍 Soporte Multiidioma
-
-QueryGPT soporta **10 idiomas** principales para una experiencia global:
-- 🇪🇸 Español
-- 🇬🇧 Inglés
-- 🇨🇳 Chino (Simplificado y Tradicional)
-- 🇷🇺 Ruso
-- 🇵🇹 Portugués
-- 🇫🇷 Francés
-- 🇰🇷 Coreano
-- 🇩🇪 Alemán
-- 🇯🇵 Japonés
-
-### 🔒 Seguridad y Control
-
-- **Permisos de solo lectura**: Protección contra modificaciones accidentales
-- **Prevención de inyección SQL**: Filtrado automático de comandos peligrosos
-- **Enmascaramiento de datos sensibles**: Protección de información confidencial
-- **Auditoría completa**: Registro de todas las consultas y acciones
-
-## 🛠 Stack Tecnológico
-
-### Backend
-- **Python 3.10+**: Lenguaje principal del servidor
-- **Flask**: Framework web ligero y flexible
-- **OpenInterpreter 0.4.3**: Motor de ejecución de código IA
-- **SQLAlchemy**: ORM para gestión de base de datos
-- **Pandas**: Procesamiento y análisis de datos
-- **NumPy**: Cálculos numéricos avanzados
-
-### Frontend
-- **HTML5/CSS3**: Estructura y estilos modernos
-- **JavaScript ES6+**: Lógica de interfaz interactiva
-- **Plotly.js**: Visualizaciones interactivas
-- **Bootstrap 5**: Framework CSS responsivo
-- **Marked.js**: Renderizado de Markdown
-
-### Base de Datos
-- **MySQL**: Sistema principal de gestión de datos
-- **PostgreSQL**: Soporte alternativo
-- **SQLite**: Para desarrollo y pruebas
-- Compatibilidad con cualquier base de datos SQL
-
-### IA y Modelos
-- **GPT-4/GPT-3.5**: Modelos de OpenAI
-- **Claude**: Modelos de Anthropic
-- **Gemini**: Modelos de Google
-- **Ollama**: Modelos locales (Llama, Qwen, etc.)
+**Piensa como un Analista de Datos**
+- **Exploración Autónoma**: Examina proactivamente estructuras de tablas y datos de muestra al encontrar problemas
+- **Validación Multi-ronda**: Verifica nuevamente cuando se encuentran anomalías para garantizar resultados precisos
+- **Análisis Complejo**: No solo SQL, puede ejecutar Python para análisis estadístico y aprendizaje automático
+- **Pensamiento Visible**: Visualización en tiempo real del proceso de razonamiento del Agente (Chain-of-Thought)
 
 ## 📸 Capturas de Pantalla del Sistema
 
-<table>
-  <tr>
-    <td width="50%">
-      <strong>🤖 Proceso de Pensamiento del Agente Inteligente</strong><br/>
-      <img src="../../images/agent-thinking-en.png" width="100%" alt="Interfaz QueryGPT"/>
-      <p align="center">Visualización transparente de la cadena de pensamiento</p>
-    </td>
-    <td width="50%">
-      <strong>📊 Visualización de Datos</strong><br/>
-      <img src="../../images/data-visualization-en.png" width="100%" alt="Visualización de Datos"/>
-      <p align="center">Generación inteligente de gráficos con selección automática</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <strong>👨‍💻 Vista de Desarrollador</strong><br/>
-      <img src="../../images/developer-view-en.png" width="100%" alt="Vista de Desarrollador"/>
-      <p align="center">Detalles completos de ejecución, SQL y código transparente</p>
-    </td>
-    <td width="50%">
-      <strong>🌐 Soporte Multiidioma</strong><br/>
-      <img src="../../images/main-interface.png" width="100%" alt="Interfaz Principal"/>
-      <p align="center">Soporte para 10 idiomas, accesible globalmente</p>
-    </td>
-  </tr>
-</table>
+<img src="../images/agent-thinking-en.png" width="100%" alt="Interfaz QueryGPT"/>
+
+**Visualización en tiempo real del proceso de pensamiento de la IA, análisis complejo de datos a través de conversaciones en español.**
+
+---
+
+<img src="../images/data-visualization-en.png" width="100%" alt="Visualización de Datos"/>
+
+**Generación automática de gráficos interactivos, insights de datos de un vistazo.**
+
+---
+
+<img src="../images/developer-view-en.png" width="100%" alt="Vista de Desarrollador"/>
+
+**Ejecución de código completamente transparente, soporta SQL y Python como motores duales.**
+
+## 🌟 Funcionalidades
+
+### Capacidades Principales del Agente
+- **Exploración Autónoma de Datos**: El Agente comprende proactivamente la estructura de datos y explora relaciones
+- **Razonamiento Multi-ronda**: Como un analista, investiga profundamente cuando surgen problemas
+- **Chain-of-Thought**: Visualización en tiempo real del proceso de pensamiento del Agente, intervención posible en cualquier momento
+- **Memoria de Contexto**: Comprende el historial de conversaciones, soporta análisis continuo multi-ronda
+
+### Capacidades de Análisis de Datos
+- **SQL + Python**: No limitado a SQL, puede ejecutar procesamiento complejo de datos en Python
+- **Análisis Estadístico**: Análisis automático de correlación, predicción de tendencias, detección de anomalías
+- **Términos de Negocio**: Comprensión nativa de conceptos como YoY, MoM, retención, recompra
+- **Visualización Inteligente**: Selecciona automáticamente el mejor tipo de gráfico basado en las características de los datos
+
+### Características del Sistema
+- **Soporte Multi-modelo**: Cambia libremente entre GPT-5, Claude, Gemini, modelos locales Ollama
+- **Despliegue Flexible**: Soporta API en la nube o despliegue local Ollama, los datos nunca salen de las instalaciones
+- **Registros de Historial**: Guarda el proceso de análisis, soporta seguimiento y compartición
+- **Seguridad de Datos**: Permisos de solo lectura, protección contra inyección SQL, enmascaramiento de datos sensibles
+- **Exportación Flexible**: Soporta formatos Excel, PDF, HTML y otros
+
+## 📦 Requisitos Técnicos
+
+- Python 3.10.x (requerido, dependencia de OpenInterpreter 0.4.3)
+- MySQL o base de datos compatible
+
+> Windows: Ejecuta en WSL (no ejecutes scripts en PowerShell/CMD).
+
+## 📊 Comparación de Productos
+
+| Dimensión de Comparación | **QueryGPT** | Vanna AI | DB-GPT | TableGPT | Text2SQL.AI |
+|-------------------------|:------------:|:--------:|:------:|:--------:|:-----------:|
+| **Costo** | **✅ Gratuito** | ⭕ Versión de pago | ✅ Gratuito | ❌ Pago | ❌ Pago |
+| **Código Abierto** | **✅** | ✅ | ✅ | ❌ | ❌ |
+| **Despliegue Local** | **✅** | ✅ | ✅ | ❌ | ❌ |
+| **Ejecuta Código Python** | **✅ Entorno completo** | ❌ | ❌ | ❌ | ❌ |
+| **Capacidad de Visualización** | **✅ Programable** | ⭕ Gráficos predefinidos | ✅ Gráficos ricos | ✅ Gráficos ricos | ⭕ Básico |
+| **Comprensión de Términos de Negocio** | **✅ Nativo** | ⭕ Básico | ✅ Bueno | ✅ Excelente | ⭕ Básico |
+| **Exploración Autónoma del Agente** | **✅** | ❌ | ⭕ Básico | ⭕ Básico | ❌ |
+| **Visualización de Pensamiento en Tiempo Real** | **✅** | ❌ | ❌ | ❌ | ❌ |
+| **Capacidad de Extensión** | **✅ Extensión ilimitada** | ❌ | ❌ | ❌ | ❌ |
+
+### Nuestras Diferencias Principales
+- **Entorno Python Completo**: No son funciones predefinidas, sino un entorno de ejecución Python real donde puedes escribir cualquier código
+- **Extensibilidad Ilimitada**: ¿Necesitas nuevas funciones? Simplemente instala nuevas bibliotecas, no necesitas esperar actualizaciones del producto
+- **Exploración Autónoma del Agente**: Investiga proactivamente cuando encuentra problemas, no es solo una consulta única simple
+- **Proceso de Pensamiento Transparente**: Ve en tiempo real lo que la IA está pensando, puede intervenir y guiar en cualquier momento
+- **Verdaderamente Gratuito y Open Source**: Licencia MIT, sin barreras de pago
 
 ## 🚀 Inicio Rápido
 
-### Instalación Inicial
+### Primer Uso
 
 ```bash
-# 1. Clonar el repositorio
+# 1. Clonar el proyecto
 git clone https://github.com/MoonMao42/ReceiptBI.git
 cd QueryGPT
 
-# 2. Ejecutar script de configuración (configura automáticamente el entorno)
+# 2. Ejecutar script de instalación (configura automáticamente el entorno)
 ./setup.sh
 
-# 3. Configurar variables de entorno
-cp .env.example .env
-# Editar .env con tu editor favorito y configurar:
-# - OPENAI_API_KEY: Tu clave API de OpenAI
-# - Información de conexión a base de datos
-
-# 4. Iniciar el servicio
+# 3. Iniciar el servicio
 ./start.sh
 ```
 
 ### Uso Posterior
 
 ```bash
-# Inicio rápido directo
+# Inicio rápido directo (entorno ya instalado)
 ./start.sh
 ```
 
-El servicio se ejecuta en http://localhost:5000 por defecto
+El servicio se ejecuta por defecto en http://localhost:5000
 
-> **Nota**: Si el puerto 5000 está ocupado, el sistema seleccionará automáticamente el siguiente puerto disponible (5001-5010).
+> **Nota**: Si el puerto 5000 está ocupado (por ejemplo, AirPlay en macOS), el sistema seleccionará automáticamente el siguiente puerto disponible (5001-5010) y mostrará el puerto real utilizado al iniciar.
 
-> Windows: Ejecuta dentro de WSL (no ejecutes scripts desde PowerShell/CMD).
+## ⚙️ Instrucciones de Configuración
 
-### Configuración de Base de Datos
+### Configuración Básica
 
-1. **Crear usuario de solo lectura** (recomendado por seguridad):
-```sql
-CREATE USER 'querygpt_reader'@'localhost' IDENTIFIED BY 'tu_contraseña_segura';
-GRANT SELECT ON tu_base_datos.* TO 'querygpt_reader'@'localhost';
-FLUSH PRIVILEGES;
+1. **Copiar archivo de configuración de entorno**
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Editar el archivo .env para configurar lo siguiente**
+   - `OPENAI_API_KEY`: Tu clave de API de OpenAI
+   - `OPENAI_BASE_URL`: Endpoint de la API (opcional, por defecto usa el endpoint oficial)
+   - Información de conexión a la base de datos
+
+### Configuración de Capa Semántica (Opcional)
+
+La capa semántica mejora la comprensión de términos de negocio, ayudando al sistema a entender mejor tu lenguaje de negocio. **Esta es una configuración opcional, no configurarla no afecta las funcionalidades básicas.**
+
+1. **Copiar archivo de ejemplo**
+   ```bash
+   cp backend/semantic_layer.json.example backend/semantic_layer.json
+   ```
+
+2. **Modificar la configuración según tus necesidades de negocio**
+   
+   La configuración de la capa semántica contiene tres partes:
+   - **Mapeo de Base de Datos**: Define el significado comercial de la base de datos
+   - **Tablas de Negocio Principales**: Mapea tablas y campos de negocio importantes
+   - **Índice de Búsqueda Rápida**: Búsqueda rápida de términos comunes
+
+3. **Ejemplo de Configuración**
+   ```json
+   {
+     "Tablas de Negocio Principales": {
+       "Gestión de Pedidos": {
+         "Ruta de Tabla": "database.orders",
+         "Palabras Clave": ["pedido", "venta", "transacción"],
+         "Campos Requeridos": {
+           "order_id": "Número de Pedido",
+           "amount": "Monto"
+         }
+       }
+     }
+   }
+   ```
+
+> **Nota**: 
+> - El archivo de capa semántica contiene información comercial sensible y se ha agregado a `.gitignore`, no se enviará al control de versiones
+> - Cuando la capa semántica no está configurada, el sistema usa la configuración predeterminada y aún puede realizar consultas de datos normalmente
+> - Para instrucciones detalladas de configuración, consulta [backend/SEMANTIC_LAYER_SETUP.md](backend/SEMANTIC_LAYER_SETUP.md)
+
+## 📁 Estructura del Proyecto
+
+```
+QueryGPT/
+├── backend/              # Servicio backend
+│   ├── app.py           # Entrada principal de la aplicación Flask
+│   ├── database.py      # Gestión de conexión a base de datos
+│   ├── interpreter_manager.py  # Intérprete de consultas
+│   ├── history_manager.py      # Gestión de historial
+│   └── config_loader.py        # Cargador de configuración
+├── frontend/            # Interfaz frontend
+│   ├── templates/       # Plantillas HTML
+│   └── static/          # Recursos estáticos
+│       ├── css/         # Archivos de estilo
+│       └── js/          # JavaScript
+├── docs/                # Documentación del proyecto
+├── logs/                # Directorio de logs
+├── output/              # Archivos de salida
+├── requirements.txt     # Dependencias Python
+└── .env.example         # Ejemplo de configuración
 ```
 
-2. **Configurar conexión en .env**:
-```env
-DB_HOST=localhost
-DB_PORT=3306
-DB_NAME=tu_base_datos
-DB_USER=querygpt_reader
-DB_PASSWORD=tu_contraseña_segura
-```
+## 🔌 API
 
-## 💡 Uso
+### Interfaz de Consulta
 
-### Ejemplos de Consultas
-
-#### Consultas Básicas
-- "Muéstrame las ventas del último mes"
-- "¿Cuántos clientes tenemos en cada ciudad?"
-- "Lista los 10 productos más vendidos"
-
-#### Análisis Avanzado
-- "Analiza la tendencia de ventas y predice los próximos 3 meses"
-- "Calcula la tasa de retención de clientes por cohorte mensual"
-- "Encuentra correlaciones entre el precio del producto y el volumen de ventas"
-
-#### Visualizaciones
-- "Crea un gráfico de barras con las ventas por categoría"
-- "Genera un dashboard con KPIs principales del negocio"
-- "Muestra la distribución geográfica de clientes en un mapa"
-
-### Modos de Operación
-
-#### Modo Usuario
-- Interfaz simplificada con resultados finales
-- Visualizaciones automáticas
-- Respuestas en lenguaje natural
-
-#### Modo Desarrollador
-- Vista completa del código SQL generado
-- Logs de ejecución detallados
-- Acceso a resultados raw
-- Debugging paso a paso
-
-### API REST
-
-#### Endpoint Principal
 ```http
 POST /api/chat
 Content-Type: application/json
 
 {
-  "message": "Analiza las ventas del último trimestre",
-  "model": "gpt-4",
-  "stream": true,
-  "conversation_id": "uuid-opcional"
+  "message": "Consultar total de ventas de este mes",
+  "model": "default"
 }
 ```
 
-#### Respuesta
-```json
-{
-  "success": true,
-  "result": {
-    "content": [
-      {
-        "type": "text",
-        "content": "He analizado las ventas del último trimestre..."
-      },
-      {
-        "type": "chart",
-        "url": "/output/chart_ventas_trimestre.html"
-      }
-    ],
-    "sql_query": "SELECT ...",
-    "execution_time": 1.23
-  },
-  "conversation_id": "uuid-xxx"
-}
+### Historial
+
+```http
+GET /api/history/conversations    # Obtener lista de historial
+GET /api/history/conversation/:id # Obtener detalles
+DELETE /api/history/conversation/:id # Eliminar registro
 ```
 
-## 📋 Requisitos del Sistema
+### Verificación de Salud
 
-### Hardware Mínimo
-- **CPU**: 2 cores
-- **RAM**: 4 GB
-- **Disco**: 10 GB espacio libre
-
-### Hardware Recomendado
-- **CPU**: 4+ cores
-- **RAM**: 8 GB o más
-- **Disco**: 20 GB espacio libre
-- **GPU**: Opcional, mejora el rendimiento con modelos locales
-
-### Software
-- **Sistema Operativo**: Linux, macOS, Windows (con WSL2)
-- **Python**: 3.10.x (requerido específicamente para OpenInterpreter 0.4.3)
-- **Node.js**: 14+ (para desarrollo frontend)
-- **Base de Datos**: MySQL 5.7+, PostgreSQL 10+, o SQLite
-
-### Requisitos de Red
-- Conexión a Internet para modelos cloud (OpenAI, Claude, etc.)
-- Puerto 5000 disponible (configurable)
-- Acceso a la base de datos objetivo
-
-## 🔧 Configuración Avanzada
-
-### Modelos Personalizados
-
-Añade modelos personalizados en `config/models.json`:
-
-```json
-{
-  "models": [
-    {
-      "name": "Mi Modelo Local",
-      "id": "modelo-local",
-      "type": "ollama",
-      "api_base": "http://localhost:11434/v1",
-      "api_key": "opcional"
-    }
-  ]
-}
+```http
+GET /api/health
 ```
 
-<!-- Despliegue con Docker no está mantenido actualmente. -->
+## 🔒 Información de Seguridad
 
-### Configuración de Producción
-
-```bash
-# Usar gunicorn para producción
-gunicorn -w 4 -b 0.0.0.0:5000 backend.app:app
-
-# Con nginx como proxy reverso
-# Ver docs/DEPLOYMENT.md para configuración completa
-```
+- Solo soporta consultas de solo lectura (SELECT, SHOW, DESCRIBE)
+- Filtra automáticamente declaraciones SQL peligrosas
+- Los usuarios de la base de datos deben configurarse con permisos de solo lectura
 
 ## 📄 Licencia
 
-Este proyecto está licenciado bajo la Licencia MIT - ver el archivo [LICENSE](LICENSE) para más detalles.
+MIT License - Ver archivo [LICENSE](LICENSE) para detalles
 
-### ¿Qué significa esto?
+## 🆕 Actualizaciones Recientes
 
-La Licencia MIT es una de las licencias de software libre más permisivas:
+- 2025-09-05 – Optimización de velocidad de inicio: Eliminada prueba automática en lote al entrar por primera vez a la página de modelos, reduciendo solicitudes innecesarias y evitando escritura incorrecta de estado.
 
-- ✅ **Uso comercial**: Puedes usar QueryGPT en proyectos comerciales
-- ✅ **Modificación**: Puedes modificar el código según tus necesidades
-- ✅ **Distribución**: Puedes distribuir el software
-- ✅ **Uso privado**: Puedes usar el software privadamente
-- ❗ **Sin garantía**: El software se proporciona "tal cual"
-- ❗ **Sin responsabilidad**: Los autores no son responsables de daños
+## 👨‍💻 Autor
 
-## 👥 Comunidad y Soporte
-
-### Obtener Ayuda
-- 📖 [Documentación completa](https://github.com/MoonMao42/ReceiptBI/wiki)
-- 💬 [Discusiones en GitHub](https://github.com/MoonMao42/ReceiptBI/discussions)
-- 🐛 [Reportar problemas](https://github.com/MoonMao42/ReceiptBI/issues)
-
-### Contribuir
-¡Las contribuciones son bienvenidas! Por favor:
-
-1. Fork el proyecto
-2. Crea tu rama de características (`git checkout -b feature/CaracteristicaIncreible`)
-3. Commit tus cambios (`git commit -m 'Añadir CaracteristicaIncreible'`)
-4. Push a la rama (`git push origin feature/CaracteristicaIncreible`)
-5. Abre un Pull Request
-
-### Autor
-- **Creador**: MoonMao42
+- **Autor**: MoonMao42
 - **GitHub**: [@MoonMao42](https://github.com/MoonMao42)
-- **Creado**: Agosto 2025
+- **Fecha de Creación**: Agosto de 2025
 
-## ⭐ Apoya el Proyecto
-
-Si encuentras útil QueryGPT, considera:
-- ⭐ Dar una estrella al repositorio
-- 🔀 Compartir con colegas y amigos
-- 📝 Escribir sobre tu experiencia
-- 🤝 Contribuir con código o documentación
-
----
+## ⭐ Star History
 
 <div align="center">
-  <p>Hecho con ❤️ para la comunidad de análisis de datos</p>
-  <p>
-    <a href="https://github.com/MoonMao42/ReceiptBI">GitHub</a> •
-    <a href="https://github.com/MoonMao42/ReceiptBI/wiki">Wiki</a> •
-    <a href="https://github.com/MoonMao42/ReceiptBI/discussions">Discusiones</a>
-  </p>
+  <a href="https://star-history.com/#MoonMao42/ReceiptBI&Date">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=MoonMao42/ReceiptBI&type=Date&theme=dark" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=MoonMao42/ReceiptBI&type=Date" />
+      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=MoonMao42/ReceiptBI&type=Date" />
+    </picture>
+  </a>
 </div>
 
-## 🆕 Últimas novedades
+## 🤝 Contribución
 
-- 2025-09-05 – Optimización de arranque: se eliminó la prueba automática de modelos en la primera visita para reducir solicitudes iniciales y evitar cambios de estado no deseados.
+Bienvenido para enviar Issues y Pull Requests.
+
+1. Fork este proyecto
+2. Crea una rama de funcionalidad (`git checkout -b feature/AmazingFeature`)
+3. Confirma tus cambios (`git commit -m 'Add some AmazingFeature'`)
+4. Push a la rama (`git push origin feature/AmazingFeature`)
+5. Abre un Pull Request

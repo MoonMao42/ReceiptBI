@@ -15,7 +15,7 @@
   [![License](https://img.shields.io/badge/Lizenz-MIT-yellow.svg?style=for-the-badge)](LICENSE)
   [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
   [![OpenInterpreter](https://img.shields.io/badge/OpenInterpreter-0.4.3-green.svg?style=for-the-badge)](https://github.com/OpenInterpreter/open-interpreter)
-  [![Stars](https://img.shields.io/github/stars/MoonMao42/ReceiptBI?style=for-the-badge&color=yellow)](https://github.com/MoonMao42/ReceiptBI/stargazers)
+  [![Stars](https://img.shields.io/badge/Stars-MoonMao42/ReceiptBI-yellow.svg?style=for-the-badge&color=yellow)](https://github.com/MoonMao42/ReceiptBI/stargazers)
   
   <br/>
   
@@ -24,264 +24,228 @@
   
 </div>
 
-<br/>
+## ✨ Kernvorteile
 
----
-
-## ✨ Projektbeschreibung
-
-**QueryGPT** ist ein revolutionäres intelligentes Datenabfragesystem, das die Lücke zwischen natürlicher Sprache und Datenbankabfragen überbrückt. Basierend auf OpenInterpreter 0.4.3, ermöglicht es Benutzern, komplexe Datenanalysen durch einfache Konversationen in natürlicher Sprache durchzuführen - ohne SQL-Kenntnisse zu benötigen.
-
-Das System denkt wie ein erfahrener Datenanalyst: Es erkundet autonom Datenstrukturen, validiert Ergebnisse durch mehrere Iterationen und kann sowohl SQL als auch Python für erweiterte statistische Analysen und maschinelles Lernen ausführen. Die transparente Chain-of-Thought-Visualisierung zeigt den Denkprozess der KI in Echtzeit, sodass Benutzer jederzeit eingreifen und lenken können.
-
-## 🌟 Hauptfunktionen
-
-### KI-Agent Kernfähigkeiten
-- **Autonome Datenexploration**: Der Agent versteht proaktiv Datenstrukturen und erkundet Beziehungen
-- **Mehrstufiges Reasoning**: Untersucht Probleme tiefgehend wie ein echter Analyst
-- **Chain-of-Thought Visualisierung**: Echtzeit-Anzeige des KI-Denkprozesses mit Interventionsmöglichkeit
-- **Kontextgedächtnis**: Versteht Gesprächsverlauf und unterstützt kontinuierliche mehrstufige Analysen
-
-### Datenanalysefähigkeiten
-- **SQL + Python Integration**: Nicht auf SQL beschränkt - führt komplexe Python-Datenverarbeitung aus
-- **Statistische Analyse**: Automatische Korrelationsanalyse, Trendvorhersage, Anomalieerkennung
-- **Geschäftsterminologie**: Natives Verständnis von YoY, MoM, Retention, Repurchase-Konzepten
-- **Intelligente Visualisierung**: Wählt automatisch den besten Diagrammtyp basierend auf Datencharakteristiken
-
-### Systemfunktionen
-- **Multi-Modell-Unterstützung**: Nahtloser Wechsel zwischen GPT-5, Claude, Gemini, Ollama lokalen Modellen
-- **Flexible Bereitstellung**: Unterstützt Cloud-API oder Ollama lokale Bereitstellung - Ihre Daten verlassen nie Ihre Räumlichkeiten
-- **Verlaufsspeicherung**: Speichert Analyseprozesse mit Rückverfolgung und Freigabefunktionen
-- **Datensicherheit**: Nur-Lese-Berechtigungen, SQL-Injection-Schutz, sensible Datenmaskierung
-- **Flexible Exportoptionen**: Unterstützt Excel, PDF, HTML und andere Formate
-
-## 🚀 Technologie-Stack
-
-### Backend-Technologien
-- **Python 3.10.x** (Erforderlich für OpenInterpreter 0.4.3)
-- **Flask** - Leichtgewichtiges Web-Framework
-- **OpenInterpreter 0.4.3** - Kern-KI-Ausführungsumgebung
-- **MySQL/MariaDB** - Datenbankunterstützung
-- **Redis** (Optional) - Caching-Layer für Leistung
-
-### Frontend-Technologien
-- **HTML5/CSS3** - Moderne Webstandards
-- **JavaScript (ES6+)** - Interaktive Benutzeroberfläche
-- **Chart.js** - Datenvisualisierung
-- **WebSocket** - Echtzeit-Kommunikation
-
-### KI-Modelle
-- **OpenAI GPT-Serie** (GPT-4, GPT-5)
-- **Anthropic Claude**
-- **Google Gemini**
-- **Lokale Modelle via Ollama** (Qwen, Llama, etc.)
+**Denkt wie ein Datenanalyst**
+- **Autonome Exploration**: Untersucht proaktiv Tabellenstrukturen und Beispieldaten bei Problemen
+- **Mehrfache Validierung**: Überprüft erneut bei Anomalien, um genaue Ergebnisse sicherzustellen
+- **Komplexe Analyse**: Nicht nur SQL, kann Python für statistische Analysen und maschinelles Lernen ausführen
+- **Sichtbares Denken**: Echtzeit-Anzeige des Reasoning-Prozesses des Agents (Chain-of-Thought)
 
 ## 📸 System-Screenshots
 
-<table>
-  <tr>
-    <td width="50%">
-      <strong>🤖 Intelligenter Agent-Denkprozess</strong><br/>
-      <img src="../images/agent-thinking-en.png" width="100%" alt="QueryGPT Oberfläche"/>
-      <p align="center">Transparente Gedankenketten-Visualisierung</p>
-    </td>
-    <td width="50%">
-      <strong>📊 Datenvisualisierung</strong><br/>
-      <img src="../images/data-visualization-en.png" width="100%" alt="Datenvisualisierung"/>
-      <p align="center">Intelligente Diagrammerstellung mit automatischer Auswahl</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <strong>👨‍💻 Entwickleransicht</strong><br/>
-      <img src="../images/developer-view-en.png" width="100%" alt="Entwickleransicht"/>
-      <p align="center">Vollständige Ausführungsdetails, SQL und Code transparent</p>
-    </td>
-    <td width="50%">
-      <strong>🌐 Mehrsprachige Unterstützung</strong><br/>
-      <img src="../images/main-interface.png" width="100%" alt="Hauptoberfläche"/>
-      <p align="center">Unterstützung für 10 Sprachen, weltweit zugänglich</p>
-    </td>
-  </tr>
-</table>
+<img src="../images/agent-thinking-en.png" width="100%" alt="QueryGPT Interface"/>
 
-## ⚡ Schnellstart
+**Echtzeit-Anzeige des KI-Denkprozesses, komplexe Datenanalyse durch Gespräche auf Deutsch.**
 
-### Systemanforderungen
-- Python 3.10.x (Zwingend erforderlich)
-- MySQL 5.7+ oder kompatible Datenbank
-- 4GB RAM minimum (8GB empfohlen)
-- 2GB freier Festplattenspeicher
+---
 
-### Installation
+<img src="../images/data-visualization-en.png" width="100%" alt="Data Visualization"/>
+
+**Automatische Generierung interaktiver Diagramme, Dateninsights auf einen Blick.**
+
+---
+
+<img src="../images/developer-view-en.png" width="100%" alt="Developer View"/>
+
+**Vollständig transparente Code-Ausführung, unterstützt SQL und Python als Doppel-Engine.**
+
+## 🌟 Funktionen
+
+### Agent-Kernfähigkeiten
+- **Autonome Datenexploration**: Agent versteht proaktiv Datenstrukturen und erkundet Datenbeziehungen
+- **Mehrfaches Reasoning**: Wie ein Analyst, untersucht Probleme tiefgründig
+- **Chain-of-Thought**: Echtzeit-Anzeige des Agent-Denkprozesses, kann jederzeit eingreifen und korrigieren
+- **Kontextgedächtnis**: Versteht Gesprächsverlauf, unterstützt kontinuierliche mehrfache Analysen
+
+### Datenanalysefähigkeiten
+- **SQL + Python**: Nicht auf SQL beschränkt, kann komplexe Python-Datenverarbeitung ausführen
+- **Statistische Analyse**: Automatische Korrelationsanalyse, Trendvorhersage, Anomalieerkennung
+- **Geschäftsterminologie**: Natives Verständnis von Konzepten wie MoM, YoY, Retention, Repurchase
+- **Intelligente Visualisierung**: Wählt automatisch den besten Diagrammtyp basierend auf Datenmerkmalen
+
+### Systemfunktionen
+- **Multi-Modell-Unterstützung**: GPT-5, Claude, Gemini, Ollama lokale Modelle frei wechseln
+- **Flexible Bereitstellung**: Unterstützt Cloud-API oder Ollama lokale Bereitstellung, Daten verlassen nie das Haus
+- **Verlaufsaufzeichnung**: Speichert Analyseprozesse, unterstützt Rückverfolgung und Freigabe
+- **Datensicherheit**: Nur-Lese-Berechtigungen, SQL-Injection-Schutz, sensible Datenmaskierung
+- **Flexible Exporte**: Unterstützt Excel, PDF, HTML und andere Formate
+
+## 📦 Technische Anforderungen
+
+- Python 3.10.x (erforderlich, OpenInterpreter 0.4.3 Abhängigkeit)
+- MySQL oder kompatible Datenbank
+
+> Windows: Bitte in WSL ausführen (führen Sie Skripte nicht direkt in PowerShell/CMD aus).
+
+## 📊 Produktvergleich
+
+| Vergleichsdimension | **QueryGPT** | Vanna AI | DB-GPT | TableGPT | Text2SQL.AI |
+|---------------------|:------------:|:--------:|:------:|:--------:|:-----------:|
+| **Kosten** | **✅ Kostenlos** | ⭕ Hat kostenpflichtige Version | ✅ Kostenlos | ❌ Kostenpflichtig | ❌ Kostenpflichtig |
+| **Open Source** | **✅** | ✅ | ✅ | ❌ | ❌ |
+| **Lokale Bereitstellung** | **✅** | ✅ | ✅ | ❌ | ❌ |
+| **Python-Code ausführen** | **✅ Vollständige Umgebung** | ❌ | ❌ | ❌ | ❌ |
+| **Visualisierungsfähigkeit** | **✅ Programmierbar** | ⭕ Voreingestellte Diagramme | ✅ Reiche Diagramme | ✅ Reiche Diagramme | ⭕ Basis |
+| **Geschäftsterminologie-Verständnis** | **✅ Native** | ⭕ Basis | ✅ Gut | ✅ Ausgezeichnet | ⭕ Basis |
+| **Agent autonome Exploration** | **✅** | ❌ | ⭕ Basis | ⭕ Basis | ❌ |
+| **Echtzeit-Denkanzeige** | **✅** | ❌ | ❌ | ❌ | ❌ |
+| **Erweiterungsfähigkeit** | **✅ Unbegrenzte Erweiterung** | ❌ | ❌ | ❌ | ❌ |
+
+### Unsere Kernunterschiede
+- **Vollständige Python-Umgebung**: Keine voreingestellten Funktionen, sondern eine echte Python-Ausführungsumgebung, in der Sie jeden Code schreiben können
+- **Unbegrenzte Erweiterbarkeit**: Benötigen Sie neue Funktionen? Installieren Sie einfach neue Bibliotheken, müssen nicht auf Produkt-Updates warten
+- **Agent autonome Exploration**: Untersucht proaktiv bei Problemen, nicht nur einfache einmalige Abfragen
+- **Transparenter Denkprozess**: Sehen Sie in Echtzeit, was die KI denkt, können jederzeit eingreifen und leiten
+- **Wirklich kostenlos und Open Source**: MIT-Lizenz, keine Paywall
+
+## 🚀 Schnellstart
+
+### Erste Verwendung
 
 ```bash
-# 1. Repository klonen
+# 1. Projekt klonen
 git clone https://github.com/MoonMao42/ReceiptBI.git
 cd QueryGPT
 
-# 2. Setup-Skript ausführen (automatische Umgebungskonfiguration)
+# 2. Installationsskript ausführen (konfiguriert automatisch die Umgebung)
 ./setup.sh
 
-# 3. Umgebungsvariablen konfigurieren
-cp .env.example .env
-# Bearbeiten Sie .env mit Ihrem bevorzugten Editor
-
-# 4. Service starten
+# 3. Service starten
 ./start.sh
 ```
 
-### Schnellstart für bestehende Installationen
+### Spätere Verwendung
 
 ```bash
-# Direkter Schnellstart
+# Direkt starten (Umgebung bereits installiert)
 ./start.sh
 ```
 
 Der Service läuft standardmäßig auf http://localhost:5000
 
-> **Hinweis**: Wenn Port 5000 belegt ist (z.B. macOS AirPlay), wählt das System automatisch den nächsten verfügbaren Port (5001-5010) und zeigt den tatsächlich verwendeten Port beim Start an.
+> **Hinweis**: Wenn Port 5000 belegt ist (z.B. macOS AirPlay), wählt das System automatisch den nächsten verfügbaren Port (5001-5010) und zeigt beim Start den tatsächlich verwendeten Port an.
 
-## 💡 Verwendung
+## ⚙️ Konfigurationsanleitung
 
-### Grundlegende Abfragen
+### Grundkonfiguration
 
-1. **Einfache Datenabfrage**
-   ```
-   "Zeige mir die Gesamtverkäufe dieses Monats"
-   "Welche Produkte haben die höchste Gewinnmarge?"
-   ```
-
-2. **Komplexe Analyse**
-   ```
-   "Analysiere die Verkaufstrends der letzten 6 Monate und prognostiziere die nächsten 3 Monate"
-   "Finde Korrelationen zwischen Kundendemografie und Kaufverhalten"
+1. **Umgebungskonfigurationsdatei kopieren**
+   ```bash
+   cp .env.example .env
    ```
 
-3. **Datenvisualisierung**
+2. **Bearbeiten Sie die .env-Datei und konfigurieren Sie Folgendes**
+   - `OPENAI_API_KEY`: Ihr OpenAI API-Schlüssel
+   - `OPENAI_BASE_URL`: API-Endpunkt (optional, verwendet standardmäßig den offiziellen Endpunkt)
+   - Datenbankverbindungsinformationen
+
+### Semantische Schichtkonfiguration (Optional)
+
+Die semantische Schicht verbessert das Verständnis von Geschäftsterminologie und hilft dem System, Ihre Geschäftssprache besser zu verstehen. **Dies ist eine optionale Konfiguration, die Nicht-Konfiguration beeinträchtigt nicht die Grundfunktionen.**
+
+1. **Beispieldatei kopieren**
+   ```bash
+   cp backend/semantic_layer.json.example backend/semantic_layer.json
    ```
-   "Erstelle ein Balkendiagramm der Top 10 Produkte nach Umsatz"
-   "Zeige die geografische Verteilung unserer Kunden auf einer Karte"
+
+2. **Konfiguration entsprechend Ihren Geschäftsanforderungen ändern**
+   
+   Die semantische Schichtkonfiguration enthält drei Teile:
+   - **Datenbankzuordnung**: Definiert die Geschäftsbedeutung der Datenbank
+   - **Kern-Geschäftstabellen**: Ordnet wichtige Geschäftstabellen und -felder zu
+   - **Schnellsuchindex**: Schnellsuche für gängige Begriffe
+
+3. **Konfigurationsbeispiel**
+   ```json
+   {
+     "Kern-Geschäftstabellen": {
+       "Bestellverwaltung": {
+         "Tabellenpfad": "database.orders",
+         "Schlüsselwörter": ["Bestellung", "Verkauf", "Transaktion"],
+         "Erforderliche Felder": {
+           "order_id": "Bestellnummer",
+           "amount": "Betrag"
+         }
+       }
+     }
+   }
    ```
 
-### API-Nutzung
+> **Hinweis**: 
+> - Die semantische Schichtdatei enthält geschäftssensible Informationen und wurde zu `.gitignore` hinzugefügt, wird nicht zur Versionskontrolle übermittelt
+> - Wenn die semantische Schicht nicht konfiguriert ist, verwendet das System die Standardkonfiguration und kann weiterhin normal Datenabfragen durchführen
+> - Für detaillierte Konfigurationsanweisungen siehe [backend/SEMANTIC_LAYER_SETUP.md](backend/SEMANTIC_LAYER_SETUP.md)
 
-```python
-import requests
+## 📁 Projektstruktur
 
-# Abfrage senden
-response = requests.post('http://localhost:5000/api/chat', 
-    json={
-        'message': 'Analysiere die Verkaufsdaten',
-        'model': 'default',
-        'stream': False
-    }
-)
-
-# Ergebnis verarbeiten
-result = response.json()
-print(result['result']['content'])
+```
+QueryGPT/
+├── backend/              # Backend-Service
+│   ├── app.py           # Flask-Anwendungshaupteinstieg
+│   ├── database.py      # Datenbankverbindungsverwaltung
+│   ├── interpreter_manager.py  # Abfrage-Interpreter
+│   ├── history_manager.py      # Verlaufsverwaltung
+│   └── config_loader.py        # Konfigurationslader
+├── frontend/            # Frontend-Interface
+│   ├── templates/       # HTML-Vorlagen
+│   └── static/          # Statische Ressourcen
+│       ├── css/         # Styling-Dateien
+│       └── js/          # JavaScript
+├── docs/                # Projektdokumentation
+├── logs/                # Protokolldirectory
+├── output/              # Ausgabedateien
+├── requirements.txt     # Python-Abhängigkeiten
+└── .env.example         # Konfigurationsbeispiel
 ```
 
-### Konfigurationsoptionen
+## 🔌 API-Schnittstellen
 
-```json
+### Abfrage-Schnittstelle
+
+```http
+POST /api/chat
+Content-Type: application/json
+
 {
-  "database": {
-    "host": "localhost",
-    "port": 3306,
-    "user": "readonly_user",
-    "database": "business_data"
-  },
-  "ai": {
-    "model": "gpt-4",
-    "temperature": 0.7,
-    "max_tokens": 2000
-  },
-  "security": {
-    "enable_sql_validation": true,
-    "mask_sensitive_data": true
-  }
+  "message": "Gesamtumsatz dieses Monats abfragen",
+  "model": "default"
 }
 ```
 
-## 📋 Systemanforderungen
+### Verlauf
 
-### Mindestanforderungen
-- **Betriebssystem**: Linux, macOS, Windows (mit WSL2)
-- **Python**: 3.10.x (genau diese Version erforderlich)
-- **RAM**: 4GB
-- **Festplatte**: 2GB freier Speicherplatz
-- **Datenbank**: MySQL 5.7+ oder MariaDB 10.3+
+```http
+GET /api/history/conversations    # Verlaufsliste abrufen
+GET /api/history/conversation/:id # Details abrufen
+DELETE /api/history/conversation/:id # Datensatz löschen
+```
 
-> Windows: Bitte innerhalb von WSL ausführen (keine Ausführung über PowerShell/CMD).
+### Gesundheitsprüfung
 
-### Empfohlene Anforderungen
-- **RAM**: 8GB oder mehr
-- **CPU**: 4 Kerne oder mehr
-- **Festplatte**: SSD mit 10GB freiem Speicherplatz
-- **Netzwerk**: Stabile Internetverbindung für Cloud-KI-Modelle
+```http
+GET /api/health
+```
 
-### Unterstützte Datenbanken
-- MySQL 5.7+
-- MariaDB 10.3+
-- PostgreSQL 12+ (experimentell)
-- SQLite (für Entwicklung/Tests)
+## 🔒 Sicherheitshinweise
 
-## 🌍 Mehrsprachige Unterstützung
-
-QueryGPT unterstützt aktuell **10 Sprachen** für natürliche Sprachabfragen:
-
-- 🇬🇧 Englisch
-- 🇨🇳 Chinesisch (Vereinfacht & Traditionell)
-- 🇩🇪 Deutsch
-- 🇫🇷 Französisch
-- 🇪🇸 Spanisch
-- 🇯🇵 Japanisch
-- 🇰🇷 Koreanisch
-- 🇷🇺 Russisch
-- 🇵🇹 Portugiesisch
-- 🇮🇹 Italienisch
-
-Das System erkennt automatisch die Sprache Ihrer Abfrage und antwortet in derselben Sprache.
-
-## 🔒 Sicherheit & Datenschutz
-
-- **Nur-Lese-Zugriff**: Alle Datenbankoperationen sind schreibgeschützt
-- **SQL-Injection-Schutz**: Robuste Eingabevalidierung und -sanitisierung
-- **Datenmaskierung**: Automatische Maskierung sensibler Informationen
-- **Lokale Bereitstellung**: Option für vollständig lokale Ausführung ohne Cloud-Abhängigkeiten
-- **Audit-Protokollierung**: Vollständige Protokollierung aller Abfragen und Zugriffe
+- Unterstützt nur schreibgeschützte Abfragen (SELECT, SHOW, DESCRIBE)
+- Filtert automatisch gefährliche SQL-Anweisungen
+- Datenbankbenutzer sollten mit schreibgeschützten Berechtigungen konfiguriert werden
 
 ## 📄 Lizenz
 
-Dieses Projekt ist unter der MIT-Lizenz lizenziert - siehe die [LICENSE](../LICENSE) Datei für Details.
+MIT License - Siehe [LICENSE](LICENSE) Datei für Details
 
 ## 🆕 Neueste Updates
 
-- 2025-09-05 – Startzeit optimiert: Automatisches Modell‑Testing beim ersten Aufruf entfernt, weniger Initial‑Requests und keine unbeabsichtigten Statusänderungen.
+- 2025-09-05 – Startgeschwindigkeitsoptimierung: Entfernt automatischen Batch-Test beim ersten Betreten der Modellseite, reduziert unnötige Anfragen und vermeidet falsche Status-Schreibvorgänge.
 
-Die MIT-Lizenz ist eine freizügige Open-Source-Lizenz, die es Ihnen erlaubt:
-- Das Projekt kommerziell zu nutzen
-- Den Code zu modifizieren
-- Den Code zu verteilen
-- Das Projekt privat zu nutzen
+## 👨‍💻 Autor
 
-## 🤝 Beitragen
-
-Wir freuen uns über Beiträge! So können Sie helfen:
-
-1. Forken Sie das Repository
-2. Erstellen Sie einen Feature-Branch (`git checkout -b feature/AmazingFeature`)
-3. Committen Sie Ihre Änderungen (`git commit -m 'Add some AmazingFeature'`)
-4. Pushen Sie zum Branch (`git push origin feature/AmazingFeature`)
-5. Öffnen Sie einen Pull Request
-
-## 📞 Support & Kontakt
-
-- **GitHub Issues**: [github.com/MoonMao42/ReceiptBI/issues](https://github.com/MoonMao42/ReceiptBI/issues)
-- **Diskussionen**: [github.com/MoonMao42/ReceiptBI/discussions](https://github.com/MoonMao42/ReceiptBI/discussions)
-- **Autor**: MoonMao42 ([@MoonMao42](https://github.com/MoonMao42))
+- **Autor**: MoonMao42
+- **GitHub**: [@MoonMao42](https://github.com/MoonMao42)
+- **Erstellungsdatum**: August 2025
 
 ## ⭐ Star History
 
@@ -295,8 +259,12 @@ Wir freuen uns über Beiträge! So können Sie helfen:
   </a>
 </div>
 
----
+## 🤝 Beitragen
 
-<div align="center">
-  <sub>Mit ❤️ entwickelt von der QueryGPT Community</sub>
-</div>
+Willkommen zum Einreichen von Issues und Pull Requests.
+
+1. Forken Sie dieses Projekt
+2. Erstellen Sie einen Feature-Branch (`git checkout -b feature/AmazingFeature`)
+3. Committen Sie Ihre Änderungen (`git commit -m 'Add some AmazingFeature'`)
+4. Pushen Sie zum Branch (`git push origin feature/AmazingFeature`)
+5. Öffnen Sie einen Pull Request
