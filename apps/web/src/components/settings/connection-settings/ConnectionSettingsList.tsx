@@ -14,6 +14,7 @@ import {
 import type { ConfiguredConnection } from "@/lib/types/api";
 import type { ConnectionTestResult } from "@/lib/settings/connections";
 import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 
 interface ConnectionSettingsListProps {
   connections: ConfiguredConnection[];
@@ -44,6 +45,8 @@ export function ConnectionSettingsList({
   onEdit,
   onDelete,
 }: ConnectionSettingsListProps) {
+  const t = useTranslations("connectionSettings");
+  const tc = useTranslations("common");
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -55,8 +58,8 @@ export function ConnectionSettingsList({
   if (!connections.length) {
     return (
       <div className="text-center py-12 text-muted-foreground">
-        <p>暂无数据库连接</p>
-        <p className="text-sm mt-1">点击上方按钮添加第一个连接</p>
+        <p>{t("noConnections")}</p>
+        <p className="text-sm mt-1">{t("addFirstConnection")}</p>
       </div>
     );
   }
@@ -75,13 +78,13 @@ export function ConnectionSettingsList({
               : "border-border hover:border-primary/50"
           )}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             {connection.is_default && (
-              <Star size={16} className="text-yellow-500 fill-yellow-500" />
+              <Star size={16} className="flex-shrink-0 text-yellow-500 fill-yellow-500" />
             )}
-            <div>
-              <div className="font-medium text-foreground">{connection.name}</div>
-              <div className="text-sm text-muted-foreground">
+            <div className="min-w-0">
+              <div className="truncate font-medium text-foreground">{connection.name}</div>
+              <div className="truncate text-sm text-muted-foreground">
                 {connection.driver}://{connection.username}@{connection.host}:{connection.port}/
                 {connection.database_name}
               </div>
@@ -99,7 +102,7 @@ export function ConnectionSettingsList({
             </div>
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex flex-shrink-0 items-center gap-1">
             <div className="flex items-center border border-border rounded-lg overflow-hidden mr-2">
               <button
                 onClick={(event) => {
@@ -107,10 +110,10 @@ export function ConnectionSettingsList({
                   onExport(connection);
                 }}
                 className="flex items-center gap-1 px-2 py-1.5 text-xs text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors border-r border-border"
-                title="导出此连接的表关系、语义术语、布局等配置"
+                title={t("exportConfig")}
               >
                 <Download size={14} />
-                <span>备份</span>
+                <span>{t("backup")}</span>
               </button>
               <button
                 onClick={(event) => {
@@ -118,10 +121,10 @@ export function ConnectionSettingsList({
                   onImport(connection);
                 }}
                 className="flex items-center gap-1 px-2 py-1.5 text-xs text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                title="从备份文件恢复配置"
+                title={t("restoreConfig")}
               >
                 <Upload size={14} />
-                <span>恢复</span>
+                <span>{t("restore")}</span>
               </button>
             </div>
 
@@ -133,7 +136,7 @@ export function ConnectionSettingsList({
               disabled={testingConnectionId === connection.id}
               data-testid={`connection-test-${connection.id}`}
               className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
-              title="测试连接"
+              title={t("testConnection")}
             >
               {testingConnectionId === connection.id ? (
                 <Loader2 size={16} className="animate-spin" />
@@ -147,7 +150,7 @@ export function ConnectionSettingsList({
                 onEdit(connection);
               }}
               className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
-              title="编辑"
+              title={tc("edit")}
             >
               <Pencil size={16} />
             </button>
@@ -158,7 +161,7 @@ export function ConnectionSettingsList({
               }}
               disabled={deletePending}
               className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-              title="删除"
+              title={tc("delete")}
             >
               <Trash2 size={16} />
             </button>

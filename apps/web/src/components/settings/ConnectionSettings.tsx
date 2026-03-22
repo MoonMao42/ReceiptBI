@@ -13,6 +13,7 @@ import {
   type ConnectionFormData,
 } from "@/lib/settings/connections";
 import type { ConfiguredConnection } from "@/lib/types/api";
+import { useTranslations } from "next-intl";
 
 interface ConnectionSettingsProps {
   onSelectConnection?: (id: string | null) => void;
@@ -40,6 +41,7 @@ export function ConnectionSettings({ onSelectConnection }: ConnectionSettingsPro
     id: string;
     name: string;
   } | null>(null);
+  const t = useTranslations("connectionSettings");
 
   const handleSelectConnection = (id: string) => {
     setSelectedId(id);
@@ -63,7 +65,7 @@ export function ConnectionSettings({ onSelectConnection }: ConnectionSettingsPro
       await addConnection(formData);
       resetForm();
     } catch (error) {
-      console.error("保存连接失败", error);
+      console.error(t("saveFailed"), error);
     }
   };
 
@@ -74,7 +76,7 @@ export function ConnectionSettings({ onSelectConnection }: ConnectionSettingsPro
   };
 
   const handleDelete = (id: string) => {
-    if (confirm("确定要删除这个数据库连接吗？")) {
+    if (confirm(t("confirmDelete"))) {
       deleteConnection(id);
     }
   };
@@ -83,8 +85,8 @@ export function ConnectionSettings({ onSelectConnection }: ConnectionSettingsPro
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">数据库连接</h2>
-          <p className="text-sm text-muted-foreground mt-1">配置要查询的数据库连接</p>
+          <h2 className="text-lg font-semibold text-foreground">{t("title")}</h2>
+          <p className="text-sm text-muted-foreground mt-1">{t("description")}</p>
         </div>
         <button
           onClick={() => {
@@ -95,7 +97,7 @@ export function ConnectionSettings({ onSelectConnection }: ConnectionSettingsPro
           className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm"
         >
           <Plus size={16} />
-          添加连接
+          {t("addConnection")}
         </button>
       </div>
 

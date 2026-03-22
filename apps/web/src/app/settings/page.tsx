@@ -22,6 +22,7 @@ import { SemanticSettings } from "@/components/settings/SemanticSettings";
 import { SchemaSettings } from "@/components/settings/SchemaSettings";
 import { PromptSettings } from "@/components/settings/PromptSettings";
 import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 
 interface Connection {
   id: string;
@@ -35,6 +36,7 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<TabType>("models");
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const router = useRouter();
+  const t = useTranslations("settings");
 
   const { data: connections } = useQuery({
     queryKey: ["connections"],
@@ -52,12 +54,12 @@ export default function SettingsPage() {
   }, [connections, selectedConnectionId]);
 
   const tabs = [
-    { id: "models" as TabType, label: "AI 模型", icon: Brain },
-    { id: "connections" as TabType, label: "数据库连接", icon: Database },
-    { id: "schema" as TabType, label: "表关系", icon: GitBranch },
-    { id: "semantic" as TabType, label: "语义层", icon: BookOpen },
-    { id: "prompts" as TabType, label: "提示词", icon: MessageSquare },
-    { id: "preferences" as TabType, label: "工作区设置", icon: SlidersHorizontal },
+    { id: "models" as TabType, label: t("models"), icon: Brain },
+    { id: "connections" as TabType, label: t("connections"), icon: Database },
+    { id: "schema" as TabType, label: t("schema"), icon: GitBranch },
+    { id: "semantic" as TabType, label: t("semantic"), icon: BookOpen },
+    { id: "prompts" as TabType, label: t("prompts"), icon: MessageSquare },
+    { id: "preferences" as TabType, label: t("preferences"), icon: SlidersHorizontal },
   ];
 
   return (
@@ -72,14 +74,14 @@ export default function SettingsPage() {
           </button>
           <div className="flex items-center gap-2">
             <SettingsIcon size={20} className="text-muted-foreground" />
-            <h1 className="text-lg font-semibold text-foreground">设置</h1>
+            <h1 className="text-lg font-semibold text-foreground">{t("title")}</h1>
           </div>
         </div>
       </header>
 
       <div className="mx-auto max-w-5xl px-4 py-6">
         <div className="flex gap-6">
-          <nav className="w-48 flex-shrink-0">
+          <nav className="w-52 flex-shrink-0">
             <ul className="space-y-1">
               {tabs.map((tab) => (
                 <li key={tab.id}>
@@ -106,7 +108,7 @@ export default function SettingsPage() {
                 className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
               >
                 <Info size={18} />
-                关于
+                {t("about")}
               </button>
             </div>
           </nav>

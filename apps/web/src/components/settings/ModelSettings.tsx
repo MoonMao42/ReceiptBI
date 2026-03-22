@@ -13,6 +13,7 @@ import {
   type ModelFormData,
 } from "@/lib/settings/models";
 import type { ConfiguredModel } from "@/lib/types/api";
+import { useTranslations } from "next-intl";
 
 export function ModelSettings() {
   const {
@@ -38,6 +39,7 @@ export function ModelSettings() {
     [formData.provider]
   );
   const displayError = validationError ?? error;
+  const t = useTranslations("modelSettings");
 
   const resetForm = () => {
     setShowForm(false);
@@ -75,7 +77,7 @@ export function ModelSettings() {
     try {
       buildModelPayload(formData);
     } catch (error) {
-      setValidationError(error instanceof Error ? error.message : "高级参数格式错误");
+      setValidationError(error instanceof Error ? error.message : t("validationError"));
       return;
     }
 
@@ -94,7 +96,7 @@ export function ModelSettings() {
   };
 
   const handleDelete = (id: string) => {
-    if (confirm("确定要删除这个模型配置吗？")) {
+    if (confirm(t("confirmDelete"))) {
       deleteModel(id);
     }
   };
@@ -103,9 +105,9 @@ export function ModelSettings() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">AI 模型配置</h2>
+          <h2 className="text-lg font-semibold text-foreground">{t("title")}</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            统一管理 OpenAI-compatible、Anthropic、Ollama 与自定义网关
+            {t("description")}
           </p>
         </div>
         <button
@@ -120,7 +122,7 @@ export function ModelSettings() {
           className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm"
         >
           <Plus size={16} />
-          添加模型
+          {t("addModel")}
         </button>
       </div>
 
@@ -160,27 +162,27 @@ export function ModelSettings() {
             ) : (
               <XCircle size={16} className="text-destructive" />
             )}
-            最近一次诊断
+            {t("lastDiagnostic")}
           </div>
           <div className="mt-3 grid gap-2 text-sm text-muted-foreground md:grid-cols-2">
             <div>
-              结果: <span className="text-foreground">{testResult.message}</span>
+              {t("result") + ":"} <span className="text-foreground">{testResult.message}</span>
             </div>
             <div>
-              耗时: <span className="text-foreground">{testResult.response_time_ms || "-"} ms</span>
+              {t("latency") + ":"} <span className="text-foreground">{testResult.response_time_ms || "-"} ms</span>
             </div>
             <div>
-              解析 Provider: <span className="text-foreground">{testResult.resolved_provider || "-"}</span>
+              {t("resolvedProvider") + ":"} <span className="text-foreground">{testResult.resolved_provider || "-"}</span>
             </div>
             <div>
-              API 格式: <span className="text-foreground">{testResult.api_format || "-"}</span>
+              {t("apiFormat") + ":"} <span className="text-foreground">{testResult.api_format || "-"}</span>
             </div>
             <div className="md:col-span-2">
-              Base URL: <span className="text-foreground">{testResult.resolved_base_url || "-"}</span>
+              {t("baseUrl") + ":"} <span className="text-foreground">{testResult.resolved_base_url || "-"}</span>
             </div>
             {!testResult.success && (
               <div className="md:col-span-2">
-                错误分类: <span className="text-foreground">{testResult.error_category || "unknown"}</span>
+                {t("errorCategoryLabel") + ":"} <span className="text-foreground">{testResult.error_category || "unknown"}</span>
               </div>
             )}
           </div>

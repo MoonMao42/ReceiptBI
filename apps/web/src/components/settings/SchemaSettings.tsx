@@ -51,6 +51,7 @@ import type {
   SchemaLayoutCreate,
   SchemaLayoutUpdate,
 } from "@/lib/types/schema";
+import { useTranslations } from "next-intl";
 
 interface SchemaSettingsProps {
   connectionId: string | null;
@@ -60,29 +61,25 @@ const nodeTypes: NodeTypes = {
   tableNode: TableNode,
 };
 
-// 内部组件，使用 ReactFlow hooks
 function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const queryClient = useQueryClient();
   const { getViewport, setViewport } = useReactFlow();
+  const t = useTranslations("schema");
 
-  // 布局相关状态
   const [selectedLayoutId, setSelectedLayoutId] = useState<string | null>(null);
   const [showLayoutDropdown, setShowLayoutDropdown] = useState(false);
   const [newLayoutName, setNewLayoutName] = useState("");
   const [showNewLayoutInput, setShowNewLayoutInput] = useState(false);
 
-  // 表筛选状态
   const [searchQuery, setSearchQuery] = useState("");
   const [hiddenTables, setHiddenTables] = useState<Set<string>>(new Set());
   const [showHiddenPanel, setShowHiddenPanel] = useState(false);
 
-  // 自动保存相关
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedRef = useRef<string>("");
 
-  // 获取 Schema 信息
   const { data: schemaInfo, isLoading: schemaLoading } = useQuery({
     queryKey: ["schema", connectionId],
     queryFn: async () => {
@@ -93,7 +90,6 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
     enabled: !!connectionId,
   });
 
-  // 获取已保存的关系
   const { data: relationships, isLoading: relLoading } = useQuery({
     queryKey: ["relationships", connectionId],
     queryFn: async () => {
@@ -104,7 +100,6 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
     enabled: !!connectionId,
   });
 
-  // 获取布局列表
   const { data: layouts } = useQuery({
     queryKey: ["layouts", connectionId],
     queryFn: async () => {
@@ -115,7 +110,6 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
     enabled: !!connectionId,
   });
 
-  // 获取当前布局详情
   const { data: currentLayout } = useQuery({
     queryKey: ["layout", connectionId, selectedLayoutId],
     queryFn: async () => {
@@ -126,7 +120,6 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
     enabled: !!connectionId && !!selectedLayoutId,
   });
 
-  // 创建布局
   const createLayoutMutation = useMutation({
     mutationFn: async (data: SchemaLayoutCreate) => {
       const response = await api.post(`/api/v1/schema/${connectionId}/layouts`, data);
@@ -140,7 +133,6 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
     },
   });
 
-  // 更新布局
   const updateLayoutMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: SchemaLayoutUpdate }) => {
       const response = await api.put(`/api/v1/schema/${connectionId}/layouts/${id}`, data);
@@ -151,7 +143,6 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
     },
   });
 
-  // 删除布局
   const deleteLayoutMutation = useMutation({
     mutationFn: async (id: string) => {
       await api.delete(`/api/v1/schema/${connectionId}/layouts/${id}`);
@@ -162,7 +153,6 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
     },
   });
 
-  // 复制布局
   const duplicateLayoutMutation = useMutation({
     mutationFn: async (id: string) => {
       const response = await api.post(`/api/v1/schema/${connectionId}/layouts/${id}/duplicate`);
@@ -174,7 +164,6 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
     },
   });
 
-  // 创建关系
   const createMutation = useMutation({
     mutationFn: async (data: TableRelationshipCreate) => {
       const response = await api.post(`/api/v1/schema/${connectionId}/relationships`, data);
@@ -185,7 +174,6 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
     },
   });
 
-  // 删除关系
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       await api.delete(`/api/v1/schema/relationships/${id}`);
@@ -195,7 +183,6 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
     },
   });
 
-  // 清理 timeout 防止内存泄漏
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) {
@@ -204,7 +191,6 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
     };
   }, []);
 
-  // 自动选择默认布局
   useEffect(() => {
     if (layouts && layouts.length > 0 && !selectedLayoutId) {
       const defaultLayout = layouts.find((l) => l.is_default);
@@ -216,13 +202,11 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
     }
   }, [layouts, selectedLayoutId]);
 
-  // 应用布局数据
   useEffect(() => {
     if (currentLayout) {
       const allTables = schemaInfo?.tables.map((table) => table.name) || [];
       setHiddenTables(deriveHiddenTables(currentLayout, allTables));
 
-      // 应用视口
       if (currentLayout.zoom && currentLayout.viewport_x !== undefined) {
         setViewport({
           x: currentLayout.viewport_x,
@@ -233,12 +217,10 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
     }
   }, [currentLayout, schemaInfo, setViewport]);
 
-  // 过滤后的表
   const visibleTables = useMemo(() => {
     return filterVisibleTables(schemaInfo?.tables, hiddenTables, searchQuery);
   }, [schemaInfo, hiddenTables, searchQuery]);
 
-  // 构建节点和边
   useEffect(() => {
     if (!visibleTables || visibleTables.length === 0) {
       setNodes([]);
@@ -250,13 +232,11 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
     setEdges(buildRelationshipEdges(visibleTables, relationships));
   }, [visibleTables, relationships, currentLayout, setNodes, setEdges]);
 
-  // 自动保存布局（debounce）
   const saveLayout = useCallback(() => {
     if (!selectedLayoutId || !connectionId) return;
 
     const snapshot = buildLayoutSnapshot(nodes, getViewport(), schemaInfo?.tables, hiddenTables);
 
-    // 避免重复保存相同数据
     if (snapshot.signature === lastSavedRef.current) return;
     lastSavedRef.current = snapshot.signature;
 
@@ -266,18 +246,15 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
     });
   }, [selectedLayoutId, connectionId, nodes, getViewport, hiddenTables, schemaInfo, updateLayoutMutation]);
 
-  // 节点变化时触发自动保存
   const handleNodesChange = useCallback(
     (changes: NodeChange<Node>[]) => {
       onNodesChange(changes);
 
-      // 只在位置变化时保存
       const hasPositionChange = changes.some(
         (change) => change.type === "position" && change.dragging === false
       );
 
       if (hasPositionChange && selectedLayoutId) {
-        // debounce 保存
         if (saveTimeoutRef.current) {
           clearTimeout(saveTimeoutRef.current);
         }
@@ -287,7 +264,6 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
     [onNodesChange, selectedLayoutId, saveLayout]
   );
 
-  // 处理连线
   const onConnect = useCallback(
     (connection: Connection) => {
       if (!connection.source || !connection.target) return;
@@ -307,17 +283,15 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
     [createMutation]
   );
 
-  // 删除边
   const onEdgeClick = useCallback(
     (_: React.MouseEvent, edge: Edge) => {
-      if (confirm("确定要删除这个关系吗？")) {
+      if (confirm(t("confirmDeleteRelationship"))) {
         deleteMutation.mutate(edge.id);
       }
     },
-    [deleteMutation]
+    [deleteMutation, t]
   );
 
-  // 应用建议
   const applySuggestion = (suggestion: RelationshipSuggestion) => {
     createMutation.mutate({
       source_table: suggestion.source_table,
@@ -329,31 +303,26 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
     });
   };
 
-  // 隐藏表
   const hideTable = (tableName: string) => {
     setHiddenTables((prev) => new Set([...prev, tableName]));
-    // 触发保存
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
     saveTimeoutRef.current = setTimeout(saveLayout, 500);
   };
 
-  // 显示表
   const showTable = (tableName: string) => {
     setHiddenTables((prev) => {
       const next = new Set(prev);
       next.delete(tableName);
       return next;
     });
-    // 触发保存
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
     saveTimeoutRef.current = setTimeout(saveLayout, 500);
   };
 
-  // 创建新布局
   const handleCreateLayout = () => {
     if (!newLayoutName.trim()) return;
     createLayoutMutation.mutate({
@@ -366,7 +335,7 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
         <Database size={48} className="mb-4 opacity-50" />
-        <p>请先在「数据库连接」中选择一个连接</p>
+        <p>{t("selectConnectionFirst")}</p>
       </div>
     );
   }
@@ -381,12 +350,11 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
 
   return (
     <div className="min-h-[600px] flex flex-col">
-      {/* 标题栏 */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">表关系配置</h2>
+          <h2 className="text-lg font-semibold text-foreground">{t("title")}</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            拖拽连线建立表之间的 JOIN 关系，AI 查询时会自动使用
+            {t("description")}
           </p>
         </div>
         <button
@@ -394,20 +362,18 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
           className="flex items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
         >
           <RefreshCw size={14} />
-          刷新
+          {t("refresh")}
         </button>
       </div>
 
-      {/* 视图选择器和搜索栏 */}
       <div className="flex items-center gap-4 mb-4">
-        {/* 视图下拉选择器 */}
         <div className="relative">
           <button
             onClick={() => setShowLayoutDropdown(!showLayoutDropdown)}
             className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg hover:bg-muted transition-colors min-w-[160px]"
           >
             <span className="flex-1 text-left truncate">
-              {layouts?.find((l) => l.id === selectedLayoutId)?.name || "选择视图"}
+              {layouts?.find((l) => l.id === selectedLayoutId)?.name || t("selectView")}
             </span>
             <ChevronDown size={14} />
           </button>
@@ -421,7 +387,7 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
                       type="text"
                       value={newLayoutName}
                       onChange={(e) => setNewLayoutName(e.target.value)}
-                      placeholder="输入视图名称"
+                      placeholder={t("viewNamePlaceholder")}
                       className="flex-1 px-2 py-1 text-sm border border-border rounded"
                       autoFocus
                       onKeyDown={(e) => {
@@ -434,7 +400,7 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
                       disabled={!newLayoutName.trim() || createLayoutMutation.isPending}
                       className="px-2 py-1 text-sm bg-primary text-primary-foreground rounded disabled:opacity-50"
                     >
-                      创建
+                      {t("create")}
                     </button>
                   </div>
                 ) : (
@@ -443,7 +409,7 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
                     className="flex items-center gap-2 w-full px-2 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded"
                   >
                     <Plus size={14} />
-                    新建视图
+                    {t("newView")}
                   </button>
                 )}
               </div>
@@ -463,7 +429,7 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
                     <span className="text-sm truncate">
                       {layout.name}
                       {layout.is_default && (
-                        <span className="ml-2 text-xs text-muted-foreground">(默认)</span>
+                        <span className="ml-2 text-xs text-muted-foreground">({t("default")})</span>
                       )}
                     </span>
                     <div className="flex items-center gap-1">
@@ -473,7 +439,7 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
                           duplicateLayoutMutation.mutate(layout.id);
                         }}
                         className="p-1 hover:bg-background rounded"
-                        title="复制"
+                        title={t("duplicate")}
                       >
                         <Copy size={12} />
                       </button>
@@ -481,12 +447,12 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (confirm("确定要删除这个视图吗？")) {
+                            if (confirm(t("confirmDeleteView"))) {
                               deleteLayoutMutation.mutate(layout.id);
                             }
                           }}
                           className="p-1 hover:bg-background hover:text-destructive rounded"
-                          title="删除"
+                          title={t("deleteView")}
                         >
                           <Trash2 size={12} />
                         </button>
@@ -497,7 +463,7 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
 
                 {(!layouts || layouts.length === 0) && (
                   <div className="px-3 py-4 text-sm text-muted-foreground text-center">
-                    暂无视图，点击上方创建
+                    {t("noViews")}
                   </div>
                 )}
               </div>
@@ -505,14 +471,13 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
           )}
         </div>
 
-        {/* 搜索框 */}
         <div className="relative flex-1 max-w-xs">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜索表名..."
+            placeholder={t("searchTables")}
             className="w-full pl-9 pr-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
           {searchQuery && (
@@ -525,28 +490,25 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
           )}
         </div>
 
-        {/* 表统计 */}
         <div className="text-sm text-muted-foreground">
-          显示: {visibleTables.length}/{schemaInfo?.tables.length || 0} 表
+          {t("showCount", { visible: visibleTables.length, total: schemaInfo?.tables.length || 0 })}
         </div>
 
-        {/* 隐藏表按钮 */}
         {hiddenTables.size > 0 && (
           <button
             onClick={() => setShowHiddenPanel(!showHiddenPanel)}
             className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg hover:bg-muted transition-colors"
           >
             <EyeOff size={14} />
-            隐藏的表 ({hiddenTables.size})
+            {t("hiddenTables")} ({hiddenTables.size})
           </button>
         )}
       </div>
 
-      {/* 隐藏表面板 */}
       {showHiddenPanel && hiddenTables.size > 0 && (
         <div className="mb-4 p-3 bg-muted/50 border border-border rounded-lg">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium">隐藏的表</span>
+            <span className="text-sm font-medium">{t("hiddenTables")}</span>
             <button
               onClick={() => setShowHiddenPanel(false)}
               className="text-muted-foreground hover:text-foreground"
@@ -569,12 +531,11 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
         </div>
       )}
 
-      {/* 建议列表 */}
       {schemaInfo?.suggestions && schemaInfo.suggestions.length > 0 && (
         <div className="mb-4 p-3 bg-primary/5 border border-primary/20 rounded-lg">
           <div className="flex items-center gap-2 text-primary text-sm font-medium mb-2">
             <Lightbulb size={14} />
-            检测到可能的关系
+            {t("detectedRelationships")}
           </div>
           <div className="flex flex-wrap gap-2">
             {schemaInfo.suggestions.slice(0, 5).map((suggestion, index) => (
@@ -592,7 +553,6 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
         </div>
       )}
 
-      {/* 已保存的关系列表 */}
       {relationships && relationships.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2">
           {relationships.map((rel) => (
@@ -611,7 +571,6 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
         </div>
       )}
 
-      {/* React Flow 画布 */}
       <div
         className="border border-border rounded-lg overflow-hidden bg-muted/20"
         style={{ width: "100%", height: "500px", minHeight: "500px" }}
@@ -629,7 +588,7 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
           snapGrid={[15, 15]}
           onNodeContextMenu={(e, node) => {
             e.preventDefault();
-            if (confirm(`隐藏表 "${node.id}"？`)) {
+            if (confirm(t("confirmHideTable", { table: node.id }))) {
               hideTable(node.id);
             }
           }}
@@ -640,18 +599,16 @@ function SchemaSettingsInner({ connectionId }: SchemaSettingsProps) {
         </ReactFlow>
       </div>
 
-      {/* 保存状态提示 */}
       {updateLayoutMutation.isPending && (
         <div className="mt-2 text-xs text-muted-foreground flex items-center gap-1">
           <Loader2 size={12} className="animate-spin" />
-          保存中...
+          {t("saving")}
         </div>
       )}
     </div>
   );
 }
 
-// 导出组件，包装 ReactFlowProvider
 export function SchemaSettings({ connectionId }: SchemaSettingsProps) {
   return (
     <ReactFlowProvider>

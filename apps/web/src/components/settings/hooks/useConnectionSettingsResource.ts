@@ -74,8 +74,8 @@ export function useConnectionSettingsResource() {
       const response = await api.get(`/api/v1/config/connections/${connection.id}/export`);
       downloadJsonFile(buildConnectionExportName(connection.name), response.data.data);
     } catch (error) {
-      console.error("导出失败:", error);
-      alert("导出失败，请重试");
+      console.error("Export failed:", error);
+      alert("Export failed");
     }
   };
 

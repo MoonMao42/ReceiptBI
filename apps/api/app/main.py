@@ -17,7 +17,7 @@ from slowapi.util import get_remote_address
 
 from app.api.v1 import api_router
 from app.core.config import settings
-from app.core.demo_db import ensure_demo_connection, init_demo_database
+from app.core.demo_db import ensure_demo_connection, ensure_demo_semantic_terms, init_demo_database
 from app.db import AsyncSessionLocal, engine
 from app.db.base import Base
 
@@ -73,6 +73,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     async with AsyncSessionLocal() as session:
         await ensure_demo_connection(session, demo_db_path)
+        # Seed semantic layer demo terms (needs connection_id)
+        from sqlalchemy import select as sa_select
+        from app.db.tables import Connection
+        demo_conn_id = await session.scalar(
+            sa_select(Connection.id).where(Connection.name == "Sample Database")
+        )
+        if demo_conn_id:
+            await ensure_demo_semantic_terms(session, demo_conn_id)
         await session.commit()
 
     yield

@@ -3,6 +3,7 @@
 import { useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import { Database, Loader2, MessageSquare, Plus, Settings, Trash2 } from "lucide-react";
 import { api } from "@/lib/api/client";
 import type { ConversationListItem } from "@/lib/types/api";
@@ -18,6 +19,7 @@ const PAGE_SIZE = 20;
 
 export function Sidebar({ isOpen, onToggle: _onToggle }: SidebarProps) {
   const router = useRouter();
+  const t = useTranslations("chat");
   const { currentConversationId, setCurrentConversation, clearConversation } = useChatStore();
   const observerRef = useRef<IntersectionObserver | null>(null);
 
@@ -57,7 +59,7 @@ export function Sidebar({ isOpen, onToggle: _onToggle }: SidebarProps) {
 
   const handleDeleteConversation = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (!confirm("确定要删除这个对话吗？")) return;
+    if (!confirm(t("confirmDelete"))) return;
 
     try {
       await api.delete(`/api/v1/conversations/${id}`);
@@ -66,7 +68,7 @@ export function Sidebar({ isOpen, onToggle: _onToggle }: SidebarProps) {
       }
       refetch();
     } catch (error) {
-      console.error("删除失败", error);
+      console.error("Failed to delete", error);
     }
   };
 
@@ -87,14 +89,14 @@ export function Sidebar({ isOpen, onToggle: _onToggle }: SidebarProps) {
         <button
           onClick={() => clearConversation()}
           className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          title="新对话"
+          title={t("newChat")}
         >
           <Plus size={20} />
         </button>
       </div>
 
       <div className="flex-1 space-y-1 overflow-y-auto px-3 py-2">
-        <div className="mb-2 mt-2 px-2 text-xs font-medium uppercase text-muted-foreground">最近对话</div>
+        <div className="mb-2 mt-2 px-2 text-xs font-medium uppercase text-muted-foreground">{t("recentChats")}</div>
         {conversations.map((chat: ConversationListItem, index: number) => (
           <div
             key={chat.id}
@@ -116,12 +118,12 @@ export function Sidebar({ isOpen, onToggle: _onToggle }: SidebarProps) {
                   : "text-muted-foreground group-hover:text-primary"
               )}
             />
-            <span className="truncate">{chat.title || "未命名对话"}</span>
+            <span className="truncate">{chat.title || t("unnamed")}</span>
 
             <button
               onClick={(e) => handleDeleteConversation(e, chat.id)}
               className="absolute right-1 rounded p-1.5 text-muted-foreground opacity-0 transition-all hover:bg-destructive/20 hover:text-destructive group-hover:opacity-100"
-              title="删除"
+              title={t("delete")}
             >
               <Trash2 size={12} />
             </button>
@@ -135,7 +137,7 @@ export function Sidebar({ isOpen, onToggle: _onToggle }: SidebarProps) {
         )}
 
         {conversations.length === 0 && !isFetchingNextPage && (
-          <div className="py-8 text-center text-sm text-muted-foreground">暂无对话记录</div>
+          <div className="py-8 text-center text-sm text-muted-foreground">{t("noChats")}</div>
         )}
       </div>
 
@@ -144,7 +146,7 @@ export function Sidebar({ isOpen, onToggle: _onToggle }: SidebarProps) {
           onClick={() => router.push("/settings")}
           className="flex w-full items-center gap-3 rounded-lg p-2 text-sm text-foreground transition-colors hover:bg-muted"
         >
-          <Settings size={18} /> 设置
+          <Settings size={18} /> {t("settings")}
         </button>
       </div>
     </div>

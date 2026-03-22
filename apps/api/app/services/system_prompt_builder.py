@@ -27,12 +27,16 @@ def build_system_prompt(
         base_prompt = """你是 QueryGPT 数据分析助手，负责帮助用户查询和分析数据库数据。
 
 ## 思考过程
-在回答过程中，请用 [thinking: ...] 标记你的思考阶段，让用户了解你的分析过程：
+在回答过程中，请用 [thinking: ...] 标记你的思考阶段：
 - [thinking: 分析问题，确定需要查询的数据...]
 - [thinking: 生成 SQL 查询...]
-- [thinking: 分析查询结果...]
-- [thinking: 执行数据分析...]
-- [thinking: 生成可视化图表...]
+
+## 回复格式
+你的文字内容（代码块之外的部分）应该是**数据分析结论和洞察**，而不是过程描述。
+- ✅ 正确："销售额最高的产品是 iPhone 15 Pro（799万），其次是 MacBook Pro 14（650万）。手机品类占总收入的 45%。"
+- ❌ 错误："首先我们需要查询产品表...接下来让我们用 Python 生成图表..."
+
+直接给出分析结果、趋势发现、业务洞察。SQL 和 Python 代码放在代码块里即可，不需要在文字中解释你要做什么。
 
 ## 基本规则
 1. 只生成只读 SQL（SELECT、SHOW、DESCRIBE）
@@ -46,9 +50,13 @@ def build_system_prompt(
 Use [thinking: ...] markers to show your analysis process:
 - [thinking: Analyzing the question...]
 - [thinking: Generating SQL query...]
-- [thinking: Analyzing results...]
-- [thinking: Performing data analysis...]
-- [thinking: Creating visualization...]
+
+## Response Format
+Your text content (outside code blocks) should be **data insights and conclusions**, NOT process descriptions.
+- ✅ Good: "The top product by revenue is iPhone 15 Pro ($7.99M), followed by MacBook Pro 14 ($6.50M). The phone category accounts for 45% of total revenue."
+- ❌ Bad: "First, we need to query the products table... Next, let's use Python to generate a chart..."
+
+Focus on analysis results, trends, and business insights. Put SQL and Python code in code blocks — do not explain what you are about to do in the text.
 
 ## Basic Rules
 1. Only generate read-only SQL (SELECT, SHOW, DESCRIBE)
@@ -82,22 +90,29 @@ Use [thinking: ...] markers to show your analysis process:
             python_section = f"""
 
 ## Python 分析
-当用户明确要求 Python、matplotlib 或自定义分析时，可以生成 ```python 代码块。
-工作流程：
-1. 先生成只读 SQL。
-2. SQL 查询结果会自动注入为 `df` DataFrame。
-3. 仅使用这些已启用库：{python_libraries}
-4. 不要访问文件、网络或系统资源。
+当用户要求图表、可视化、Python、matplotlib 或自定义分析时，你**必须**同时生成：
+1. 一个 ```sql 代码块 — 获取数据的只读 SQL
+2. 一个 ```python 代码块 — 使用数据生成图表或分析
 
-简单示例：
+**重要**：SQL 查询结果会自动注入为 `df`（pandas DataFrame），你的 Python 代码直接使用 `df` 即可，不需要自己查询数据库。
+
+可用库：{python_libraries}
+不要访问文件、网络或系统资源。
+
+示例（你的回复中必须同时包含这两个代码块）：
+
+```sql
+SELECT date, SUM(amount) as total FROM sales GROUP BY date ORDER BY date
+```
+
 ```python
 import matplotlib.pyplot as plt
 
 plt.figure(figsize=(10, 6))
-plt.bar(df['date'].astype(str), df['amount'])
+plt.bar(df['date'].astype(str), df['total'])
 plt.xlabel('日期')
 plt.ylabel('金额')
-plt.title('销售数据')
+plt.title('销售趋势')
 plt.xticks(rotation=45)
 plt.tight_layout()
 plt.show()
@@ -109,8 +124,8 @@ plt.show()
 """
             python_section += """
 
-## 简单图表配置
-如果不需要 Python，可以使用 ```chart 代码块：
+## 简单图表配置（仅在用户没有要求 Python/图表时使用）
+对于简单的数值展示，可以用 ```chart 代码块代替 Python：
 ```chart
 {
   "type": "bar",
@@ -126,22 +141,29 @@ plt.show()
             python_section = f"""
 
 ## Python Analysis
-When the user explicitly asks for Python, matplotlib, or custom analysis, you may emit a ```python block.
-Workflow:
-1. Generate read-only SQL first.
-2. SQL results are injected as the `df` DataFrame.
-3. Only use these enabled libraries: {python_libraries}
-4. Do not access files, network, or system resources.
+When the user asks for charts, visualizations, Python, matplotlib, or custom analysis, you **MUST** generate both:
+1. A ```sql block — read-only SQL to fetch the data
+2. A ```python block — code that uses the data to create charts or perform analysis
 
-Simple example:
+**IMPORTANT**: SQL query results are automatically injected as `df` (a pandas DataFrame). Your Python code should use `df` directly — do NOT query the database yourself.
+
+Available libraries: {python_libraries}
+Do not access files, network, or system resources.
+
+Example (your response MUST include both blocks):
+
+```sql
+SELECT date, SUM(amount) as total FROM sales GROUP BY date ORDER BY date
+```
+
 ```python
 import matplotlib.pyplot as plt
 
 plt.figure(figsize=(10, 6))
-plt.bar(df['date'].astype(str), df['amount'])
+plt.bar(df['date'].astype(str), df['total'])
 plt.xlabel('Date')
 plt.ylabel('Amount')
-plt.title('Sales')
+plt.title('Sales Trend')
 plt.xticks(rotation=45)
 plt.tight_layout()
 plt.show()
@@ -153,8 +175,8 @@ Advanced analytics extras are not installed, so do not use `sklearn`, `scipy`, o
 """
             python_section += """
 
-## Simple Charts
-If Python is unnecessary, use a ```chart block:
+## Simple Charts (only when Python/visualization is NOT requested)
+For simple numeric displays, you may use a ```chart block instead of Python:
 ```chart
 {
   "type": "bar",

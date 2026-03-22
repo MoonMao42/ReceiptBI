@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import type { ConfiguredModel } from "@/lib/types/api";
 import type { ModelTestResult } from "@/lib/settings/models";
+import { useTranslations } from "next-intl";
 
 interface ModelSettingsListProps {
   models: ConfiguredModel[];
@@ -33,6 +34,9 @@ export function ModelSettingsList({
   onEdit,
   onDelete,
 }: ModelSettingsListProps) {
+  const t = useTranslations("modelSettings");
+  const tc = useTranslations("common");
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -44,8 +48,8 @@ export function ModelSettingsList({
   if (!models.length) {
     return (
       <div className="text-center py-12 text-muted-foreground">
-        <p>暂无模型配置</p>
-        <p className="text-sm mt-1">先选择一个适配预设，再添加第一个模型</p>
+        <p>{t("noModels")}</p>
+        <p className="text-sm mt-1">{t("selectPresetFirst")}</p>
       </div>
     );
   }
@@ -65,11 +69,11 @@ export function ModelSettingsList({
                 <div className="font-medium text-foreground">{model.name}</div>
                 {model.api_key_configured ? (
                   <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-xs text-green-700">
-                    Key 已配置
+                    {t("keyConfigured")}
                   </span>
                 ) : (
                   <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-700">
-                    Key 未配置
+                    {t("keyNotConfigured")}
                   </span>
                 )}
               </div>
@@ -94,7 +98,7 @@ export function ModelSettingsList({
                 disabled={testingModelId === model.id}
                 data-testid={`model-test-${model.id}`}
                 className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
-                title="测试连接"
+                title="Test model"
               >
                 {testingModelId === model.id ? (
                   <Loader2 size={16} className="animate-spin" />
@@ -105,7 +109,7 @@ export function ModelSettingsList({
               <button
                 onClick={() => onEdit(model)}
                 className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
-                title="编辑"
+                title={tc("edit")}
               >
                 <Pencil size={16} />
               </button>
@@ -113,7 +117,7 @@ export function ModelSettingsList({
                 onClick={() => onDelete(model.id)}
                 disabled={deletePending}
                 className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-                title="删除"
+                title={tc("delete")}
               >
                 <Trash2 size={16} />
               </button>
