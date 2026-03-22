@@ -20,6 +20,7 @@ import {
 } from "recharts";
 
 import type { ChartDataPoint } from "@/lib/types/api";
+import { useTranslations } from "next-intl";
 
 interface ChartDisplayProps {
   type: "bar" | "line" | "pie" | "area";
@@ -48,6 +49,8 @@ export function ChartDisplay({
   title,
 }: ChartDisplayProps) {
   // 自动检测数据键
+  const t = useTranslations("assistant");
+
   const keys = useMemo(() => {
     if (!data || data.length === 0) return { x: xKey, y: yKey, allNumberKeys: [] };
 
@@ -75,7 +78,7 @@ export function ChartDisplay({
   if (!data || data.length === 0) {
     return (
       <div className="flex items-center justify-center h-48 bg-secondary rounded-lg text-muted-foreground">
-        暂无数据
+        {t("noData")}
       </div>
     );
   }

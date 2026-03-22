@@ -26,7 +26,8 @@ interface ChatState {
     query: string,
     connectionId?: string | null,
     modelId?: string | null,
-    contextRounds?: number | null
+    contextRounds?: number | null,
+    language?: string
   ) => Promise<void>;
   stopGeneration: () => void;
   setCurrentConversation: (id: string) => void;
@@ -50,7 +51,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     query: string,
     connectionId?: string | null,
     modelId?: string | null,
-    contextRounds?: number | null
+    contextRounds?: number | null,
+    language?: string
   ) => {
     if (connectionId) set({ lastConnectionId: connectionId });
     if (modelId) set({ lastModelId: modelId });
@@ -75,7 +77,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const params: Record<string, string> = {
         query,
-        language: "zh",
+        language: language || "en",
       };
 
       if (currentConversationId) params.conversation_id = currentConversationId;

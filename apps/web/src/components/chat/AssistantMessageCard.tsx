@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 import { AlertTriangle, PlayCircle, RefreshCw, Sparkles } from "lucide-react";
 import Image from "next/image";
 import ReactMarkdown from "react-markdown";
@@ -25,6 +26,7 @@ export function AssistantMessageCard({
   onRetry,
   onRerun,
 }: AssistantMessageCardProps) {
+  const t = useTranslations("assistant");
   const [activeTab, setActiveTab] = useState<AssistantTab>("summary");
   const executionContext = message.executionContext;
   const diagnostics = message.diagnostics || [];
@@ -33,19 +35,21 @@ export function AssistantMessageCard({
   const tabs = useMemo(
     () =>
       [
-        { id: "summary", label: "总结", visible: true },
+        { id: "summary", label: t("summary"), visible: true },
         { id: "sql", label: "SQL", visible: Boolean(message.sql) },
-        { id: "data", label: "数据", visible: Boolean(message.data?.length) },
+        { id: "data", label: t("data"), visible: Boolean(message.data?.length) },
         {
           id: "chart",
-          label: "图表",
+          label: t("chart"),
           visible: Boolean(message.visualization || message.pythonImages?.length),
         },
-        { id: "python", label: "Python", visible: Boolean(message.pythonOutput) },
-        { id: "diagnostics", label: "诊断", visible: true },
+        { id: "python", label: "Python", visible: Boolean(message.pythonCode || message.pythonOutput) },
+        { id: "diagnostics", label: t("diagnostics"), visible: true },
       ].filter((tab) => tab.visible) as Array<{ id: AssistantTab; label: string }>,
     [
+      t,
       message.data?.length,
+      message.pythonCode,
       message.pythonImages?.length,
       message.pythonOutput,
       message.sql,
@@ -82,7 +86,7 @@ export function AssistantMessageCard({
             className="inline-flex items-center gap-1 rounded-full bg-secondary px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-muted"
           >
             <PlayCircle size={14} />
-            重新运行
+            {t("rerun")}
           </button>
           {message.hasError && (
             <button
@@ -90,7 +94,7 @@ export function AssistantMessageCard({
               className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-colors hover:bg-primary/90"
             >
               <RefreshCw size={14} />
-              重试
+              {t("retry")}
             </button>
           )}
         </div>
@@ -99,20 +103,20 @@ export function AssistantMessageCard({
       <div className="space-y-4 px-5 py-4">
         {message.hasError && (
           <div className="rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            {message.errorMessage || "执行出错"}
+            {message.errorMessage || t("executionError")}
           </div>
         )}
 
         {activeTab === "summary" && (
           <ReactMarkdown className="prose prose-sm max-w-none dark:prose-invert">
-            {message.content || "暂无总结"}
+            {message.content || t("noSummary")}
           </ReactMarkdown>
         )}
 
         {activeTab === "sql" && message.sql && <SqlHighlight code={message.sql} />}
 
         {activeTab === "data" && message.data && message.data.length > 0 && (
-          <DataTable data={message.data} title={`查询结果 (${message.data.length} 行)`} />
+          <DataTable data={message.data} title={`${t("queryResult")} (${message.data.length})`} />
         )}
 
         {activeTab === "chart" && (
@@ -128,7 +132,7 @@ export function AssistantMessageCard({
               <Image
                 key={imageIndex}
                 src={`data:image/png;base64,${img}`}
-                alt={`分析图表 ${imageIndex + 1}`}
+                alt={t("chartAlt", { index: imageIndex + 1 })}
                 width={1280}
                 height={720}
                 unoptimized
@@ -137,66 +141,86 @@ export function AssistantMessageCard({
             ))}
             {!message.visualization && !message.pythonImages?.length && (
               <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-                当前回复没有图表输出
+                {t("noChart")}
               </div>
             )}
           </div>
         )}
 
         {activeTab === "python" && (
-          <pre className="overflow-x-auto whitespace-pre-wrap rounded-xl bg-secondary p-4 text-xs text-foreground">
-            {message.pythonOutput || "当前回复没有 Python 输出"}
-          </pre>
+          <div className="space-y-3">
+            {message.pythonCode && (
+              <div>
+                <div className="mb-1 text-xs font-medium text-muted-foreground">{t("pythonCode")}</div>
+                <pre className="overflow-x-auto whitespace-pre-wrap rounded-xl bg-secondary p-4 text-xs text-foreground">
+                  {message.pythonCode}
+                </pre>
+              </div>
+            )}
+            {message.pythonOutput && (
+              <div>
+                <div className="mb-1 text-xs font-medium text-muted-foreground">{t("pythonOutputLabel")}</div>
+                <pre className="overflow-x-auto whitespace-pre-wrap rounded-xl bg-secondary p-4 text-xs text-foreground">
+                  {message.pythonOutput}
+                </pre>
+              </div>
+            )}
+            {!message.pythonCode && !message.pythonOutput && (
+              <pre className="overflow-x-auto whitespace-pre-wrap rounded-xl bg-secondary p-4 text-xs text-foreground">
+                {t("noPython")}
+              </pre>
+            )}
+          </div>
         )}
 
         {activeTab === "diagnostics" && (
           <div className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="rounded-xl border border-border bg-secondary p-4">
-                <div className="text-xs text-muted-foreground">模型</div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="min-w-0 rounded-xl border border-border bg-secondary p-4">
+                <div className="text-xs text-muted-foreground">{t("modelLabel")}</div>
                 <div className="mt-1 text-sm text-foreground">
                   {executionContext?.model_name || executionContext?.model_identifier || "-"}
                 </div>
               </div>
-              <div className="rounded-xl border border-border bg-secondary p-4">
-                <div className="text-xs text-muted-foreground">数据库连接</div>
+              <div className="min-w-0 rounded-xl border border-border bg-secondary p-4">
+                <div className="text-xs text-muted-foreground">{t("connectionLabel")}</div>
                 <div className="mt-1 text-sm text-foreground">
                   {executionContext?.connection_name || "-"}
                 </div>
                 {(executionContext?.database_name || executionContext?.connection_host) && (
-                  <div className="mt-1 text-xs text-muted-foreground">
+                  <div className="mt-1 truncate text-xs text-muted-foreground" title={[executionContext.database_name, executionContext.connection_host].filter(Boolean).join(" · ")}>
                     {[executionContext.database_name, executionContext.connection_host]
                       .filter(Boolean)
                       .join(" · ")}
                   </div>
                 )}
               </div>
-              <div className="rounded-xl border border-border bg-secondary p-4">
+              <div className="min-w-0 rounded-xl border border-border bg-secondary p-4">
                 <div className="text-xs text-muted-foreground">Provider</div>
                 <div className="mt-1 text-sm text-foreground">
                   {executionContext?.provider_summary || "-"}
                 </div>
                 {(executionContext?.source_provider || executionContext?.resolved_provider) && (
                   <div className="mt-1 text-xs text-muted-foreground">
-                    源 provider: {executionContext?.source_provider || "-"} · 运行时 provider:{" "}
+                    {t("sourceProvider")}: {executionContext?.source_provider || "-"} · {t("runtimeProvider")}:{" "}
                     {executionContext?.resolved_provider || "-"}
                   </div>
                 )}
               </div>
-              <div className="rounded-xl border border-border bg-secondary p-4">
-                <div className="text-xs text-muted-foreground">上下文轮数</div>
+              <div className="min-w-0 rounded-xl border border-border bg-secondary p-4">
+                <div className="text-xs text-muted-foreground">{t("contextRoundsLabel")}</div>
                 <div className="mt-1 text-sm text-foreground">
                   {executionContext?.context_rounds || "-"}
                 </div>
               </div>
-              <div className="rounded-xl border border-border bg-secondary p-4">
-                <div className="text-xs text-muted-foreground">执行耗时</div>
+              <div className="min-w-0 rounded-xl border border-border bg-secondary p-4">
+                <div className="text-xs text-muted-foreground">{t("execTime")}</div>
                 <div className="mt-1 text-sm text-foreground">
                   {message.executionTime ? `${message.executionTime.toFixed(2)}s` : "-"}
                 </div>
               </div>
-              <div className="rounded-xl border border-border bg-secondary p-4">
-                <div className="text-xs text-muted-foreground">结果行数</div>
+              <div className="min-w-0 rounded-xl border border-border bg-secondary p-4">
+                <div className="text-xs text-muted-foreground">{t("rowCount")}</div>
                 <div className="mt-1 text-sm text-foreground">{message.rowsCount ?? "-"}</div>
               </div>
             </div>
@@ -204,20 +228,20 @@ export function AssistantMessageCard({
             <div className="flex flex-wrap items-center gap-2">
               <StatusChip>
                 <Sparkles size={12} />
-                自动修复 {autoRepairCount} 次
+                {t("autoRepair", { count: autoRepairCount })}
               </StatusChip>
               {message.errorCategory && (
-                <StatusChip tone="warning">错误分类: {message.errorCategory}</StatusChip>
+                <StatusChip tone="warning">{t("errorCategory")}: {message.errorCategory}</StatusChip>
               )}
               {message.errorCode && (
-                <StatusChip tone="warning">错误代码: {message.errorCode}</StatusChip>
+                <StatusChip tone="warning">{t("errorCode")}: {message.errorCode}</StatusChip>
               )}
             </div>
 
             <div className="rounded-2xl border border-border bg-secondary/50 p-4">
               <div className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
                 <AlertTriangle size={14} />
-                尝试记录
+                {t("attemptLog")}
               </div>
               {diagnostics.length ? (
                 <div className="space-y-3">
@@ -227,16 +251,16 @@ export function AssistantMessageCard({
                       className="rounded-xl border border-border bg-background px-4 py-3"
                     >
                       <div className="flex flex-wrap items-center gap-2">
-                        <StatusChip>{`第 ${entry.attempt || 1} 次 · ${entry.phase || "unknown"}`}</StatusChip>
-                        {entry.status === "success" && <StatusChip tone="success">成功</StatusChip>}
+                        <StatusChip>{t("attemptLabel", { attempt: entry.attempt || 1, phase: entry.phase || "unknown" })}</StatusChip>
+                        {entry.status === "success" && <StatusChip tone="success">{t("success")}</StatusChip>}
                         {entry.status === "repaired" && (
-                          <StatusChip tone="success">已修复</StatusChip>
+                          <StatusChip tone="success">{t("repaired")}</StatusChip>
                         )}
-                        {entry.status === "error" && <StatusChip tone="warning">失败</StatusChip>}
+                        {entry.status === "error" && <StatusChip tone="warning">{t("failed")}</StatusChip>}
                         {entry.error_category && (
                           <StatusChip tone="warning">{entry.error_category}</StatusChip>
                         )}
-                        {entry.recoverable && <StatusChip>可自动恢复</StatusChip>}
+                        {entry.recoverable && <StatusChip>{t("recoverable")}</StatusChip>}
                       </div>
                       <div className="mt-2 text-sm text-foreground">{entry.message || "-"}</div>
                       {entry.sql && (
@@ -253,7 +277,7 @@ export function AssistantMessageCard({
                   ))}
                 </div>
               ) : (
-                <div className="text-sm text-muted-foreground">当前没有诊断轨迹。</div>
+                <div className="text-sm text-muted-foreground">{t("noDiagnostics")}</div>
               )}
             </div>
           </div>

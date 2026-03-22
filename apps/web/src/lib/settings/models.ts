@@ -90,7 +90,7 @@ export function parseJsonMap(value: string, label: string): Record<string, strin
   if (!value.trim()) return {};
   const parsed = JSON.parse(value);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`${label} 必须是 JSON 对象`);
+    throw new Error(`${label} must be a JSON object`);
   }
 
   const normalized: Record<string, string> = {};

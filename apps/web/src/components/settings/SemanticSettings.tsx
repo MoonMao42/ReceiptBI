@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, Loader2, Pencil, X, BookOpen } from "lucide-react";
 import { api } from "@/lib/api/client";
+import { useTranslations } from "next-intl";
 
 interface SemanticTerm {
   id: string;
@@ -26,13 +27,6 @@ interface TermFormData {
   examples: string;
 }
 
-const TERM_TYPES = [
-  { value: "metric", label: "指标", description: "可计算的数值，如销售额、订单数" },
-  { value: "dimension", label: "维度", description: "分组依据，如地区、时间" },
-  { value: "filter", label: "筛选条件", description: "常用的过滤条件" },
-  { value: "alias", label: "别名", description: "表或字段的别名映射" },
-];
-
 const initialFormData: TermFormData = {
   term: "",
   expression: "",
@@ -48,8 +42,16 @@ export function SemanticSettings() {
   const [formData, setFormData] = useState<TermFormData>(initialFormData);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const t = useTranslations("semantic");
+  const tc = useTranslations("common");
 
-  // 获取术语列表
+  const TERM_TYPES = [
+    { value: "metric", label: t("typeMetric"), description: t("typeMetricDesc") },
+    { value: "dimension", label: t("typeDimension"), description: t("typeDimensionDesc") },
+    { value: "filter", label: t("typeFilter"), description: t("typeFilterDesc") },
+    { value: "alias", label: t("typeAlias"), description: t("typeAliasDesc") },
+  ];
+
   const { data: terms, isLoading } = useQuery({
     queryKey: ["semantic-terms"],
     queryFn: async () => {
@@ -58,7 +60,6 @@ export function SemanticSettings() {
     },
   });
 
-  // 获取数据库连接列表（用于关联）
   const { data: connections } = useQuery({
     queryKey: ["connections"],
     queryFn: async () => {
@@ -67,7 +68,6 @@ export function SemanticSettings() {
     },
   });
 
-  // 添加术语
   const addMutation = useMutation({
     mutationFn: async (data: TermFormData) => {
       const payload = {
@@ -87,11 +87,10 @@ export function SemanticSettings() {
     },
     onError: (err) => {
       const axiosErr = err as { response?: { data?: { detail?: string } } };
-      setError(axiosErr.response?.data?.detail || "添加术语失败");
+      setError(axiosErr.response?.data?.detail || t("addFailed"));
     },
   });
 
-  // 更新术语
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: TermFormData }) => {
       const payload = {
@@ -111,11 +110,10 @@ export function SemanticSettings() {
     },
     onError: (err) => {
       const axiosErr = err as { response?: { data?: { detail?: string } } };
-      setError(axiosErr.response?.data?.detail || "更新术语失败");
+      setError(axiosErr.response?.data?.detail || t("updateFailed"));
     },
   });
 
-  // 删除术语
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       await api.delete(`/api/v1/config/semantic/terms/${id}`);
@@ -125,7 +123,7 @@ export function SemanticSettings() {
     },
     onError: (err) => {
       const axiosErr = err as { response?: { data?: { detail?: string } } };
-      setError(axiosErr.response?.data?.detail || "删除术语失败");
+      setError(axiosErr.response?.data?.detail || t("deleteFailed"));
     },
   });
 
@@ -162,7 +160,7 @@ export function SemanticSettings() {
   };
 
   const handleDelete = (id: string) => {
-    if (confirm("确定要删除这个术语吗？")) {
+    if (confirm(t("confirmDelete"))) {
       deleteMutation.mutate(id);
     }
   };
@@ -170,7 +168,7 @@ export function SemanticSettings() {
   const isSubmitting = addMutation.isPending || updateMutation.isPending;
 
   const getTermTypeLabel = (type: string) => {
-    return TERM_TYPES.find((t) => t.value === type)?.label || type;
+    return TERM_TYPES.find((tt) => tt.value === type)?.label || type;
   };
 
   const getTermTypeColor = (type: string) => {
@@ -192,9 +190,9 @@ export function SemanticSettings() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">语义层配置</h2>
+          <h2 className="text-lg font-semibold text-foreground">{t("title")}</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            定义业务术语，让 AI 更好地理解你的数据
+            {t("description")}
           </p>
         </div>
         <button
@@ -202,11 +200,10 @@ export function SemanticSettings() {
           className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm"
         >
           <Plus size={16} />
-          添加术语
+          {t("addTerm")}
         </button>
       </div>
 
-      {/* 错误提示 */}
       {error && (
         <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-lg flex items-center justify-between">
           <span className="text-sm text-destructive">{error}</span>
@@ -216,7 +213,6 @@ export function SemanticSettings() {
         </div>
       )}
 
-      {/* 添加/编辑表单 */}
       {showForm && (
         <form
           onSubmit={handleSubmit}
@@ -224,7 +220,7 @@ export function SemanticSettings() {
         >
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-medium text-foreground">
-              {editingId ? "编辑术语" : "添加术语"}
+              {editingId ? t("editTerm") : t("addTerm")}
             </h3>
             <button type="button" onClick={resetForm} className="text-muted-foreground hover:text-foreground">
               <X size={18} />
@@ -233,56 +229,56 @@ export function SemanticSettings() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-foreground mb-1">
-                术语名称 *
+                {t("termName")} *
               </label>
               <input
                 type="text"
                 value={formData.term}
                 onChange={(e) => setFormData({ ...formData, term: e.target.value })}
                 className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="例如: 月活用户、GMV"
+                placeholder={t("termNamePlaceholder")}
                 required
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-foreground mb-1">
-                术语类型
+                {t("termType")}
               </label>
               <select
                 value={formData.term_type}
                 onChange={(e) => setFormData({ ...formData, term_type: e.target.value })}
                 className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring focus:border-transparent"
               >
-                {TERM_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label} - {t.description}
+                {TERM_TYPES.map((tt) => (
+                  <option key={tt.value} value={tt.value}>
+                    {tt.label} - {tt.description}
                   </option>
                 ))}
               </select>
             </div>
             <div className="col-span-2">
               <label className="block text-sm font-medium text-foreground mb-1">
-                SQL 表达式 *
+                {t("sqlExpression")} *
               </label>
               <input
                 type="text"
                 value={formData.expression}
                 onChange={(e) => setFormData({ ...formData, expression: e.target.value })}
                 className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground font-mono text-sm focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="例如: COUNT(DISTINCT user_id) 或 SUM(order_amount)"
+                placeholder={t("sqlExpressionPlaceholder")}
                 required
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-foreground mb-1">
-                关联数据库 (可选)
+                {t("linkedConnection")}
               </label>
               <select
                 value={formData.connection_id}
                 onChange={(e) => setFormData({ ...formData, connection_id: e.target.value })}
                 className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring focus:border-transparent"
               >
-                <option value="">全局（所有数据库）</option>
+                <option value="">{t("globalAllConnections")}</option>
                 {connections?.map((conn) => (
                   <option key={conn.id} value={conn.id}>
                     {conn.name}
@@ -292,25 +288,25 @@ export function SemanticSettings() {
             </div>
             <div>
               <label className="block text-sm font-medium text-foreground mb-1">
-                描述 (可选)
+                {t("descriptionOptional")}
               </label>
               <input
                 type="text"
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="术语的详细说明"
+                placeholder={t("descriptionPlaceholder")}
               />
             </div>
             <div className="col-span-2">
               <label className="block text-sm font-medium text-foreground mb-1">
-                使用示例 (可选，每行一个)
+                {t("examplesOptional")}
               </label>
               <textarea
                 value={formData.examples}
                 onChange={(e) => setFormData({ ...formData, examples: e.target.value })}
                 className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="查询本月的月活用户&#10;按地区统计月活"
+                placeholder={t("examplesPlaceholder")}
                 rows={2}
               />
             </div>
@@ -321,7 +317,7 @@ export function SemanticSettings() {
               onClick={resetForm}
               className="px-4 py-2 text-muted-foreground hover:bg-muted rounded-lg transition-colors text-sm"
             >
-              取消
+              {tc("cancel")}
             </button>
             <button
               type="submit"
@@ -329,13 +325,12 @@ export function SemanticSettings() {
               className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm"
             >
               {isSubmitting && <Loader2 size={16} className="animate-spin" />}
-              {editingId ? "更新" : "保存"}
+              {editingId ? tc("update") : tc("save")}
             </button>
           </div>
         </form>
       )}
 
-      {/* 术语列表 */}
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="animate-spin text-muted-foreground" size={24} />
@@ -364,7 +359,7 @@ export function SemanticSettings() {
                   {term.examples.length > 0 && (
                     <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
                       <BookOpen size={12} />
-                      <span>示例: {term.examples.slice(0, 2).join(", ")}</span>
+                      <span>{t("examples")}: {term.examples.slice(0, 2).join(", ")}</span>
                     </div>
                   )}
                 </div>
@@ -372,7 +367,7 @@ export function SemanticSettings() {
                   <button
                     onClick={() => handleEdit(term)}
                     className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
-                    title="编辑"
+                    title={tc("edit")}
                   >
                     <Pencil size={16} />
                   </button>
@@ -380,7 +375,7 @@ export function SemanticSettings() {
                     onClick={() => handleDelete(term.id)}
                     disabled={deleteMutation.isPending}
                     className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-                    title="删除"
+                    title={tc("delete")}
                   >
                     <Trash2 size={16} />
                   </button>
@@ -392,8 +387,8 @@ export function SemanticSettings() {
       ) : (
         <div className="text-center py-12 text-muted-foreground">
           <BookOpen size={48} className="mx-auto mb-4 opacity-50" />
-          <p>暂无语义术语</p>
-          <p className="text-sm mt-1">添加业务术语，让 AI 更懂你的数据</p>
+          <p>{t("emptyState")}</p>
+          <p className="text-sm mt-1">{t("emptyStateHint")}</p>
         </div>
       )}
     </div>

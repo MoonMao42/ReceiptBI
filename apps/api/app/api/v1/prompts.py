@@ -153,6 +153,19 @@ async def set_default_prompt(
     return APIResponse.ok(data=PromptResponse.model_validate(prompt), message="已设为默认提示词")
 
 
+@router.post("/{prompt_id}/unset-default", response_model=APIResponse[PromptResponse])
+async def unset_default_prompt(
+    prompt_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """取消默认提示词，恢复使用内置提示词"""
+    prompt = await _get_prompt_or_404(db, prompt_id)
+    prompt.is_default = False
+    await db.commit()
+    await db.refresh(prompt)
+    return APIResponse.ok(data=PromptResponse.model_validate(prompt), message="已恢复内置提示词")
+
+
 @router.get("/{prompt_id}/versions", response_model=APIResponse[list[PromptVersionResponse]])
 async def get_prompt_versions(
     prompt_id: UUID,

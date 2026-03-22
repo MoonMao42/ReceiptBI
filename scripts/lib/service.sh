@@ -184,6 +184,15 @@ start_frontend() {
 
 open_browser() {
   [ "$NO_BROWSER" = "1" ] && return 0
+  # Ensure backend is ready before opening browser to avoid error page
+  if ! curl -sf "http://localhost:8000/health" >/dev/null 2>&1; then
+    info "等待后端就绪..."
+    wait_for_http "http://localhost:8000/health" "后端" 15 || { warn "后端未就绪，跳过打开浏览器"; return 0; }
+  fi
+  if ! curl -sf "http://localhost:3000" >/dev/null 2>&1; then
+    info "等待前端就绪..."
+    wait_for_http "http://localhost:3000" "前端" 15 || { warn "前端未就绪，跳过打开浏览器"; return 0; }
+  fi
   local url="http://localhost:3000"
   case "$OS" in
     macos) open "$url" >/dev/null 2>&1 || true ;;
