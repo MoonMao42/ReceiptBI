@@ -34,7 +34,7 @@ export function useModelSettingsResource() {
       queryClient.invalidateQueries({ queryKey: ["models"] });
     },
     onError: (error) => {
-      setError(getApiErrorMessage(error, "添加模型失败，请检查配置"));
+      setError(getApiErrorMessage(error, "Failed to add model"));
     },
   });
 
@@ -48,7 +48,7 @@ export function useModelSettingsResource() {
       queryClient.invalidateQueries({ queryKey: ["models"] });
     },
     onError: (error) => {
-      setError(getApiErrorMessage(error, "更新模型失败，请检查配置"));
+      setError(getApiErrorMessage(error, "Failed to update model"));
     },
   });
 
@@ -61,7 +61,7 @@ export function useModelSettingsResource() {
       queryClient.invalidateQueries({ queryKey: ["models"] });
     },
     onError: (error) => {
-      setError(getApiErrorMessage(error, "删除模型失败"));
+      setError(getApiErrorMessage(error, "Failed to delete model"));
     },
   });
 
@@ -78,7 +78,7 @@ export function useModelSettingsResource() {
       }, 8000);
     },
     onError: (error) => {
-      setError(getApiErrorMessage(error, "测试失败"));
+      setError(getApiErrorMessage(error, "Test failed"));
     },
   });
 

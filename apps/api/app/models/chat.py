@@ -61,6 +61,7 @@ class SSEEvent(BaseModel):
         cls,
         content: str,
         sql: str | None = None,
+        python: str | None = None,
         data: list[dict] | None = None,
         rows_count: int | None = None,
         execution_time: float | None = None,
@@ -72,6 +73,7 @@ class SSEEvent(BaseModel):
             data={
                 "content": content,
                 "sql": sql,
+                "python": python,
                 "data": data,
                 "rows_count": rows_count,
                 "execution_time": execution_time,

@@ -13,6 +13,7 @@ from typing import Any
 import structlog
 
 from app.core.config import settings
+from app.i18n import get_progress_message, t
 from app.models import SSEEvent
 from app.services.database import create_database_manager
 from app.services.engine_content import (
@@ -73,6 +74,7 @@ class GptmeEngine:
         auto_repair_enabled: bool = True,
         available_python_libraries: list[str] | None = None,
         analytics_installed: bool = False,
+        language: str = "zh",
     ):
         self.model = model or settings.GPTME_MODEL or settings.DEFAULT_MODEL
         self.provider = provider
@@ -90,6 +92,7 @@ class GptmeEngine:
             "matplotlib",
         ]
         self.analytics_installed = analytics_installed
+        self.language = language
         self._python_runtime = PythonExecutionRuntime(
             available_python_libraries=self.available_python_libraries,
             analytics_installed=self.analytics_installed,
@@ -162,10 +165,10 @@ class GptmeEngine:
         failed_sql: str | None,
         error_message: str,
     ) -> str:
-        return build_sql_repair_prompt(query, failed_sql, error_message)
+        return build_sql_repair_prompt(query, failed_sql, error_message, lang=self.language)
 
     def _build_missing_sql_prompt(self, query: str) -> str:
-        return build_missing_sql_prompt(query)
+        return build_missing_sql_prompt(query, lang=self.language)
 
     def _build_python_repair_prompt(
         self,
@@ -180,6 +183,7 @@ class GptmeEngine:
             failed_python=failed_python,
             error_message=error_message,
             available_python_libraries=self.available_python_libraries,
+            lang=self.language,
         )
 
     def _build_repair_messages(
@@ -228,7 +232,7 @@ class GptmeEngine:
 
         async for chunk in response:
             if stop_checker and stop_checker():
-                raise StopRequestedError("查询已取消")
+                raise StopRequestedError(t("diag.cancelled", self.language))
 
             delta = chunk.choices[0].delta
             if not delta.content:
@@ -426,7 +430,7 @@ class GptmeEngine:
             state,
             phase="generate",
             status="error",
-            message=f"模型生成失败: {error}",
+            message=t("diag.model_failed", self.language).format(error=error),
             error_code=code,
             error_category=category,
             recoverable=recoverable,
@@ -445,7 +449,7 @@ class GptmeEngine:
                 state,
                 phase="generate",
                 stage="generating",
-                message="模型调用失败，正在自动重试。",
+                message=t("diag.model_retry", self.language),
                 error_code=code,
                 error_category=category,
                 completion_messages=state.completion_messages,
@@ -466,14 +470,14 @@ class GptmeEngine:
         return WorkflowDecision(status="halt", events=events)
 
     def _handle_missing_sql(self, state: EngineRunState) -> WorkflowDecision:
-        if not state.db_config or state.final_sql:
+        if not state.db_config or state.final_sql or state.final_python:
             return WorkflowDecision()
 
         diagnostic = self._record_diagnostic(
             state,
             phase="generate",
             status="error",
-            message="模型回复缺少可执行 SQL，正在自动补全。",
+            message=t("diag.missing_sql_retry", self.language),
             error_code="MISSING_SQL",
             error_category="sql",
             recoverable=state.can_retry(),
@@ -491,7 +495,7 @@ class GptmeEngine:
             events.append(
                 SSEEvent.error(
                     "MISSING_SQL",
-                    "模型没有生成可执行 SQL。",
+                    t("diag.no_executable_sql", self.language),
                     error_category="sql",
                     failed_stage="generate",
                     attempt=state.attempt,
@@ -504,7 +508,7 @@ class GptmeEngine:
             state,
             phase="generate",
             stage="generating",
-            repair_message="已触发 SQL 自动补全。",
+            repair_message=t("diag.sql_auto_complete", self.language),
             error_code="MISSING_SQL",
             error_category="sql",
             repair_prompt=self._build_missing_sql_prompt(state.query),
@@ -519,7 +523,7 @@ class GptmeEngine:
         events = [
             SSEEvent.progress(
                 "executing_sql",
-                "正在执行 SQL 查询...",
+                get_progress_message("executing", self.language),
                 attempt=state.attempt,
                 phase="sql",
             )
@@ -541,7 +545,7 @@ class GptmeEngine:
                 state,
                 phase="sql",
                 status="success",
-                message=f"SQL 执行成功，返回 {state.final_rows_count or 0} 行。",
+                message=t("diag.sql_success", self.language).format(count=state.final_rows_count or 0),
                 sql=state.final_sql,
             )
             events.append(
@@ -559,7 +563,7 @@ class GptmeEngine:
                 state,
                 phase="sql",
                 status="error",
-                message=f"SQL 执行失败: {exc}",
+                message=t("diag.sql_failed", self.language).format(error=exc),
                 error_code=code,
                 error_category=category,
                 recoverable=recoverable,
@@ -579,7 +583,7 @@ class GptmeEngine:
                     state,
                     phase="sql",
                     stage="executing_sql",
-                    repair_message="SQL 失败可恢复，正在自动修复并重试。",
+                    repair_message=t("diag.sql_repair", self.language),
                     error_code=code,
                     error_category=category,
                     repair_prompt=self._build_sql_repair_prompt(
@@ -595,7 +599,7 @@ class GptmeEngine:
             events.append(
                 SSEEvent.error(
                     code,
-                    f"SQL 执行失败: {exc}",
+                    t("diag.sql_failed", self.language).format(error=exc),
                     error_category=category,
                     failed_stage="sql",
                     attempt=state.attempt,
@@ -613,7 +617,7 @@ class GptmeEngine:
                 state,
                 phase="python",
                 status="error",
-                message="Python 分析已在设置中关闭，已跳过 Python 执行。",
+                message=t("diag.python_disabled", self.language),
                 error_code="PYTHON_DISABLED",
                 error_category="python",
                 recoverable=False,
@@ -634,7 +638,7 @@ class GptmeEngine:
         events = [
             SSEEvent.progress(
                 "executing_python",
-                "正在执行 Python 分析...",
+                get_progress_message("processing", self.language),
                 attempt=state.attempt,
                 phase="python",
             )
@@ -649,7 +653,7 @@ class GptmeEngine:
                 state,
                 phase="python",
                 status="success",
-                message="Python 分析执行完成。",
+                message=t("diag.python_done", self.language),
                 python=state.final_python,
             )
             events.append(
@@ -671,7 +675,7 @@ class GptmeEngine:
                 state,
                 phase="python",
                 status="error",
-                message=f"Python 执行失败: {exc}",
+                message=t("diag.python_failed", self.language).format(error=exc),
                 error_code=code,
                 error_category=category,
                 recoverable=recoverable,
@@ -692,7 +696,7 @@ class GptmeEngine:
                     state,
                     phase="python",
                     stage="executing_python",
-                    repair_message="Python 失败可恢复，正在自动修复并重试。",
+                    repair_message=t("diag.python_repair", self.language),
                     error_code=code,
                     error_category=category,
                     repair_prompt=self._build_python_repair_prompt(
@@ -710,7 +714,7 @@ class GptmeEngine:
             events.append(
                 SSEEvent.error(
                     code,
-                    f"Python 执行失败: {exc}",
+                    t("diag.python_failed", self.language).format(error=exc),
                     error_category=category,
                     failed_stage="python",
                     attempt=state.attempt,
@@ -747,7 +751,7 @@ class GptmeEngine:
                     state,
                     phase="chart",
                     status="success",
-                    message="已按模型提供的图表配置生成可视化。",
+                    message=t("diag.chart_generated", self.language),
                 )
                 events.append(
                     self._diagnostic_progress(
@@ -764,7 +768,7 @@ class GptmeEngine:
                 state,
                 phase="chart",
                 status="repaired",
-                message="模型图表配置无效，已回退到自动图表生成。",
+                message=t("diag.chart_fallback", self.language),
                 error_code="CHART_CONFIG_INVALID",
                 error_category="chart",
                 recoverable=True,
@@ -797,7 +801,7 @@ class GptmeEngine:
         try:
             yield SSEEvent.progress(
                 "initializing",
-                "正在初始化 AI 引擎...",
+                get_progress_message("start", self.language),
                 attempt=1,
                 phase="initializing",
             )
@@ -846,9 +850,9 @@ class GptmeEngine:
         while state.attempt <= state.max_attempts:
             yield SSEEvent.progress(
                 "generating",
-                "正在生成响应..."
+                get_progress_message("generating_sql", self.language)
                 if state.attempt == 1
-                else f"正在进行第 {state.attempt} 次自动修复...",
+                else get_progress_message("generating_sql", self.language),
                 attempt=state.attempt,
                 phase="generate",
             )
@@ -906,8 +910,9 @@ class GptmeEngine:
                 return
 
             yield SSEEvent.result(
-                content=clean_content_for_display(state.full_content) or "分析完成",
+                content=clean_content_for_display(state.full_content) or t("diag.analysis_done", self.language),
                 sql=state.final_sql,
+                python=state.final_python,
                 data=state.final_data,
                 rows_count=state.final_rows_count,
                 execution_time=state.final_execution_time,
