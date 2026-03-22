@@ -18,6 +18,7 @@ export function mapApiMessage(msg: APIMessage): ChatMessage {
     role: msg.role,
     content: msg.content,
     sql: msg.metadata?.sql,
+    pythonCode: msg.metadata?.python,
     visualization: msg.metadata?.visualization,
     data: msg.metadata?.data,
     pythonOutput: msg.metadata?.python_output,
@@ -42,7 +43,7 @@ export function buildPendingAssistantMessage(
     role: "assistant",
     content: "",
     isLoading: true,
-    status: "正在分析...",
+    status: "Analyzing...",
     executionContext,
     diagnostics: [],
   };
@@ -113,6 +114,7 @@ export function applyStreamEvent(
       ...message,
       content: String(payload.data.content || ""),
       sql: (payload.data.sql as string | undefined) || message.sql,
+      pythonCode: (payload.data.python as string | undefined) || message.pythonCode,
       data: (payload.data.data as DataRow[] | undefined) || message.data,
       executionTime: (payload.data.execution_time as number | undefined) || message.executionTime,
       rowsCount: (payload.data.rows_count as number | undefined) || message.rowsCount,
@@ -169,7 +171,7 @@ export function applyStreamErrorEvent(
     ...message,
     content: message.content || "",
     hasError: true,
-    errorMessage: String(errorData.message || "执行失败"),
+    errorMessage: String(errorData.message || "Execution failed"),
     errorCode: String(errorData.code || "EXECUTION_ERROR"),
     errorCategory: typeof errorData.error_category === "string" ? errorData.error_category : undefined,
     canRetry: true,
@@ -202,6 +204,6 @@ export function markStoppedMessage(messages: ChatMessage[]): ChatMessage[] {
   if (!messages.length) return messages;
 
   return updateLastMessage(messages, (message) =>
-    message.isLoading ? { ...message, content: message.content || "已停止", isLoading: false } : message
+    message.isLoading ? { ...message, content: message.content || "Stopped", isLoading: false } : message
   );
 }

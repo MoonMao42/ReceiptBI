@@ -12,6 +12,7 @@ export interface ChatMessage {
   status?: string;
   thinkingStage?: string;
   sql?: string;
+  pythonCode?: string;
   visualization?: Visualization;
   data?: DataRow[];
   pythonOutput?: string;

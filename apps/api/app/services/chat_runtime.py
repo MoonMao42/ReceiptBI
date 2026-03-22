@@ -112,6 +112,7 @@ class ChatEventAccumulator:
                 self.metadata,
                 {
                     "sql": event.data.get("sql"),
+                    "python": event.data.get("python"),
                     "execution_time": event.data.get("execution_time"),
                     "rows_count": event.data.get("rows_count"),
                     "data": event.data.get("data"),

@@ -15,9 +15,11 @@ import {
   Square,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { useTranslations } from "next-intl";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useLocale } from "next-intl";
 import type { AppSettings, ConnectionSummary, ModelSummary } from "@/lib/types/api";
 import { api } from "@/lib/api/client";
 import { useChatStore } from "@/lib/stores/chat";
@@ -36,6 +38,8 @@ const STORAGE_KEY_MODEL = "querygpt-selected-model";
 
 export function ChatArea({ sidebarOpen: _sidebarOpen, onToggleSidebar }: ChatAreaProps) {
   const router = useRouter();
+  const locale = useLocale();
+  const t = useTranslations("chat");
   const queryClient = useQueryClient();
   const [input, setInput] = useState("");
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
@@ -166,7 +170,7 @@ export function ChatArea({ sidebarOpen: _sidebarOpen, onToggleSidebar }: ChatAre
 
     const query = input;
     setInput("");
-    await sendMessage(query, selectedConnectionId, selectedModelId, effectiveContextRounds);
+    await sendMessage(query, selectedConnectionId, selectedModelId, effectiveContextRounds, locale);
   };
 
   return (
@@ -182,7 +186,7 @@ export function ChatArea({ sidebarOpen: _sidebarOpen, onToggleSidebar }: ChatAre
             </button>
             <div>
               <div className="text-sm font-medium text-foreground">QueryGPT</div>
-              <div className="text-xs text-muted-foreground">自然语言数据库分析工作台</div>
+              <div className="text-xs text-muted-foreground">{t("subtitle")}</div>
             </div>
           </div>
 
@@ -205,7 +209,7 @@ export function ChatArea({ sidebarOpen: _sidebarOpen, onToggleSidebar }: ChatAre
               className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground"
             >
               <Database size={14} className="text-muted-foreground" />
-              <span className="max-w-[180px] truncate">{selectedConnection?.name || "选择数据库"}</span>
+              <span className="max-w-[180px] truncate">{selectedConnection?.name || t("selectDatabase")}</span>
               <ChevronDown size={14} className="text-muted-foreground" />
             </button>
             {showConnectionDropdown && (
@@ -231,12 +235,12 @@ export function ChatArea({ sidebarOpen: _sidebarOpen, onToggleSidebar }: ChatAre
                           {connection.database_name ? ` · ${connection.database_name}` : ""}
                         </div>
                       </div>
-                      {connection.is_default && <StatusChip>默认</StatusChip>}
+                      {connection.is_default && <StatusChip>{t("default")}</StatusChip>}
                     </button>
                   ))
                 ) : (
                   <div className="px-3 py-4 text-sm text-muted-foreground">
-                    暂无数据库连接，去设置页添加。
+                    {t("noConnections")}
                   </div>
                 )}
               </div>
@@ -253,7 +257,7 @@ export function ChatArea({ sidebarOpen: _sidebarOpen, onToggleSidebar }: ChatAre
               className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground"
             >
               <Brain size={14} className="text-muted-foreground" />
-              <span className="max-w-[180px] truncate">{selectedModel?.name || "选择模型"}</span>
+              <span className="max-w-[180px] truncate">{selectedModel?.name || t("selectModel")}</span>
               <ChevronDown size={14} className="text-muted-foreground" />
             </button>
             {showModelDropdown && (
@@ -278,12 +282,12 @@ export function ChatArea({ sidebarOpen: _sidebarOpen, onToggleSidebar }: ChatAre
                           {model.provider} · {model.model_id}
                         </div>
                       </div>
-                      {model.is_default && <StatusChip>默认</StatusChip>}
+                      {model.is_default && <StatusChip>{t("default")}</StatusChip>}
                     </button>
                   ))
                 ) : (
                   <div className="px-3 py-4 text-sm text-muted-foreground">
-                    暂无模型配置，去设置页添加。
+                    {t("noModels")}
                   </div>
                 )}
               </div>
@@ -292,11 +296,11 @@ export function ChatArea({ sidebarOpen: _sidebarOpen, onToggleSidebar }: ChatAre
 
           <StatusChip tone={modelReady ? "success" : "warning"}>
             <Sparkles size={12} />
-            {modelReady ? "模型可运行" : "模型缺少可用鉴权"}
+            {modelReady ? t("modelReady") : t("modelNoAuth")}
           </StatusChip>
           <StatusChip>
             <Gauge size={12} />
-            上下文 {effectiveContextRounds} 轮
+            {t("contextRounds", { count: effectiveContextRounds })}
           </StatusChip>
           {selectedModel?.extra_options?.api_format && (
             <StatusChip>{selectedModel.extra_options.api_format}</StatusChip>
@@ -338,7 +342,7 @@ export function ChatArea({ sidebarOpen: _sidebarOpen, onToggleSidebar }: ChatAre
                     >
                       <div className="flex items-center gap-2">
                         <Loader2 size={16} className="animate-spin" />
-                        {message.thinkingStage || message.status || "正在分析..."}
+                        {message.thinkingStage || message.status || t("analyzing")}
                       </div>
                     </div>
                   ) : (
@@ -368,7 +372,7 @@ export function ChatArea({ sidebarOpen: _sidebarOpen, onToggleSidebar }: ChatAre
           {!modelReady && selectedModel && (
             <div className="mb-3 flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-800">
               <AlertTriangle size={16} />
-              当前模型可能无法运行：未检测到 API Key，且未启用“允许不配置 API Key”。
+              {t("modelWarning")}
             </div>
           )}
           <div className="relative flex items-center">
@@ -377,7 +381,7 @@ export function ChatArea({ sidebarOpen: _sidebarOpen, onToggleSidebar }: ChatAre
               value={input}
               onChange={(event) => setInput(event.target.value)}
               data-testid="chat-input"
-              placeholder="输入你的问题，例如：查询上月销售额..."
+              placeholder={t("inputPlaceholder")}
               className="w-full rounded-[24px] border border-input bg-background px-5 py-4 pr-16 text-foreground shadow-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
             />
             <button
@@ -395,7 +399,7 @@ export function ChatArea({ sidebarOpen: _sidebarOpen, onToggleSidebar }: ChatAre
             </button>
           </div>
           <div className="mt-2 text-center text-xs text-muted-foreground">
-            QueryGPT 可能会犯错；重要结果请复核 SQL 与原始数据
+            {t("disclaimer")}
           </div>
         </form>
       </div>

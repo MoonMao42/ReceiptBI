@@ -29,6 +29,7 @@ class ExecutionInputs:
     default_prompt: str | None
     history: list[dict[str, str]]
     capabilities: SystemCapabilities
+    language: str = "zh"
 
 
 class ExecutionService:
@@ -155,6 +156,7 @@ class ExecutionService:
             default_prompt=default_prompt,
             history=history,
             capabilities=capabilities,
+            language=self.language,
         )
 
     @staticmethod
@@ -173,6 +175,7 @@ class ExecutionService:
             auto_repair_enabled=inputs.capabilities.auto_repair_enabled,
             available_python_libraries=inputs.capabilities.available_python_libraries,
             analytics_installed=inputs.capabilities.analytics_installed,
+            language=inputs.language,
         )
 
     async def get_runtime_snapshot(self) -> dict[str, Any]:

@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.i18n import t
+
 from typing import Any
 
 
@@ -26,39 +31,49 @@ def build_initial_messages(
     return messages
 
 
-def build_sql_repair_prompt(query: str, failed_sql: str | None, error_message: str) -> str:
-    sql_block = failed_sql or "未生成 SQL"
-    return f"""上一步生成的 SQL 无法执行，请修复后重新给出完整答复。
+def build_sql_repair_prompt(
+    query: str,
+    failed_sql: str | None,
+    error_message: str,
+    lang: str = "zh",
+) -> str:
+    from app.i18n import t
 
-原始问题：
+    no_sql = t("repair.no_sql", lang)
+    sql_block = failed_sql or no_sql
+    return f"""{t("repair.sql.title", lang)}
+
+{t("repair.sql.original_query", lang)}
 {query}
 
-失败 SQL：
+{t("repair.sql.failed", lang)}
 ```sql
 {sql_block}
 ```
 
-数据库错误：
+{t("repair.sql.error", lang)}
 {error_message}
 
-要求：
-1. 必须基于已提供的真实表结构和字段名修复。
-2. 返回完整答复，并且必须包含一个新的 ```sql 代码块。
-3. 如果原先的分析、图表或 Python 思路仍有效，可以保留；否则一起修正。
-4. 只给最终版本，不要给多个候选 SQL。
+{t("repair.sql.requirements", lang)}
+{t("repair.sql.req1", lang)}
+{t("repair.sql.req2", lang)}
+{t("repair.sql.req3", lang)}
+{t("repair.sql.req4", lang)}
 """
 
 
-def build_missing_sql_prompt(query: str) -> str:
-    return f"""上一步回答没有提供可执行的 SQL，请重新给出完整答复。
+def build_missing_sql_prompt(query: str, lang: str = "zh") -> str:
+    from app.i18n import t
 
-原始问题：
+    return f"""{t("repair.missing.title", lang)}
+
+{t("repair.missing.original_query", lang)}
 {query}
 
-要求：
-1. 必须包含一个 ```sql 代码块。
-2. SQL 只能使用已提供的真实表和字段。
-3. 可以保留必要的分析说明，但不要省略 SQL。
+{t("repair.missing.requirements", lang)}
+{t("repair.missing.req1", lang)}
+{t("repair.missing.req2", lang)}
+{t("repair.missing.req3", lang)}
 """
 
 
@@ -69,33 +84,38 @@ def build_python_repair_prompt(
     failed_python: str | None,
     error_message: str,
     available_python_libraries: list[str],
+    lang: str = "zh",
 ) -> str:
-    sql_block = failed_sql or "未提供 SQL"
-    python_block = failed_python or "未提供 Python"
-    libraries = ", ".join(available_python_libraries)
-    return f"""上一步 Python 执行失败，请修复后重新给出完整答复。
+    from app.i18n import t
 
-原始问题：
+    no_sql = t("repair.no_sql", lang)
+    no_python = t("repair.no_python", lang)
+    sql_block = failed_sql or no_sql
+    python_block = failed_python or no_python
+    libraries = ", ".join(available_python_libraries)
+    return f"""{t("repair.python.title", lang)}
+
+{t("repair.python.original_query", lang)}
 {query}
 
-当前 SQL：
+{t("repair.python.current_sql", lang)}
 ```sql
 {sql_block}
 ```
 
-失败 Python：
+{t("repair.python.failed_python", lang)}
 ```python
 {python_block}
 ```
 
-Python 错误：
+{t("repair.python.error", lang)}
 {error_message}
 
-要求：
-1. 若 SQL 无需修改，请保留原 SQL；若确实有问题，也一并修正。
-2. 如果还需要 Python 分析，必须返回新的 ```python 代码块。
-3. 代码只能使用这些当前可用库：{libraries}，并直接使用已注入的 df。
-4. 不要访问文件、网络或系统资源。
+{t("repair.python.requirements", lang)}
+{t("repair.python.req1", lang)}
+{t("repair.python.req2", lang)}
+{t("repair.python.req3", lang).format(libraries=libraries)}
+{t("repair.python.req4", lang)}
 """
 
 
@@ -119,21 +139,32 @@ def build_repair_messages(
     return messages
 
 
-def build_db_context(db_config: dict[str, Any], schema_info: str) -> str:
+def build_db_context(db_config: dict[str, Any], schema_info: str, lang: str = "zh") -> str:
     """Build database context injected into the model prompt."""
-    driver = db_config.get("driver", "mysql")
-    return f"""
-数据库连接信息:
-- 类型: {driver}
-- 数据库: {db_config.get("database", "")}
+    from app.i18n import t
 
-数据库表结构:
+    driver = db_config.get("driver", "mysql")
+    db_type_label = t("db_context.type", lang) if lang == "en" else "类型"
+    db_label = t("db_context.database", lang) if lang == "en" else "数据库"
+    schema_label = t("db_context.schema", lang) if lang == "en" else "数据库表结构"
+    instruction = t("db_context.instruction", lang) if lang == "en" else "请根据用户的问题生成合适的 SQL 查询语句。"
+    rules_title = t("db_context.rules_title", lang) if lang == "en" else "重要规则:"
+    rule1 = t("db_context.rule1", lang) if lang == "en" else "只生成只读 SQL (SELECT, SHOW, DESCRIBE)"
+    rule2 = t("db_context.rule2", lang) if lang == "en" else "使用 ```sql 代码块包裹 SQL 语句"
+    rule3 = t("db_context.rule3", lang) if lang == "en" else "必须使用上面提供的真实表名和字段名，不要猜测"
+    rule4 = t("db_context.rule4", lang) if lang == "en" else "简洁明了地解释查询结果"
+
+    return f"""
+{db_type_label}: {driver}
+{db_label}: {db_config.get("database", "")}
+
+{schema_label}:
 {schema_info}
 
-请根据用户的问题生成合适的 SQL 查询语句。
-重要规则:
-1. 只生成只读 SQL (SELECT, SHOW, DESCRIBE)
-2. 使用 ```sql 代码块包裹 SQL 语句
-3. 必须使用上面提供的真实表名和字段名，不要猜测
-4. 简洁明了地解释查询结果
+{instruction}
+{rules_title}
+1. {rule1}
+2. {rule2}
+3. {rule3}
+4. {rule4}
 """

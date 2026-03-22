@@ -4,6 +4,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Copy, Check } from "lucide-react";
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 
 interface SqlHighlightProps {
   code: string;
@@ -12,6 +13,7 @@ interface SqlHighlightProps {
 
 export function SqlHighlight({ code, showCopy = true }: SqlHighlightProps) {
   const [copied, setCopied] = useState(false);
+  const t = useTranslations("chat");
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(code);
@@ -25,7 +27,7 @@ export function SqlHighlight({ code, showCopy = true }: SqlHighlightProps) {
         <button
           onClick={handleCopy}
           className="absolute right-2 top-2 p-1.5 bg-secondary hover:bg-muted rounded text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
-          title="复制代码"
+          title={t("copyCode")}
         >
           {copied ? <Check size={14} /> : <Copy size={14} />}
         </button>
