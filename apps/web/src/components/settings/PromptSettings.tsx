@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api/client";
 import type { Prompt, PromptCreate, PromptUpdate, PromptVersion } from "@/lib/types/api";
+import { useTranslations } from "next-intl";
 
 interface APIResponse<T> {
   success: boolean;
@@ -16,8 +17,9 @@ export function PromptSettings() {
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [showVersions, setShowVersions] = useState<string | null>(null);
+  const t = useTranslations("prompts");
+  const tc = useTranslations("common");
 
-  // 获取提示词列表
   const { data: promptsData, isLoading } = useQuery({
     queryKey: ["prompts"],
     queryFn: async () => {
@@ -28,7 +30,6 @@ export function PromptSettings() {
     },
   });
 
-  // 获取版本历史
   const { data: versions } = useQuery({
     queryKey: ["prompt-versions", showVersions],
     queryFn: async () => {
@@ -41,7 +42,6 @@ export function PromptSettings() {
     enabled: !!showVersions,
   });
 
-  // 创建提示词
   const createMutation = useMutation({
     mutationFn: async (data: PromptCreate) => {
       const res = await api.post<APIResponse<Prompt>>("/api/v1/prompts", data);
@@ -53,7 +53,6 @@ export function PromptSettings() {
     },
   });
 
-  // 更新提示词
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: PromptUpdate }) => {
       const res = await api.put<APIResponse<Prompt>>(`/api/v1/prompts/${id}`, data);
@@ -65,7 +64,6 @@ export function PromptSettings() {
     },
   });
 
-  // 删除提示词
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       await api.delete(`/api/v1/prompts/${id}`);
@@ -75,7 +73,6 @@ export function PromptSettings() {
     },
   });
 
-  // 设为默认
   const setDefaultMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await api.post<APIResponse<Prompt>>(`/api/v1/prompts/${id}/set-default`);
@@ -86,7 +83,16 @@ export function PromptSettings() {
     },
   });
 
-  // 回滚版本
+  const unsetDefaultMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await api.post<APIResponse<Prompt>>(`/api/v1/prompts/${id}/unset-default`);
+      return res.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["prompts"] });
+    },
+  });
+
   const rollbackMutation = useMutation({
     mutationFn: async ({ id, version }: { id: string; version: number }) => {
       const res = await api.post<APIResponse<Prompt>>(
@@ -104,26 +110,24 @@ export function PromptSettings() {
   const prompts = promptsData?.items || [];
 
   if (isLoading) {
-    return <div className="p-4 text-center text-gray-500">加载中...</div>;
+    return <div className="p-4 text-center text-gray-500">{t("loading")}</div>;
   }
 
   return (
     <div className="space-y-6">
-      {/* 标题和创建按钮 */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold">提示词管理</h2>
-          <p className="text-sm text-gray-500">自定义 AI 的系统提示词</p>
+          <h2 className="text-lg font-semibold">{t("title")}</h2>
+          <p className="text-sm text-gray-500">{t("description")}</p>
         </div>
         <button
           onClick={() => setIsCreating(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm"
         >
-          新建提示词
+          {t("createPrompt")}
         </button>
       </div>
 
-      {/* 创建表单 */}
       {isCreating && (
         <PromptForm
           onSubmit={(data) => createMutation.mutate(data)}
@@ -132,11 +136,10 @@ export function PromptSettings() {
         />
       )}
 
-      {/* 提示词列表 */}
       {prompts.length === 0 && !isCreating ? (
         <div className="text-center py-12 text-gray-500">
-          <p>暂无自定义提示词</p>
-          <p className="text-sm mt-2">系统将使用默认提示词</p>
+          <p>{t("emptyState")}</p>
+          <p className="text-sm mt-2">{t("emptyStateHint")}</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -162,7 +165,7 @@ export function PromptSettings() {
                         <h3 className="font-medium">{prompt.name}</h3>
                         {prompt.is_default && (
                           <span className="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded">
-                            默认
+                            {t("default")}
                           </span>
                         )}
                         <span className="text-xs text-gray-400">
@@ -176,37 +179,45 @@ export function PromptSettings() {
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      {!prompt.is_default && (
+                      {prompt.is_default ? (
+                        <button
+                          onClick={() => unsetDefaultMutation.mutate(prompt.id)}
+                          className="text-sm text-orange-600 hover:text-orange-700"
+                          disabled={unsetDefaultMutation.isPending}
+                        >
+                          {t("unsetDefault")}
+                        </button>
+                      ) : (
                         <button
                           onClick={() => setDefaultMutation.mutate(prompt.id)}
                           className="text-sm text-blue-600 hover:text-blue-700"
                           disabled={setDefaultMutation.isPending}
                         >
-                          设为默认
+                          {t("setDefault")}
                         </button>
                       )}
                       <button
                         onClick={() => setShowVersions(prompt.id)}
                         className="text-sm text-gray-600 hover:text-gray-700"
                       >
-                        版本历史
+                        {t("versionHistory")}
                       </button>
                       <button
                         onClick={() => setEditingPrompt(prompt)}
                         className="text-sm text-gray-600 hover:text-gray-700"
                       >
-                        编辑
+                        {tc("edit")}
                       </button>
                       <button
                         onClick={() => {
-                          if (confirm("确定删除此提示词？所有版本都将被删除。")) {
+                          if (confirm(t("confirmDelete"))) {
                             deleteMutation.mutate(prompt.id);
                           }
                         }}
                         className="text-sm text-red-600 hover:text-red-700"
                         disabled={deleteMutation.isPending}
                       >
-                        删除
+                        {tc("delete")}
                       </button>
                     </div>
                   </div>
@@ -221,11 +232,10 @@ export function PromptSettings() {
         </div>
       )}
 
-      {/* 版本历史弹窗 */}
       {showVersions && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md max-h-[80vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold mb-4">版本历史</h3>
+            <h3 className="text-lg font-semibold mb-4">{t("versionHistory")}</h3>
             <div className="space-y-2">
               {versions?.map((v) => (
                 <div
@@ -238,7 +248,7 @@ export function PromptSettings() {
                       {new Date(v.created_at).toLocaleString()}
                     </span>
                     {v.is_active && (
-                      <span className="ml-2 text-xs text-green-600">当前</span>
+                      <span className="ml-2 text-xs text-green-600">{t("current")}</span>
                     )}
                   </div>
                   {!v.is_active && (
@@ -252,7 +262,7 @@ export function PromptSettings() {
                       className="text-sm text-blue-600 hover:text-blue-700"
                       disabled={rollbackMutation.isPending}
                     >
-                      回滚
+                      {t("rollback")}
                     </button>
                   )}
                 </div>
@@ -262,7 +272,7 @@ export function PromptSettings() {
               onClick={() => setShowVersions(null)}
               className="mt-4 w-full py-2 border rounded hover:bg-gray-50 dark:hover:bg-gray-700"
             >
-              关闭
+              {tc("close")}
             </button>
           </div>
         </div>
@@ -271,7 +281,6 @@ export function PromptSettings() {
   );
 }
 
-// 提示词表单组件
 function PromptForm({
   initialData,
   onSubmit,
@@ -287,6 +296,8 @@ function PromptForm({
   const [content, setContent] = useState(initialData?.content || "");
   const [description, setDescription] = useState(initialData?.description || "");
   const [isDefault, setIsDefault] = useState(initialData?.is_default || false);
+  const t = useTranslations("prompts");
+  const tc = useTranslations("common");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -299,32 +310,32 @@ function PromptForm({
     <form onSubmit={handleSubmit} className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-900">
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-1">名称</label>
+          <label className="block text-sm font-medium mb-1">{t("nameLabel")}</label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="如：数据分析师、SQL专家"
+            placeholder={t("namePlaceholder")}
             className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800"
             required
           />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">描述（可选）</label>
+          <label className="block text-sm font-medium mb-1">{t("descriptionLabel")}</label>
           <input
             type="text"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="简要描述此提示词的用途"
+            placeholder={t("descriptionPlaceholder")}
             className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">提示词内容</label>
+          <label className="block text-sm font-medium mb-1">{t("contentLabel")}</label>
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="输入系统提示词内容..."
+            placeholder={t("contentPlaceholder")}
             rows={12}
             className="w-full px-3 py-2 border rounded-lg font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800"
             required
@@ -340,7 +351,7 @@ function PromptForm({
               className="rounded"
             />
             <label htmlFor="is_default" className="text-sm">
-              设为默认提示词
+              {t("setDefaultPrompt")}
             </label>
           </div>
         )}
@@ -352,14 +363,14 @@ function PromptForm({
           className="px-4 py-2 border rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
           disabled={isLoading}
         >
-          取消
+          {tc("cancel")}
         </button>
         <button
           type="submit"
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm"
           disabled={isLoading || !name.trim() || !content.trim()}
         >
-          {isLoading ? "保存中..." : initialData ? "保存" : "创建"}
+          {isLoading ? t("saving") : initialData ? tc("save") : t("createAction")}
         </button>
       </div>
     </form>

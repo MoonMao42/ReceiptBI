@@ -8,6 +8,7 @@ import {
   type ModelFormData,
   type ModelPreset,
 } from "@/lib/settings/models";
+import { useTranslations } from "next-intl";
 
 interface ModelSettingsFormProps {
   editingId: string | null;
@@ -30,6 +31,9 @@ export function ModelSettingsForm({
   onReset,
   onSubmit,
 }: ModelSettingsFormProps) {
+  const t = useTranslations("modelSettings");
+  const tc = useTranslations("common");
+
   return (
     <form
       onSubmit={onSubmit}
@@ -52,16 +56,16 @@ export function ModelSettingsForm({
           >
             <div className="flex items-center gap-2 text-sm font-medium text-foreground">
               <Sparkles size={14} className="text-primary" />
-              {key === "openai" && "OpenAI 官方"}
-              {key === "deepseek" && "DeepSeek / OpenAI-Compatible"}
-              {key === "anthropic" && "Anthropic 原生"}
-              {key === "ollama" && "Ollama 本地模型"}
-              {key === "custom" && "自定义网关"}
+              {key === "openai" && t("presetOpenai")}
+              {key === "deepseek" && t("presetDeepseek")}
+              {key === "anthropic" && t("presetAnthropic")}
+              {key === "ollama" && t("presetOllama")}
+              {key === "custom" && t("presetCustom")}
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              {preset.api_format === "anthropic_native" && "使用 Anthropic 原生协议"}
-              {preset.api_format === "ollama_local" && "本地模型，可选 API Key"}
-              {preset.api_format === "openai_compatible" && "兼容 OpenAI 接口规范"}
+              {preset.api_format === "anthropic_native" && t("descAnthropic")}
+              {preset.api_format === "ollama_local" && t("descOllama")}
+              {preset.api_format === "openai_compatible" && t("descOpenai")}
             </p>
           </button>
         ))}
@@ -69,9 +73,9 @@ export function ModelSettingsForm({
 
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="font-medium text-foreground">{editingId ? "编辑模型" : "添加模型"}</h3>
+          <h3 className="font-medium text-foreground">{editingId ? t("editModel") : t("addModel")}</h3>
           <p className="text-sm text-muted-foreground mt-1">
-            当前适配格式：{activePreset.api_format}
+            {t("currentFormat")}{activePreset.api_format}
           </p>
         </div>
         <button type="button" onClick={onReset} className="text-muted-foreground hover:text-foreground">
@@ -81,19 +85,19 @@ export function ModelSettingsForm({
 
       <div className="grid gap-4 md:grid-cols-2">
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">名称</label>
+          <label className="block text-sm font-medium text-foreground mb-1">{t("name")}</label>
           <input
             type="text"
             value={formData.name}
             onChange={(event) => onChange({ ...formData, name: event.target.value })}
             data-testid="model-name-input"
             className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground"
-            placeholder="例如: DeepSeek V3"
+            placeholder={t("namePlaceholder")}
             required
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">Provider 标签</label>
+          <label className="block text-sm font-medium text-foreground mb-1">{t("providerTag")}</label>
           <select
             value={formData.provider}
             onChange={(event) => onPresetSelect(event.target.value)}
@@ -108,19 +112,19 @@ export function ModelSettingsForm({
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">模型 ID</label>
+          <label className="block text-sm font-medium text-foreground mb-1">{t("modelId")}</label>
           <input
             type="text"
             value={formData.model_id}
             onChange={(event) => onChange({ ...formData, model_id: event.target.value })}
             data-testid="model-id-input"
             className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground"
-            placeholder="例如: gpt-4o / deepseek-chat / llama3.1"
+            placeholder={t("modelIdPlaceholder")}
             required
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">适配格式</label>
+          <label className="block text-sm font-medium text-foreground mb-1">{t("adaptFormat")}</label>
           <select
             value={formData.api_format}
             onChange={(event) =>
@@ -151,7 +155,7 @@ export function ModelSettingsForm({
         </div>
         <div className="md:col-span-2">
           <label className="block text-sm font-medium text-foreground mb-1">
-            API Key {editingId && <span className="text-muted-foreground font-normal">(留空则不修改)</span>}
+            API Key {editingId && <span className="text-muted-foreground font-normal">{t("apiKeyEditHint")}</span>}
           </label>
           <input
             type="password"
@@ -159,7 +163,7 @@ export function ModelSettingsForm({
             onChange={(event) => onChange({ ...formData, api_key: event.target.value })}
             data-testid="model-api-key-input"
             className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground"
-            placeholder={formData.api_key_optional ? "本地模型可留空" : "sk-..."}
+            placeholder={formData.api_key_optional ? t("apiKeyLocalHint") : "sk-..."}
           />
         </div>
         <div>
@@ -173,7 +177,7 @@ export function ModelSettingsForm({
               data-testid="model-api-key-optional-checkbox"
               className="w-4 h-4 text-primary rounded"
             />
-            允许不配置 API Key
+            {t("allowNoApiKey")}
           </label>
         </div>
         <div>
@@ -185,11 +189,11 @@ export function ModelSettingsForm({
               data-testid="model-default-checkbox"
               className="w-4 h-4 text-primary rounded"
             />
-            设为默认模型
+            {t("setDefault")}
           </label>
         </div>
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">健康检查方式</label>
+          <label className="block text-sm font-medium text-foreground mb-1">{t("healthcheckMode")}</label>
           <select
             value={formData.healthcheck_mode}
             onChange={(event) =>
@@ -207,7 +211,7 @@ export function ModelSettingsForm({
         </div>
         <div className="grid gap-4 md:col-span-2 md:grid-cols-2">
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">附加 Headers</label>
+            <label className="block text-sm font-medium text-foreground mb-1">{t("extraHeaders")}</label>
             <textarea
               value={formData.headersText}
               onChange={(event) => onChange({ ...formData, headersText: event.target.value })}
@@ -216,7 +220,7 @@ export function ModelSettingsForm({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">附加 Query Params</label>
+            <label className="block text-sm font-medium text-foreground mb-1">{t("extraQueryParams")}</label>
             <textarea
               value={formData.queryParamsText}
               onChange={(event) =>
@@ -235,7 +239,7 @@ export function ModelSettingsForm({
           onClick={onReset}
           className="px-4 py-2 text-muted-foreground hover:bg-muted rounded-lg transition-colors text-sm"
         >
-          取消
+          {tc("cancel")}
         </button>
         <button
           type="submit"
@@ -244,7 +248,7 @@ export function ModelSettingsForm({
           className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm"
         >
           {isSubmitting && <Loader2 size={16} className="animate-spin" />}
-          {editingId ? "更新" : "保存"}
+          {editingId ? tc("update") : tc("save")}
         </button>
       </div>
     </form>

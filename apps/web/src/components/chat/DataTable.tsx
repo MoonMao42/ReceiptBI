@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useTranslations } from "next-intl";
 import { ChevronUp, ChevronDown, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -15,6 +16,7 @@ interface DataTableProps {
 type SortDirection = "asc" | "desc" | null;
 
 export function DataTable({ data, title, maxRows = 100 }: DataTableProps) {
+  const t = useTranslations("assistant");
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -110,15 +112,15 @@ export function DataTable({ data, title, maxRows = 100 }: DataTableProps) {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-secondary border-b border-border">
         <div className="text-sm text-foreground">
-          {title || `查询结果`}
-          <span className="text-muted-foreground ml-2">({data.length} 行)</span>
+          {title || t("queryResult")}
+          <span className="text-muted-foreground ml-2">({t("rows", { count: data.length })})</span>
         </div>
         <button
           onClick={exportCSV}
           className="flex items-center gap-1 px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted rounded-lg transition-colors"
         >
           <Download size={14} />
-          导出 CSV
+          {t("exportCsv")}
         </button>
       </div>
 
@@ -179,7 +181,7 @@ export function DataTable({ data, title, maxRows = 100 }: DataTableProps) {
       {totalPages > 1 && (
         <div className="flex items-center justify-between px-4 py-3 bg-secondary border-t border-border">
           <div className="text-sm text-muted-foreground">
-            第 {currentPage} / {totalPages} 页
+            {t("page", { current: currentPage, total: totalPages })}
           </div>
           <div className="flex gap-2">
             <button
@@ -187,14 +189,14 @@ export function DataTable({ data, title, maxRows = 100 }: DataTableProps) {
               disabled={currentPage === 1}
               className="px-3 py-1 text-sm border border-border rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              上一页
+              {t("prevPage")}
             </button>
             <button
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
               className="px-3 py-1 text-sm border border-border rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              下一页
+              {t("nextPage")}
             </button>
           </div>
         </div>

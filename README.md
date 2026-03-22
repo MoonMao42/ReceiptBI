@@ -2,94 +2,95 @@
 
 <img src="docs/images/logo.svg" width="400" alt="QueryGPT logo">
 
-### 中文优先的开源 AI 数据库助手
+### Open-Source AI Database Assistant
 
-用自然语言提问，生成只读 SQL，返回结果、分析与图表。
+Ask questions in plain English, auto-generate read-only SQL, and get results, analysis, and charts.
 
-[核心能力](#核心能力) | [工作流程](#工作流程) | [部署与启动](#部署与启动) | [技术栈](#技术栈)
+[Features](#features) | [How It Works](#how-it-works) | [Quick Start](#quick-start) | [Tech Stack](#tech-stack)
 
 </div>
 
-<img src="docs/images/chat.png" alt="对话工作台" width="100%">
+<img src="docs/images/chat.png" alt="Chat workspace" width="100%">
 
-## 核心能力
+## Features
 
 <table>
 <tr>
 <td width="50%">
 
-**自然语言查询**
+**Natural Language Queries**
 
-用中文描述需求，自动生成并执行只读 SQL，返回结构化结果。
+Describe what you need in plain English — QueryGPT generates and executes read-only SQL, then returns structured results.
 
 </td>
 <td width="50%">
 
-**自动分析链路**
+**Automatic Analysis Pipeline**
 
-查询结果自动衔接 Python 分析与图表生成，一次提问完成完整分析。
+Query results automatically flow into Python analysis and chart generation, so a single question gets you a complete answer.
 
 </td>
 </tr>
 <tr>
 <td>
 
-**语义层**
+**Semantic Layer**
 
-定义业务术语（GMV、客单价等），AI 查询时自动引用，消除歧义。
+Define business terms (GMV, AOV, etc.) and QueryGPT references them automatically, eliminating ambiguity in your queries.
 
 </td>
 <td>
 
-**Schema 关系视图**
+**Schema Relationship Graph**
 
-可视化拖拽建立表间 JOIN 关系，AI 自动使用正确的关联路径。
+Visually drag and connect tables to define JOIN relationships. QueryGPT picks the right join path automatically.
 
 </td>
 </tr>
 </table>
 
-## 工作流程
+## How It Works
 
 ```mermaid
 flowchart LR
-    query["自然语言提问"] --> context["结合语义层与 Schema 理解需求"]
-    context --> sql["生成只读 SQL"]
-    sql --> execute["执行查询"]
-    execute --> result["返回结果与总结"]
-    result --> decision{"需要进一步分析或图表?"}
-    decision -->|是| python["Python 分析与图表"]
-    decision -->|否| done["结束"]
+    query["Ask in plain English"] --> context["Understand intent using semantic layer + schema"]
+    context --> sql["Generate read-only SQL"]
+    sql --> execute["Execute query"]
+    execute --> result["Return results & summary"]
+    result --> decision{"Need charts or further analysis?"}
+    decision -->|Yes| python["Python analysis & charts"]
+    decision -->|No| done["Done"]
     python --> done
-    execute -->|SQL 出错| repair_sql["自动修复并重试"]
-    python -->|Python 出错| repair_py["自动修复并重试"]
+    execute -->|SQL error| repair_sql["Auto-repair & retry"]
+    sql -->|on retry| repair_sql
+    python -->|Python error| repair_py["Auto-repair & retry"]
     repair_sql --> sql
     repair_py --> python
 ```
 
-## 界面一览
+## Screenshots
 
-<img src="docs/images/schema.png" alt="Schema 关系视图" width="100%">
+<img src="docs/images/schema.png" alt="Schema relationship view" width="100%">
 
-<p align="center"><strong>Schema 关系视图</strong></p>
+<p align="center"><strong>Schema Relationship Graph</strong></p>
 
 <br>
 <br>
 
-<img src="docs/images/semantic.png" alt="语义层配置" width="100%">
+<img src="docs/images/semantic.png" alt="Semantic layer config" width="100%">
 
-<p align="center"><strong>语义层配置</strong></p>
+<p align="center"><strong>Semantic Layer Configuration</strong></p>
 
-## 部署与启动
+## Quick Start
 
-### 1. 获取代码
+### 1. Clone the repo
 
 ```bash
 git clone git@github.com:MKY508/QueryGPT.git
-cd querygpt
+cd QueryGPT
 ```
 
-### 2. 选择你的平台启动
+### 2. Choose your platform
 
 <table>
 <tr>
@@ -100,17 +101,17 @@ cd querygpt
 <tr>
 <td>
 
-**方式 A — 宿主机直接运行**
+**Option A — Run directly**
 
-需要 Python 3.11+ 和 Node.js LTS
+Requires Python 3.11+ and Node.js LTS
 
 ```bash
 ./start.sh
 ```
 
-**方式 B — Docker**
+**Option B — Docker**
 
-需要 [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 
 ```bash
 docker compose up --build
@@ -119,17 +120,17 @@ docker compose up --build
 </td>
 <td>
 
-**方式 A — 宿主机直接运行**
+**Option A — Run directly**
 
-需要 Python 3.11+ 和 Node.js LTS
+Requires Python 3.11+ and Node.js LTS
 
 ```bash
 ./start.sh
 ```
 
-**方式 B — Docker**
+**Option B — Docker**
 
-需要 Docker Engine
+Requires Docker Engine
 
 ```bash
 docker compose up --build
@@ -138,153 +139,153 @@ docker compose up --build
 </td>
 <td>
 
-**推荐 — Docker Desktop**
+**Recommended — Docker Desktop**
 
-Windows 用户建议使用 Docker，仓库不再维护 `.bat` / `.ps1` 脚本。
+Windows users should use Docker. `.bat` / `.ps1` scripts are no longer maintained.
 
-安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/)，然后：
+Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), then:
 
 ```bash
 docker compose up --build
 ```
 
-**备选 — WSL2**
+**Alternative — WSL2**
 
-安装 [WSL2](https://learn.microsoft.com/zh-cn/windows/wsl/install) 后，在 WSL 终端中按 Linux 方式运行 `./start.sh`。
+After installing [WSL2](https://learn.microsoft.com/windows/wsl/install), run `./start.sh` from the WSL terminal as you would on Linux.
 
 </td>
 </tr>
 </table>
 
-### 3. 访问与配置
+### 3. Configure and start
 
-启动后访问 `http://localhost:3000`：
+After startup, open `http://localhost:3000`:
 
-1. 在设置页添加模型（填入 provider 和 API Key）
-2. 使用内置的 `示例数据库`，或添加自己的 SQLite / MySQL / PostgreSQL 连接
-3. 按需设置默认模型、默认连接和上下文轮数
-4. 回到聊天页开始提问
+1. Go to Settings and add a model (provider + API key)
+2. Use the built-in demo database, or connect your own SQLite / MySQL / PostgreSQL
+3. Optionally set a default model, default connection, and conversation context rounds
+4. Head to the chat page and start asking questions
 
-> 项目内置 SQLite 示例库 `demo.db`，空工作区启动时会自动补回示例连接。
+> The project ships with a built-in SQLite demo database (`demo.db`). A sample connection is auto-created on first launch if no workspace data exists.
 
-## 技术栈
+## Tech Stack
 
-**项目**<br>
+**Project**<br>
 ![License](https://img.shields.io/badge/License-MIT-F7DF1E?style=flat-square)
 
-**前端**<br>
+**Frontend**<br>
 ![Next.js](https://img.shields.io/badge/Next.js-15-000000?style=flat-square&logo=next.js&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)
 ![Zustand](https://img.shields.io/badge/Zustand-5-764ABC?style=flat-square)
 ![TanStack Query](https://img.shields.io/badge/TanStack_Query-5-FF4154?style=flat-square)
 
-**后端**<br>
+**Backend**<br>
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi&logoColor=white)
 ![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0-D71F00?style=flat-square)
 ![LiteLLM](https://img.shields.io/badge/LiteLLM-latest-blue?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)
 
-**数据库**<br>
+**Databases**<br>
 ![SQLite](https://img.shields.io/badge/SQLite-3-003B57?style=flat-square&logo=sqlite&logoColor=white)
 ![MySQL](https://img.shields.io/badge/MySQL-8-4479A1?style=flat-square&logo=mysql&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white)
 
 <details>
-<summary><strong>配置说明</strong></summary>
+<summary><strong>Configuration Reference</strong></summary>
 
-### 模型
+### Models
 
-支持 OpenAI-compatible、Anthropic、Ollama、Custom 网关。可配置项：
+Supports OpenAI-compatible, Anthropic, Ollama, and Custom gateways. Configurable fields:
 
-| 字段 | 说明 |
-|------|------|
-| `provider` | 模型提供方 |
-| `base_url` | API 端点 |
-| `model_id` | 模型标识 |
-| `api_key` | 密钥（Ollama 或无需鉴权的网关可启用可选模式） |
-| `extra headers` | 自定义请求头 |
-| `query params` | 自定义查询参数 |
-| `api_format` | API 格式 |
-| `healthcheck_mode` | 健康检查方式 |
+| Field | Description |
+|-------|-------------|
+| `provider` | Model provider |
+| `base_url` | API endpoint |
+| `model_id` | Model identifier |
+| `api_key` | API key (optional for Ollama or unauthenticated gateways) |
+| `extra headers` | Custom request headers |
+| `query params` | Custom query parameters |
+| `api_format` | API format |
+| `healthcheck_mode` | Health check mode |
 
-### 数据库
+### Databases
 
-支持 SQLite、MySQL、PostgreSQL。系统只允许执行只读 SQL。
+Supports SQLite, MySQL, and PostgreSQL. The system only executes read-only SQL.
 
-内置 SQLite 示例库：
-- 路径：`apps/api/data/demo.db`
-- 默认连接名：`示例数据库`
+Built-in SQLite demo database:
+- Path: `apps/api/data/demo.db`
+- Default connection name: `Sample Database`
 
 </details>
 
 <details>
-<summary><strong>启动脚本</strong></summary>
+<summary><strong>Startup Scripts</strong></summary>
 
 ```bash
-./start.sh          # 宿主机模式：检查环境、安装依赖、初始化数据库、启动前后端
-./start.sh setup    # 宿主机模式：仅安装环境
-./start.sh stop     # 停止宿主机模式服务
-./start.sh restart  # 重启宿主机模式服务
-./start.sh status   # 查看宿主机模式状态
-./start.sh logs     # 查看宿主机模式日志
-./start.sh doctor   # 宿主机模式环境诊断
-./start.sh test all # 宿主机模式运行全部测试
-./start.sh cleanup  # 清理宿主机模式临时状态
+./start.sh              # Host mode: check env, install deps, init DB, start frontend + backend
+./start.sh setup        # Host mode: install dependencies only
+./start.sh stop         # Stop host mode services
+./start.sh restart      # Restart host mode services
+./start.sh status       # Check host mode status
+./start.sh logs         # View host mode logs
+./start.sh doctor       # Diagnose host mode environment
+./start.sh test all     # Run all tests in host mode
+./start.sh cleanup      # Clean up host mode temp state
 ```
 
-补装分析依赖（`scikit-learn`、`scipy`、`seaborn`）：
+Install analytics extras (`scikit-learn`, `scipy`, `seaborn`):
 
 ```bash
 ./start.sh install analytics
 ```
 
-可选环境变量：
+Optional environment variables:
 
 ```bash
-QUERYGPT_BACKEND_RELOAD=1 ./start.sh    # 后端热重载
-QUERYGPT_BACKEND_HOST=0.0.0.0 ./start.sh # 监听所有网卡
+QUERYGPT_BACKEND_RELOAD=1 ./start.sh     # Backend hot reload
+QUERYGPT_BACKEND_HOST=0.0.0.0 ./start.sh # Listen on all interfaces
 ```
 
 </details>
 
 <details>
-<summary><strong>Docker 开发</strong></summary>
+<summary><strong>Docker Development</strong></summary>
 
-Windows 开发环境现在统一建议使用 Docker；仓库不再维护 `start.ps1` / `start.bat`。
+Windows developers should use Docker; `start.ps1` / `start.bat` are no longer maintained.
 
-默认开发栈会启动：
-- `web`：Next.js 开发服务器（热更新）
-- `api`：FastAPI 开发服务器（`--reload`）
-- `db`：PostgreSQL 16
+Default dev stack starts:
+- `web`: Next.js dev server (HMR enabled)
+- `api`: FastAPI dev server (`--reload`)
+- `db`: PostgreSQL 16
 
 ```bash
-docker-compose up --build               # 前台启动全部服务
-docker-compose up -d --build            # 后台启动全部服务
-docker-compose down                     # 停止并移除容器
-docker-compose down -v --remove-orphans # 连数据卷一起清理
-docker-compose ps                       # 查看状态
-docker-compose logs -f api web          # 查看前后端日志
-docker-compose restart api web          # 重启前后端
-docker-compose up db                    # 仅启动数据库
+docker-compose up --build               # Start all services in foreground
+docker-compose up -d --build            # Start all services in background
+docker-compose down                     # Stop and remove containers
+docker-compose down -v --remove-orphans # Also remove data volumes
+docker-compose ps                       # View status
+docker-compose logs -f api web          # View frontend/backend logs
+docker-compose restart api web          # Restart frontend/backend
+docker-compose up db                    # Start database only
 docker-compose run --rm api ./run-tests.sh
 docker-compose run --rm web npm run type-check
 docker-compose run --rm web npm test
 ```
 
-说明：
-- 默认浏览器访问 `http://localhost:3000`
-- 默认后端访问 `http://localhost:8000`
-- PostgreSQL 暴露在 `localhost:5432`
-- 依赖变更后请继续使用 `docker-compose up --build`
-- 若本机安装了 Docker Compose 插件，也可以把以上命令替换成 `docker compose ...`
+Notes:
+- Frontend at `http://localhost:3000` by default
+- Backend at `http://localhost:8000` by default
+- PostgreSQL exposed at `localhost:5432`
+- Run `docker-compose up --build` after dependency changes
+- If you have the Docker Compose plugin installed, swap `docker-compose` for `docker compose`
 
 </details>
 
 <details>
-<summary><strong>本地开发（宿主机模式）</strong></summary>
+<summary><strong>Local Development (Host Mode)</strong></summary>
 
-### 后端
+### Backend
 
 ```bash
 cd apps/api
@@ -294,7 +295,7 @@ pip install -e ".[dev]"
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-### 前端
+### Frontend
 
 ```bash
 cd apps/web
@@ -302,81 +303,84 @@ npm install
 npm run dev
 ```
 
-### 环境变量
+### Environment Variables
 
-后端 `apps/api/.env`：
+Backend `apps/api/.env`:
 
 ```env
 DATABASE_URL=sqlite+aiosqlite:///./data/querygpt.db
 ENCRYPTION_KEY=your-fernet-key
 ```
 
-前端 `apps/web/.env.local`：
+Frontend `apps/web/.env.local`:
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8000
-# 可选：仅 Docker / 容器内 Next rewrite 使用
+# Optional: only needed for Docker / containerized Next rewrite
 # INTERNAL_API_URL=http://api:8000
 ```
 
-### 测试
+### Tests
 
 ```bash
-# 前端
+# Frontend
 cd apps/web && npm run type-check && npm test && npm run build
 
-# 后端
+# Backend
 ./apps/api/run-tests.sh
 ```
 
-### GitHub CI 覆盖
+### GitHub CI Layers
 
-当前 GitHub Actions 分成两层：
+GitHub Actions is split into two layers:
 
-- 快速层：后端 `ruff + mypy(聊天/配置主链路) + pytest`，前端 `lint + type-check + vitest + build`
-- 集成层：Docker 全栈启动、Playwright 烟测、`start.sh` 宿主机烟测、SQLite / PostgreSQL / MySQL 连接测试、模型测试假网关
+- **Fast layer**: Backend `ruff + mypy (chat/config main path) + pytest`, frontend `lint + type-check + vitest + build`
+- **Integration layer**: Docker full-stack, Playwright smoke tests, `start.sh` host-mode smoke tests, SQLite / PostgreSQL / MySQL connection tests, model tests with mock gateway
 
-本地复现常用命令：
+Run locally:
 
 ```bash
-# Docker 全栈
+# Docker full-stack
 docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --build
 
-# 后端集成测试（需先准备 PostgreSQL / MySQL / mock gateway 环境变量）
+# Backend integration tests (requires PostgreSQL / MySQL / mock gateway env vars)
 cd apps/api && pytest tests/test_config_integration.py -v
 
-# 后端主链路类型检查
+# Backend main-path type checking
 cd apps/api && mypy --config-file mypy.ini
 
-# 前端浏览器烟测（需自行启动应用）
+# Frontend browser smoke tests (app must be running first)
 cd apps/web && npm run test:e2e
 ```
 
 </details>
 
 <details>
-<summary><strong>部署</strong></summary>
+<summary><strong>Deployment</strong></summary>
 
-### 后端
+### Backend
 
-仓库自带 [render.yaml](render.yaml)，可直接用于 Render Blueprint 部署。
+The repo includes a [render.yaml](render.yaml) for direct Render Blueprint deployment.
 
-### 前端
+### Frontend
 
-推荐部署到 Vercel：
+Recommended deployment on Vercel:
 
 - Root Directory: `apps/web`
 - Environment Variable: `NEXT_PUBLIC_API_URL=<your-api-url>`
 
 </details>
 
-## 已知边界
+## Known Limitations
 
-- 只允许只读 SQL，不支持写操作
-- 自动修复覆盖 SQL、Python、图表配置等可恢复错误
-- `/chat/stop` 按单实例语义设计
-- 开发环境建议使用 Node.js LTS；如 `next dev` 异常，先清理 `apps/web/.next`
+- Only read-only SQL is allowed; write operations are blocked
+- Auto-repair covers SQL, Python, and chart config errors that are recoverable
+- `/chat/stop` is designed for single-instance semantics
+- Node.js LTS is recommended for development; if `next dev` behaves oddly, clear `apps/web/.next`
 
-## 许可证
+## License
 
 MIT
+
+---
+> Built with ❤️

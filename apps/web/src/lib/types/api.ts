@@ -126,6 +126,7 @@ export interface SSEProgressData {
 export interface SSEResultData {
   content: string;
   sql?: string;
+  python?: string;
   data?: DataRow[];
   rows_count?: number;
   execution_time?: number;
@@ -202,6 +203,7 @@ export interface Visualization {
 /** 消息元数据 */
 export interface MessageMetadata {
   sql?: string;
+  python?: string;
   execution_time?: number;
   rows_count?: number;
   visualization?: Visualization;

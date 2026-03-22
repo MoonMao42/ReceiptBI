@@ -12,6 +12,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.db import get_db
 from app.db.tables import Message
+from app.i18n import get_progress_message, t
 from app.models import APIResponse, ChatStopRequest, SSEEvent
 from app.services.app_settings import get_or_create_app_settings, settings_to_dict
 from app.services.chat_runtime import (
@@ -57,7 +58,7 @@ async def chat_stream(
             connection_id=connection_id,
         )
         if not conversation:
-            yield SSEEvent.error("NOT_FOUND", "对话不存在").to_sse()
+            yield SSEEvent.error("NOT_FOUND", t("error.not_found", language)).to_sse()
             return
 
         current_conversation_id = UUID(str(conversation.id))
@@ -71,7 +72,7 @@ async def chat_stream(
         try:
             yield SSEEvent.progress(
                 "start",
-                "开始处理请求...",
+                get_progress_message("start", language),
                 conversation_id=str(current_conversation_id),
             ).to_sse()
 
@@ -94,7 +95,7 @@ async def chat_stream(
             runtime_snapshot = await execution_service.get_runtime_snapshot()
             yield SSEEvent.progress(
                 "context_ready",
-                "执行上下文已准备",
+                get_progress_message("context_ready", language),
                 conversation_id=str(current_conversation_id),
                 execution_context=runtime_snapshot,
             ).to_sse()
@@ -146,11 +147,11 @@ async def chat_stream(
 
             yield SSEEvent.done(str(current_conversation_id), str(assistant_message.id)).to_sse()
         except asyncio.CancelledError:
-            mark_conversation_exception(conversation, "查询已取消")
+            mark_conversation_exception(conversation, t("error.cancelled", language))
             await db.commit()
             yield SSEEvent.error(
                 "CANCELLED",
-                "查询已取消",
+                t("error.cancelled", language),
                 conversation_id=str(current_conversation_id) if current_conversation_id else None,
             ).to_sse()
         except Exception as exc:
@@ -180,10 +181,10 @@ async def stop_chat(request: ChatStopRequest) -> APIResponse[dict[str, Any]]:
     if active_query_registry.stop(request.conversation_id):
         return APIResponse.ok(
             data={"stopped": True},
-            message="查询停止请求已发送",
+            message=t("stop.sent", "zh"),
         )
 
     return APIResponse.ok(
         data={"stopped": False},
-        message="没有找到正在执行的查询",
+        message=t("stop.not_found", "zh"),
     )

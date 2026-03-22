@@ -19,6 +19,7 @@ import type {
   ConflictResolution,
   ImportResult,
 } from "@/lib/types/export";
+import { useTranslations } from "next-intl";
 
 interface ImportConfigDialogProps {
   connectionId: string;
@@ -43,8 +44,9 @@ export function ImportConfigDialog({
     useState<ConflictResolution>("skip");
   const [previewResult, setPreviewResult] = useState<ImportResult | null>(null);
   const [step, setStep] = useState<"upload" | "preview" | "result">("upload");
+  const t = useTranslations("importConfig");
+  const tc = useTranslations("common");
 
-  // 预览导入
   const previewMutation = useMutation({
     mutationFn: async () => {
       const response = await api.post(
@@ -63,7 +65,6 @@ export function ImportConfigDialog({
     },
   });
 
-  // 执行导入
   const importMutation = useMutation({
     mutationFn: async () => {
       const response = await api.post(
@@ -79,7 +80,6 @@ export function ImportConfigDialog({
     onSuccess: (data) => {
       setPreviewResult(data);
       setStep("result");
-      // 刷新相关数据
       queryClient.invalidateQueries({ queryKey: ["relationships", connectionId] });
       queryClient.invalidateQueries({ queryKey: ["layouts", connectionId] });
       queryClient.invalidateQueries({ queryKey: ["semantic-terms"] });
@@ -98,19 +98,18 @@ export function ImportConfigDialog({
       try {
         const json = JSON.parse(event.target?.result as string);
 
-        // 验证基本结构
         if (!json.version || !json.connection) {
-          throw new Error("无效的配置文件格式");
+          throw new Error(t("invalidFormat"));
         }
 
         setConfigData(json as ConfigExport);
       } catch (err) {
-        setParseError(err instanceof Error ? err.message : "解析文件失败");
+        setParseError(err instanceof Error ? err.message : t("parseFailed"));
         setConfigData(null);
       }
     };
     reader.onerror = () => {
-      setParseError("读取文件失败");
+      setParseError(t("readFailed"));
       setConfigData(null);
     };
     reader.readAsText(file);
@@ -145,13 +144,13 @@ export function ImportConfigDialog({
   const getStatusText = (status: string) => {
     switch (status) {
       case "created":
-        return "新建";
+        return t("statusCreated");
       case "updated":
-        return "更新";
+        return t("statusUpdated");
       case "skipped":
-        return "跳过";
+        return t("statusSkipped");
       case "failed":
-        return "失败";
+        return t("statusFailed");
       default:
         return status;
     }
@@ -160,11 +159,11 @@ export function ImportConfigDialog({
   const getTypeText = (type: string) => {
     switch (type) {
       case "relationship":
-        return "表关系";
+        return t("typeRelationship");
       case "semantic_term":
-        return "语义术语";
+        return t("typeSemanticTerm");
       case "layout":
-        return "布局";
+        return t("typeLayout");
       default:
         return type;
     }
@@ -175,10 +174,9 @@ export function ImportConfigDialog({
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-background border border-border rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
-        {/* 标题栏 */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h3 className="font-semibold text-foreground">
-            导入配置到「{connectionName}」
+            {t("titleWithConnection", { name: connectionName })}
           </h3>
           <button
             onClick={handleClose}
@@ -188,11 +186,9 @@ export function ImportConfigDialog({
           </button>
         </div>
 
-        {/* 内容区域 */}
         <div className="flex-1 overflow-y-auto p-4">
           {step === "upload" && (
             <div className="space-y-4">
-              {/* 文件上传区域 */}
               <div
                 onClick={() => fileInputRef.current?.click()}
                 className="border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/50 transition-colors"
@@ -211,7 +207,7 @@ export function ImportConfigDialog({
                       {fileName}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      版本: {configData.version} | 导出时间:{" "}
+                      {t("version")}: {configData.version} | {t("exportedAt")}:{" "}
                       {new Date(configData.exported_at).toLocaleString()}
                     </p>
                   </div>
@@ -219,7 +215,7 @@ export function ImportConfigDialog({
                   <div className="space-y-2">
                     <Upload size={40} className="mx-auto text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">
-                      点击或拖拽上传配置文件 (.json)
+                      {t("uploadHint")}
                     </p>
                   </div>
                 )}
@@ -232,24 +228,22 @@ export function ImportConfigDialog({
                 </div>
               )}
 
-              {/* 配置预览 */}
               {configData && (
                 <div className="space-y-3">
                   <div className="text-sm text-muted-foreground">
                     <p>
-                      来源连接: <span className="text-foreground">{configData.connection.name}</span>
+                      {t("sourceConnection")}: <span className="text-foreground">{configData.connection.name}</span>
                     </p>
                     <p>
-                      包含: {configData.relationships.length} 个表关系,{" "}
-                      {configData.semantic_terms.length} 个语义术语,{" "}
-                      {configData.layouts.length} 个布局
+                      {t("contains")}: {configData.relationships.length} {t("typeRelationship")},{" "}
+                      {configData.semantic_terms.length} {t("typeSemanticTerm")},{" "}
+                      {configData.layouts.length} {t("typeLayout")}
                     </p>
                   </div>
 
-                  {/* 导入模式 */}
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-foreground">
-                      导入模式
+                      {t("importMode")}
                     </label>
                     <div className="flex gap-4">
                       <label className="flex items-center gap-2 cursor-pointer">
@@ -261,7 +255,7 @@ export function ImportConfigDialog({
                           onChange={() => setImportMode("merge")}
                           className="accent-primary"
                         />
-                        <span className="text-sm">合并</span>
+                        <span className="text-sm">{t("modeMerge")}</span>
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
@@ -272,21 +266,20 @@ export function ImportConfigDialog({
                           onChange={() => setImportMode("replace")}
                           className="accent-primary"
                         />
-                        <span className="text-sm">替换</span>
+                        <span className="text-sm">{t("modeReplace")}</span>
                       </label>
                     </div>
                     <p className="text-xs text-muted-foreground">
                       {importMode === "merge"
-                        ? "保留现有配置，添加新配置"
-                        : "删除现有配置，使用导入的配置"}
+                        ? t("modeMergeDesc")
+                        : t("modeReplaceDesc")}
                     </p>
                   </div>
 
-                  {/* 冲突处理 */}
                   {importMode === "merge" && (
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-foreground">
-                        冲突处理
+                        {t("conflictResolution")}
                       </label>
                       <div className="flex gap-4">
                         <label className="flex items-center gap-2 cursor-pointer">
@@ -298,7 +291,7 @@ export function ImportConfigDialog({
                             onChange={() => setConflictResolution("skip")}
                             className="accent-primary"
                           />
-                          <span className="text-sm">跳过</span>
+                          <span className="text-sm">{t("conflictSkip")}</span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
@@ -309,7 +302,7 @@ export function ImportConfigDialog({
                             onChange={() => setConflictResolution("overwrite")}
                             className="accent-primary"
                           />
-                          <span className="text-sm">覆盖</span>
+                          <span className="text-sm">{t("conflictOverwrite")}</span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
@@ -320,7 +313,7 @@ export function ImportConfigDialog({
                             onChange={() => setConflictResolution("rename")}
                             className="accent-primary"
                           />
-                          <span className="text-sm">重命名</span>
+                          <span className="text-sm">{t("conflictRename")}</span>
                         </label>
                       </div>
                     </div>
@@ -332,35 +325,33 @@ export function ImportConfigDialog({
 
           {step === "preview" && previewResult && (
             <div className="space-y-4">
-              {/* 预览统计 */}
               <div className="grid grid-cols-4 gap-2 text-center">
                 <div className="p-2 bg-green-500/10 rounded">
                   <p className="text-lg font-semibold text-green-600">
                     {previewResult.created}
                   </p>
-                  <p className="text-xs text-muted-foreground">新建</p>
+                  <p className="text-xs text-muted-foreground">{t("statusCreated")}</p>
                 </div>
                 <div className="p-2 bg-blue-500/10 rounded">
                   <p className="text-lg font-semibold text-blue-600">
                     {previewResult.updated}
                   </p>
-                  <p className="text-xs text-muted-foreground">更新</p>
+                  <p className="text-xs text-muted-foreground">{t("statusUpdated")}</p>
                 </div>
                 <div className="p-2 bg-yellow-500/10 rounded">
                   <p className="text-lg font-semibold text-yellow-600">
                     {previewResult.skipped}
                   </p>
-                  <p className="text-xs text-muted-foreground">跳过</p>
+                  <p className="text-xs text-muted-foreground">{t("statusSkipped")}</p>
                 </div>
                 <div className="p-2 bg-red-500/10 rounded">
                   <p className="text-lg font-semibold text-red-600">
                     {previewResult.failed}
                   </p>
-                  <p className="text-xs text-muted-foreground">失败</p>
+                  <p className="text-xs text-muted-foreground">{t("statusFailed")}</p>
                 </div>
               </div>
 
-              {/* 详细列表 */}
               <div className="border border-border rounded-lg overflow-hidden">
                 <div className="max-h-60 overflow-y-auto">
                   {previewResult.details.map((item, index) => (
@@ -395,26 +386,29 @@ export function ImportConfigDialog({
                 <>
                   <CheckCircle size={48} className="mx-auto text-green-500" />
                   <p className="text-lg font-medium text-foreground">
-                    导入成功
+                    {t("importSuccess")}
                   </p>
                 </>
               ) : (
                 <>
                   <AlertCircle size={48} className="mx-auto text-yellow-500" />
                   <p className="text-lg font-medium text-foreground">
-                    导入完成（部分失败）
+                    {t("importPartialFail")}
                   </p>
                 </>
               )}
               <p className="text-sm text-muted-foreground">
-                新建 {previewResult.created} 项，更新 {previewResult.updated} 项，
-                跳过 {previewResult.skipped} 项，失败 {previewResult.failed} 项
+                {t("importSummary", {
+                  created: previewResult.created,
+                  updated: previewResult.updated,
+                  skipped: previewResult.skipped,
+                  failed: previewResult.failed,
+                })}
               </p>
             </div>
           )}
         </div>
 
-        {/* 底部按钮 */}
         <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border">
           {step === "upload" && (
             <>
@@ -422,7 +416,7 @@ export function ImportConfigDialog({
                 onClick={handleClose}
                 className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
               >
-                取消
+                {tc("cancel")}
               </button>
               <button
                 onClick={() => previewMutation.mutate()}
@@ -432,7 +426,7 @@ export function ImportConfigDialog({
                 {previewMutation.isPending && (
                   <Loader2 size={14} className="animate-spin" />
                 )}
-                预览
+                {t("preview")}
               </button>
             </>
           )}
@@ -443,7 +437,7 @@ export function ImportConfigDialog({
                 onClick={() => setStep("upload")}
                 className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
               >
-                返回
+                {t("back")}
               </button>
               <button
                 onClick={() => importMutation.mutate()}
@@ -453,7 +447,7 @@ export function ImportConfigDialog({
                 {importMutation.isPending && (
                   <Loader2 size={14} className="animate-spin" />
                 )}
-                确认导入
+                {t("confirmImport")}
               </button>
             </>
           )}
@@ -463,7 +457,7 @@ export function ImportConfigDialog({
               onClick={handleClose}
               className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
             >
-              完成
+              {t("done")}
             </button>
           )}
         </div>
