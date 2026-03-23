@@ -39,7 +39,7 @@ async function main() {
 
   // 1. 生成 requirements.txt
   console.log('[1/5] Generating requirements.txt...');
-  const apiVenvPip = join(API_DIR, '.venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'pip');
+  const apiVenvPip = join(API_DIR, '.venv', process.platform === 'win32' ? 'Scripts/pip.exe' : 'bin/pip');
   let requirements: string;
   if (existsSync(apiVenvPip)) {
     requirements = execSync(`"${apiVenvPip}" freeze`, { encoding: 'utf-8', cwd: API_DIR });
@@ -90,9 +90,10 @@ async function main() {
   const desktopEntry = join(DESKTOP_DIR, 'scripts', 'desktop-entry.py');
   const apiMainPy = desktopEntry;
 
-  // 查找 assets 目录
   const assetsSrc = join(API_DIR, 'app', 'assets');
   const assetsExist = existsSync(assetsSrc);
+  const dataSrc = join(API_DIR, 'data');
+  const dataExist = existsSync(dataSrc);
 
   const specPath = join(BUILD_DIR, 'querygpt-api.spec');
   const outDir = join(ROOT, 'dist', 'querygpt-api');
@@ -119,7 +120,7 @@ a = Analysis(
     binaries=[],
     datas=[
 ${assetsExist ? `        ('${assetsSrc.replace(/\\/g, '\\\\')}', 'app\\\\assets'),` : ''}
-        ('${join(API_DIR, 'data').replace(/\\/g, '\\\\')}', 'data'),
+${dataExist ? `        ('${dataSrc.replace(/\\/g, '\\\\')}', 'data'),` : ''}
     ] + _extra_datas,
     hiddenimports=[${hiddenImports.map(s => `'${s}'`).join(', ')}],
     hookspath=[],
