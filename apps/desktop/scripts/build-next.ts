@@ -30,6 +30,7 @@ async function main() {
       env: {
         ...process.env,
         NEXT_PUBLIC_API_URL: `http://127.0.0.1:${BACKEND_PORT}`,
+        NEXT_PUBLIC_APP_MODE: 'desktop',
         NODE_ENV: 'production',
       },
       stdio: 'inherit',
