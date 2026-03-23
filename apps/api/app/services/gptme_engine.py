@@ -545,7 +545,9 @@ class GptmeEngine:
                 state,
                 phase="sql",
                 status="success",
-                message=t("diag.sql_success", self.language).format(count=state.final_rows_count or 0),
+                message=t("diag.sql_success", self.language).format(
+                    count=state.final_rows_count or 0
+                ),
                 sql=state.final_sql,
             )
             events.append(
@@ -910,7 +912,8 @@ class GptmeEngine:
                 return
 
             yield SSEEvent.result(
-                content=clean_content_for_display(state.full_content) or t("diag.analysis_done", self.language),
+                content=clean_content_for_display(state.full_content)
+                or t("diag.analysis_done", self.language),
                 sql=state.final_sql,
                 python=state.final_python,
                 data=state.final_data,

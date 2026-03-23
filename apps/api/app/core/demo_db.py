@@ -122,12 +122,12 @@ def init_demo_database() -> str:
 async def ensure_demo_connection(db: AsyncSession, demo_db_path: str) -> None:
     """在单工作区没有任何连接时，自动补一条示例数据库连接"""
     # Migrate old Chinese name to English
-    old_demo = await db.scalar(
-        select(Connection.id).where(Connection.name == "示例数据库")
-    )
+    old_demo = await db.scalar(select(Connection.id).where(Connection.name == "示例数据库"))
     if old_demo:
         await db.execute(
-            update(Connection).where(Connection.name == "示例数据库").values(name=DEMO_CONNECTION_NAME)
+            update(Connection)
+            .where(Connection.name == "示例数据库")
+            .values(name=DEMO_CONNECTION_NAME)
         )
         await db.commit()
         logger.info("Migrated demo connection name to English")
@@ -209,24 +209,27 @@ async def ensure_demo_semantic_terms(db: AsyncSession, connection_id) -> None:
 
     if old_ids:
         from sqlalchemy import delete
+
         await db.execute(delete(SemanticTerm).where(SemanticTerm.id.in_(old_ids)))
         logger.info("Removed old Chinese semantic terms", count=len(old_ids))
 
     # Check if English demo terms already exist
     existing_count = await db.scalar(
-        select(func.count()).select_from(SemanticTerm).where(
-            SemanticTerm.term.in_([t["term"] for t in DEMO_SEMANTIC_TERMS])
-        )
+        select(func.count())
+        .select_from(SemanticTerm)
+        .where(SemanticTerm.term.in_([t["term"] for t in DEMO_SEMANTIC_TERMS]))
     )
     if existing_count and existing_count >= len(DEMO_SEMANTIC_TERMS):
         return
 
     # Seed missing English demo terms
-    existing_names = set(await db.scalars(
-        select(SemanticTerm.term).where(
-            SemanticTerm.term.in_([t["term"] for t in DEMO_SEMANTIC_TERMS])
+    existing_names = set(
+        await db.scalars(
+            select(SemanticTerm.term).where(
+                SemanticTerm.term.in_([t["term"] for t in DEMO_SEMANTIC_TERMS])
+            )
         )
-    ))
+    )
     for term_data in DEMO_SEMANTIC_TERMS:
         if term_data["term"] in existing_names:
             continue

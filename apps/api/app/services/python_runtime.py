@@ -292,9 +292,9 @@ plt.rcParams['font.size'] = 12
             if stderr_output:
                 # Filter out harmless matplotlib warnings
                 filtered_lines = [
-                    line for line in stderr_output.splitlines()
-                    if "FigureCanvasAgg is non-interactive" not in line
-                    and "plt.show()" not in line
+                    line
+                    for line in stderr_output.splitlines()
+                    if "FigureCanvasAgg is non-interactive" not in line and "plt.show()" not in line
                 ]
                 filtered_stderr = "\n".join(filtered_lines).strip()
                 if filtered_stderr:
