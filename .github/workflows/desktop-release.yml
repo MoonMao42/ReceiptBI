@@ -10,7 +10,57 @@ permissions:
   contents: write
 
 jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "QueryGPT Desktop ${{ github.ref_name }}" \
+            --draft \
+            --notes "$(cat <<'NOTES'
+          ## Downloads
+
+          | Platform | File |
+          |----------|------|
+          | macOS (Apple Silicon) | `.dmg` or `.zip` |
+          | macOS (Intel) | `.dmg` or `.zip` |
+          | Windows | `.exe` installer |
+
+          ## Install
+
+          ### macOS
+
+          1. Download and open the `.dmg`, drag QueryGPT to Applications
+          2. First launch will show "app is damaged" — run this in Terminal:
+             ```
+             xattr -cr /Applications/QueryGPT.app
+             ```
+          3. Open QueryGPT from Applications
+
+          > This happens because the app is not code-signed yet.
+
+          ### Windows
+
+          Run the `.exe` installer and follow the prompts.
+
+          ## Features
+
+          - Natural language to SQL with any OpenAI-compatible model
+          - Database connections: PostgreSQL, MySQL, SQLite
+          - Semantic layer for custom business metrics
+          - Query history and result visualization
+          - i18n support (English / 中文)
+          NOTES
+          )"
+
   build:
+    needs: create-release
+    if: always()
     strategy:
       fail-fast: false
       matrix:
@@ -86,71 +136,15 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/desktop-v')
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: desktop-*
-          merge-multiple: true
-          path: artifacts/
-
-      - name: List artifacts
-        run: find artifacts/ -type f -exec ls -lh {} \; | sort
-
-      - name: Create GitHub Release
+      # Upload directly to release from build runner (avoids artifact download corruption)
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ github.ref_name }}" \
-            --title "QueryGPT Desktop ${{ github.ref_name }}" \
-            --draft \
-            --notes "$(cat <<'EOF'
-          ## Downloads
-
-          | Platform | File |
-          |----------|------|
-          | macOS (Apple Silicon) | `.dmg` or `.zip` |
-          | macOS (Intel) | `.dmg` or `.zip` |
-          | Windows | `.exe` installer |
-
-          ## Install
-
-          ### macOS
-
-          1. Download and open the `.dmg`, drag QueryGPT to Applications
-          2. First launch will show "app is damaged" — run this in Terminal:
-             ```
-             xattr -cr /Applications/QueryGPT.app
-             ```
-          3. Open QueryGPT from Applications
-
-          > This happens because the app is not code-signed yet.
-
-          ### Windows
-
-          Run the `.exe` installer and follow the prompts.
-
-          ## Features
-
-          - Natural language to SQL with any OpenAI-compatible model
-          - Database connections: PostgreSQL, MySQL, SQLite
-          - Semantic layer for custom business metrics
-          - Query history and result visualization
-          - i18n support (English / 中文)
-          EOF
-          )"
-
-      - name: Upload release assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          for file in artifacts/*; do
+          for file in apps/desktop/release/*.dmg apps/desktop/release/*.zip apps/desktop/release/*.exe; do
+            [ -f "$file" ] || continue
             echo "Uploading $file ..."
             for attempt in 1 2 3; do
               if gh release upload "${{ github.ref_name }}" "$file" --clobber; then
