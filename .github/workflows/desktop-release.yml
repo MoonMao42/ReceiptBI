@@ -166,25 +166,27 @@ jobs:
             fi
 
             for attempt in 1 2 3; do
+              # Use --upload-file which is designed for reliable binary uploads
               response=$(curl -s -w "\n%{http_code}" \
                 -H "Authorization: token $GITHUB_TOKEN" \
                 -H "Content-Type: application/octet-stream" \
-                --data-binary "@$file" \
+                --upload-file "$file" \
                 "https://uploads.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets?name=$filename")
               http_code=$(echo "$response" | tail -1)
-              upload_size=$(echo "$response" | head -1 | jq -r '.size // 0')
+              body=$(echo "$response" | sed '$d')
+              uploaded_size=$(echo "$body" | jq -r '.size // 0')
 
-              if [ "$http_code" = "201" ] && [ "$upload_size" = "$filesize" ]; then
-                echo "  OK (verified: $upload_size bytes)"
+              if [ "$http_code" = "201" ] && [ "$uploaded_size" = "$filesize" ]; then
+                echo "  OK (verified: $uploaded_size bytes)"
                 break
               fi
-              echo "  Attempt $attempt: HTTP $http_code, uploaded $upload_size / expected $filesize"
+              echo "  Attempt $attempt: HTTP $http_code, uploaded=$uploaded_size expected=$filesize"
               # Clean up partial upload
-              partial=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+              new_asset=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
                 "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets" \
                 | jq -r ".[] | select(.name == \"$filename\") | .id")
-              [ -n "$partial" ] && curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
-                "https://api.github.com/repos/${{ github.repository }}/releases/assets/$partial"
+              [ -n "$new_asset" ] && curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
+                "https://api.github.com/repos/${{ github.repository }}/releases/assets/$new_asset"
               sleep 10
             done
           done
