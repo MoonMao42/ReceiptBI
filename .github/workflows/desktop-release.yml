@@ -108,28 +108,22 @@ jobs:
           draft: true
           name: QueryGPT Desktop ${{ github.ref_name }}
           body: |
-            QueryGPT Desktop — self-contained app with no Python setup required.
+            QueryGPT Desktop v${{ github.ref_name }} for macOS and Windows.
 
-            ## Supported Platforms
-            - macOS (Apple Silicon) — `.dmg` / `.zip`
-            - macOS (Intel) — `.dmg` / `.zip`
-            - Windows — `.exe` (NSIS installer) / `.zip` (portable)
+            ## Downloads
+            - macOS (Apple Silicon): `.dmg` or `.zip`
+            - macOS (Intel): `.dmg` or `.zip`
+            - Windows: `.exe` (installer) or `.zip` (portable)
 
-            ## How to Install
-
-            **macOS**
-            1. Mount the `.dmg` and drag `QueryGPT.app` into Applications
-            2. On first launch, authorize in System Settings → Privacy & Security
-
-            **Windows**
-            - NSIS installer: run `.exe` and follow the prompts
-            - Portable: extract the `.zip` and run `QueryGPT.exe` directly
+            ## Install
+            macOS: mount the dmg, drag app to Applications, authorize in System Settings → Privacy & Security.
+            Windows: run the installer or extract and launch exe directly.
 
             ## Features
-            - Database connections (PostgreSQL, SQLite, MySQL and more)
-            - Natural language queries — turns questions into SQL automatically
-            - Model configuration — works with any OpenAI-compatible API
-            - Semantic layer — define custom business metrics
-            - Query history and favorites
+            - Database connections (PostgreSQL, SQLite, MySQL, etc.)
+            - Natural language to SQL
+            - OpenAI-compatible model configuration
+            - Semantic layer with custom business metrics
+            - Query history
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
