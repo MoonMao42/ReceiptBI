@@ -111,6 +111,11 @@ async function main() {
   // 显式安装 aiosqlite（pydantic-settings 动态加载时需要）
   run(`${pip} install aiosqlite`);
 
+  // 2.5. 预生成 demo.db + querygpt.db（构建时生成，运行时直接复制到用户目录）
+  console.log('\nPre-generating databases...');
+  const seedScript = join(DESKTOP_DIR, 'scripts', 'seed-databases.py');
+  run(`${python} "${seedScript}"`);
+
   // 3. 收集可能动态导入的模块
   console.log('\n[3/5] Collecting dynamic imports...');
   const hiddenImports = [
