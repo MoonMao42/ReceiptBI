@@ -5,6 +5,12 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export async function generateMetadata(): Promise<Metadata> {
+  if (process.env.NEXT_PUBLIC_APP_MODE === 'desktop') {
+    return {
+      title: 'QueryGPT',
+      description: 'Natural Language Database Assistant',
+    };
+  }
   const t = await getTranslations("metadata");
   return {
     title: t("title"),
