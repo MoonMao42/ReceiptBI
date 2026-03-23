@@ -1,0 +1,74 @@
+appId: com.querygpt.desktop
+productName: QueryGPT
+copyright: Copyright © 2024 QueryGPT Team
+
+directories:
+  output: release
+  buildResources: resources
+
+files:
+  - dist-electron/**/*
+
+extraMetadata:
+  main: dist-electron/main.js
+
+# 将 backend 和 next 作为额外资源打包（不进入 asar）
+extraResources:
+  - from: backend
+    to: backend
+    filter:
+      - "**/*"
+  - from: next
+    to: next
+    filter:
+      - "**/*"
+
+# macOS
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+  icon: resources/icon/icon.icns
+  sign: false
+  hardenedRuntime: false
+
+# Windows
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  artifactName: ${productName}-${version}-win-${arch}.${ext}
+  icon: resources/icon/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+# Linux (optional)
+linux:
+  target: [AppImage]
+  category: Development
+  artifactName: ${productName}-${version}-linux-${arch}.${ext}
+
+# ASAR: 只包含 dist-electron
+asar: true
+
+# DMG
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications

@@ -1,0 +1,27 @@
+{
+  "name": "querygpt-desktop",
+  "version": "0.1.0",
+  "description": "QueryGPT Desktop Application",
+  "main": "dist-electron/main.js",
+  "author": "QueryGPT Team",
+  "license": "MIT",
+  "scripts": {
+    "dev": "tsc -p tsconfig.electron.json && electron .",
+    "build": "npm run build:electron",
+    "build:electron": "electron-builder --config electron-builder.yml",
+    "build:electron:mac": "electron-builder --mac --config electron-builder.yml",
+    "build:electron:win": "electron-builder --win --config electron-builder.yml",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "electron-log": "^5.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

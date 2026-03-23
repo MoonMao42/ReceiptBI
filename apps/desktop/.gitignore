@@ -1,0 +1,6 @@
+dist-electron/
+backend/
+next/
+build/
+release/
+node_modules/
