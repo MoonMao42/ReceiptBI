@@ -144,6 +144,11 @@ async function main() {
   const outDir = join(ROOT, 'dist', 'querygpt-api');
   const distDir = join(BUILD_DIR, 'dist').replace(/\\/g, '\\\\');
 
+  // 生成 runtime hook：强制导入 aiosqlite（hiddenimport 无法保证纯 Python 包被打包）
+  const runtimeHookContent = 'import aiosqlite  # noqa: F401\n';
+  const runtimeHookPath = join(BUILD_DIR, 'runtime-hook.py');
+  writeFileSync(runtimeHookPath, runtimeHookContent);
+
   const spec = `
 # -*- mode: python ; coding: utf-8 -*-
 import importlib, os
@@ -170,7 +175,7 @@ ${dataExist ? `        ('${dataSrc.replace(/\\/g, '\\\\')}', 'data'),` : ''}
     hiddenimports=[${hiddenImports.map(s => `'${s}'`).join(', ')}],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['${runtimeHookPath.replace(/\\/g, '\\\\')}'],
     excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
