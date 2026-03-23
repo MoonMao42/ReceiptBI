@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.i18n import t
+    pass
 
 from typing import Any
 
@@ -147,11 +147,21 @@ def build_db_context(db_config: dict[str, Any], schema_info: str, lang: str = "z
     db_type_label = t("db_context.type", lang) if lang == "en" else "类型"
     db_label = t("db_context.database", lang) if lang == "en" else "数据库"
     schema_label = t("db_context.schema", lang) if lang == "en" else "数据库表结构"
-    instruction = t("db_context.instruction", lang) if lang == "en" else "请根据用户的问题生成合适的 SQL 查询语句。"
+    instruction = (
+        t("db_context.instruction", lang)
+        if lang == "en"
+        else "请根据用户的问题生成合适的 SQL 查询语句。"
+    )
     rules_title = t("db_context.rules_title", lang) if lang == "en" else "重要规则:"
-    rule1 = t("db_context.rule1", lang) if lang == "en" else "只生成只读 SQL (SELECT, SHOW, DESCRIBE)"
+    rule1 = (
+        t("db_context.rule1", lang) if lang == "en" else "只生成只读 SQL (SELECT, SHOW, DESCRIBE)"
+    )
     rule2 = t("db_context.rule2", lang) if lang == "en" else "使用 ```sql 代码块包裹 SQL 语句"
-    rule3 = t("db_context.rule3", lang) if lang == "en" else "必须使用上面提供的真实表名和字段名，不要猜测"
+    rule3 = (
+        t("db_context.rule3", lang)
+        if lang == "en"
+        else "必须使用上面提供的真实表名和字段名，不要猜测"
+    )
     rule4 = t("db_context.rule4", lang) if lang == "en" else "简洁明了地解释查询结果"
 
     return f"""
