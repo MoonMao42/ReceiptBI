@@ -46,7 +46,12 @@ async function main() {
   } else {
     requirements = execSync('uv pip freeze', { encoding: 'utf-8', cwd: API_DIR });
   }
-  writeFileSync(join(BUILD_DIR, 'requirements.txt'), requirements);
+  // 过滤掉 git 来源的包（如 querygpt_api），PyInstaller 通过 desktop-entry.py 直接导入 app.main
+  const frozenPkgs = requirements.split('\n').filter((line) => {
+    const l = line.trim();
+    return l && !l.startsWith('git+') && !l.startsWith('-e ') && !l.startsWith('#');
+  }).join('\n');
+  writeFileSync(join(BUILD_DIR, 'requirements.txt'), frozenPkgs);
 
   // 2. 创建 build venv（使用 Python 3.13，PyInstaller 6.19.0 需要）
   console.log('\n[2/5] Creating build venv with Python 3.13...');
