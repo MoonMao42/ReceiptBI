@@ -185,55 +185,24 @@ export class ProcessManager {
     };
 
     if (usePacked) {
-      // macOS: utilityProcess 不在 Dock 显示图标; Windows: spawn 更稳定
-      if (process.platform === 'win32') {
-        this.logger.info(`Starting frontend (spawn): node ${serverJs}`);
-        const procEnv = {
-          ...process.env,
-          ...env,
-          NODE_PATH: path.join(nextDir, 'node_modules'),
-        };
-        this.frontendProcess = spawn('node', [serverJs], {
-          cwd: nextDir,
-          env: procEnv,
-          stdio: ['ignore', 'pipe', 'pipe'],
-          detached: false,
-          shell: false,
-        });
-        this.frontendProcess.stdout?.on('data', (data) => {
-          this.logger.debug(`[Frontend] ${data.toString().trim()}`);
-        });
-        this.frontendProcess.stderr?.on('data', (data) => {
-          this.logger.debug(`[Frontend] ${data.toString().trim()}`);
-        });
-        this.frontendProcess.on('error', (error) => {
-          this.logger.error('Frontend process error', error);
-        });
-        this.frontendProcess.on('exit', (code) => {
-          if (code !== 0) {
-            this.logger.warn(`Frontend exited with code ${code}`);
-          }
-        });
-      } else {
-        this.logger.info(`Starting frontend (utilityProcess): ${serverJs}`);
-        const up = utilityProcess.fork(serverJs, [], {
-          cwd: nextDir,
-          env,
-          stdio: 'pipe',
-        });
-        up.stdout?.on('data', (data: Buffer) => {
-          this.logger.debug(`[Frontend] ${data.toString().trim()}`);
-        });
-        up.stderr?.on('data', (data: Buffer) => {
-          this.logger.debug(`[Frontend] ${data.toString().trim()}`);
-        });
-        up.on('exit', (code) => {
-          if (code !== 0) {
-            this.logger.warn(`Frontend exited with code ${code}`);
-          }
-        });
-        this.frontendProcess = up as unknown as ChildProcess;
-      }
+      this.logger.info(`Starting frontend (utilityProcess): ${serverJs}`);
+      const up = utilityProcess.fork(serverJs, [], {
+        cwd: nextDir,
+        env: { ...process.env, ...env },
+        stdio: 'pipe',
+      });
+      up.stdout?.on('data', (data: Buffer) => {
+        this.logger.debug(`[Frontend] ${data.toString().trim()}`);
+      });
+      up.stderr?.on('data', (data: Buffer) => {
+        this.logger.debug(`[Frontend] ${data.toString().trim()}`);
+      });
+      up.on('exit', (code) => {
+        if (code !== 0) {
+          this.logger.warn(`Frontend exited with code ${code}`);
+        }
+      });
+      this.frontendProcess = up as unknown as ChildProcess;
     } else {
       // 开发模式：用 next start
       this.logger.info('Starting frontend (dev mode): next start');
