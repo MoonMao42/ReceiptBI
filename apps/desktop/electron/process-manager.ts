@@ -62,7 +62,7 @@ export class ProcessManager {
       } else {
         cmd = `lsof -ti tcp:${port}`;
       }
-      const result = execSync(cmd, { encoding: 'utf-8' }).trim();
+      const result = execSync(cmd, { encoding: 'utf-8', timeout: 3000 }).trim();
       if (result) {
         for (const pid of result.split('\n')) {
           const p = parseInt(pid.trim());
@@ -81,6 +81,24 @@ export class ProcessManager {
     } catch { /* no process on port */ }
   }
 
+  /** 首次启动时从打包资源复制预生成的数据库到用户数据目录 */
+  private copyBundledDatabases(): void {
+    const dataDir = path.join(this.userDataDir, 'data');
+    // 打包资源中的 data/ 目录（由 PyInstaller 打包进 backend/_internal/data/）
+    const bundledDataDir = path.join(this.getBackendOutDir(), '_internal', 'data');
+
+    for (const dbName of ['demo.db', 'querygpt.db']) {
+      const dest = path.join(dataDir, dbName);
+      if (fs.existsSync(dest)) continue;
+
+      const src = path.join(bundledDataDir, dbName);
+      if (fs.existsSync(src)) {
+        fs.copyFileSync(src, dest);
+        this.logger.info(`Copied bundled ${dbName} to user data dir`);
+      }
+    }
+  }
+
   async startAll(): Promise<void> {
     fs.mkdirSync(this.userDataDir, { recursive: true });
     fs.mkdirSync(path.join(this.userDataDir, 'logs'), { recursive: true });
@@ -92,6 +110,9 @@ export class ProcessManager {
       fs.copyFileSync(backendEnvExample, userEnv);
       this.logger.info('Created user .env from example');
     }
+
+    // 首次启动：从打包资源复制预生成的数据库到用户目录
+    this.copyBundledDatabases();
 
     // 清理可能残留的旧进程
     this.killPortProcess(BACKEND_PORT);
