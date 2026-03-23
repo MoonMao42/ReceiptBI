@@ -39,10 +39,13 @@ async function main() {
 
   // 1. 生成 requirements.txt
   console.log('[1/5] Generating requirements.txt...');
-  const requirements = execSync('cd apps/api && uv pip freeze', {
-    encoding: 'utf-8',
-    cwd: ROOT,
-  });
+  const apiVenvPip = join(API_DIR, '.venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'pip');
+  let requirements: string;
+  if (existsSync(apiVenvPip)) {
+    requirements = execSync(`"${apiVenvPip}" freeze`, { encoding: 'utf-8', cwd: API_DIR });
+  } else {
+    requirements = execSync('uv pip freeze', { encoding: 'utf-8', cwd: API_DIR });
+  }
   writeFileSync(join(BUILD_DIR, 'requirements.txt'), requirements);
 
   // 2. 创建 build venv（使用 Python 3.13，PyInstaller 6.19.0 需要）
