@@ -98,6 +98,7 @@ class AppSettings(Base, TimestampMixin):
     python_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     diagnostics_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     auto_repair_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    demo_initialized: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class SemanticTerm(Base, UUIDMixin, TimestampMixin):

@@ -4,6 +4,7 @@
 用于演示 QueryGPT 的查询和可视化功能。
 """
 
+import os
 import random
 import sqlite3
 from datetime import datetime, timedelta
@@ -13,13 +14,17 @@ import structlog
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.tables import Connection, SemanticTerm
-from app.services.app_settings import get_or_create_app_settings
+from app.db.tables import Connection
 
 logger = structlog.get_logger()
 
-# 示例数据库路径
-DEMO_DB_PATH = Path(__file__).parent.parent.parent / "data" / "demo.db"
+# 示例数据库路径：优先用 DATA_DIR 环境变量（桌面版），否则用源码相对路径
+_data_dir = os.environ.get("DATA_DIR")
+if _data_dir:
+    DEMO_DB_PATH = Path(_data_dir) / "demo.db"
+else:
+    DEMO_DB_PATH = Path(__file__).parent.parent.parent / "data" / "demo.db"
+
 DEMO_CONNECTION_NAME = "Sample Database"
 
 # 产品数据
@@ -119,133 +124,21 @@ def init_demo_database() -> str:
     return get_demo_db_path()
 
 
-async def ensure_demo_connection(db: AsyncSession, demo_db_path: str) -> None:
-    """在单工作区没有任何连接时，自动补一条示例数据库连接"""
-    # Migrate old Chinese name to English
-    old_demo = await db.scalar(select(Connection.id).where(Connection.name == "示例数据库"))
-    if old_demo:
+async def fix_demo_db_path(db: AsyncSession, demo_db_path: str) -> None:
+    """修正预打包数据库中的占位符路径为实际的 demo.db 绝对路径"""
+    result = await db.scalar(
+        select(Connection.id).where(
+            Connection.name == DEMO_CONNECTION_NAME,
+            Connection.database_name == "__DEMO_DB_PATH__",
+        )
+    )
+    if result is not None:
         await db.execute(
             update(Connection)
-            .where(Connection.name == "示例数据库")
-            .values(name=DEMO_CONNECTION_NAME)
+            .where(Connection.database_name == "__DEMO_DB_PATH__")
+            .values(database_name=demo_db_path)
         )
-        await db.commit()
-        logger.info("Migrated demo connection name to English")
-        return
-
-    has_connections = await db.scalar(select(Connection.id).limit(1))
-    if has_connections is not None:
-        return
-
-    connection = Connection(
-        name=DEMO_CONNECTION_NAME,
-        driver="sqlite",
-        host=None,
-        port=None,
-        username=None,
-        password_encrypted=None,
-        database_name=demo_db_path,
-        extra_options={},
-        is_default=True,
-    )
-    db.add(connection)
-    await db.flush()
-
-    settings_record = await get_or_create_app_settings(db)
-    settings_record.default_connection_id = connection.id
-    await db.flush()
-
-    logger.info("Seeded demo connection", name=DEMO_CONNECTION_NAME, database=demo_db_path)
-
-
-# Demo semantic terms (English)
-DEMO_SEMANTIC_TERMS = [
-    {
-        "term": "GMV",
-        "expression": "SUM(sales.quantity * sales.unit_price)",
-        "term_type": "metric",
-        "description": "Gross Merchandise Value — total sales revenue (quantity × unit price)",
-        "examples": ["What is this month's GMV?", "GMV by region"],
-    },
-    {
-        "term": "Top Customers",
-        "expression": "customers.id IN (SELECT customer_id FROM sales GROUP BY customer_id HAVING SUM(amount) > 100000)",
-        "term_type": "filter",
-        "description": "Customers with cumulative spending over 100,000",
-        "examples": ["List all top customers", "Top customers by region"],
-    },
-    {
-        "term": "Average Order Value",
-        "expression": "AVG(sales.amount)",
-        "term_type": "metric",
-        "description": "Average transaction amount per sale",
-        "examples": ["What is the average order value?", "AOV trend over the past 6 months"],
-    },
-]
-
-# Old Chinese term names to migrate
-_CHINESE_TERM_NAMES = {"GMV", "大客户", "客单价"}
-
-
-async def ensure_demo_semantic_terms(db: AsyncSession, connection_id) -> None:
-    """Seed demo semantic terms or migrate old Chinese ones to English."""
-    from sqlalchemy import func
-
-    # Check for old Chinese terms and remove them (will be replaced by English ones)
-    old_chinese = await db.scalars(
-        select(SemanticTerm.id).where(SemanticTerm.term.in_(["大客户", "客单价"]))
-    )
-    old_ids = list(old_chinese)
-
-    # Also check for GMV with Chinese description
-    gmv_term = await db.scalar(
-        select(SemanticTerm.id).where(
-            SemanticTerm.term == "GMV",
-            SemanticTerm.description.like("%商品交易%"),
-        )
-    )
-    if gmv_term:
-        old_ids.append(gmv_term)
-
-    if old_ids:
-        from sqlalchemy import delete
-
-        await db.execute(delete(SemanticTerm).where(SemanticTerm.id.in_(old_ids)))
-        logger.info("Removed old Chinese semantic terms", count=len(old_ids))
-
-    # Check if English demo terms already exist
-    existing_count = await db.scalar(
-        select(func.count())
-        .select_from(SemanticTerm)
-        .where(SemanticTerm.term.in_([t["term"] for t in DEMO_SEMANTIC_TERMS]))
-    )
-    if existing_count and existing_count >= len(DEMO_SEMANTIC_TERMS):
-        return
-
-    # Seed missing English demo terms
-    existing_names = set(
-        await db.scalars(
-            select(SemanticTerm.term).where(
-                SemanticTerm.term.in_([t["term"] for t in DEMO_SEMANTIC_TERMS])
-            )
-        )
-    )
-    for term_data in DEMO_SEMANTIC_TERMS:
-        if term_data["term"] in existing_names:
-            continue
-        term = SemanticTerm(
-            connection_id=connection_id,
-            term=term_data["term"],
-            expression=term_data["expression"],
-            term_type=term_data["term_type"],
-            description=term_data["description"],
-            examples=term_data["examples"],
-            is_active=True,
-        )
-        db.add(term)
-
-    await db.flush()
-    logger.info("Seeded demo semantic terms")
+        logger.info("Fixed demo connection path", path=demo_db_path)
 
 
 def _create_tables(cursor: sqlite3.Cursor) -> None:
