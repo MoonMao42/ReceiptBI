@@ -72,7 +72,7 @@ jobs:
       - name: Package
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: cd apps/desktop && npx electron-builder ${{ matrix.electron_args }} --config electron-builder.yml
+        run: cd apps/desktop && npx electron-builder ${{ matrix.electron_args }} --publish never --config electron-builder.yml
         shell: bash
 
       - name: Upload artifacts

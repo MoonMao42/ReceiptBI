@@ -52,7 +52,12 @@ async function main() {
   console.log('\n[2/5] Creating build venv with Python 3.13...');
   const venvDir = join(BUILD_DIR, '.build-venv');
   if (existsSync(venvDir)) rmSync(venvDir, { recursive: true });
-  const pythonBin = execSync('which python3.13 || which python3', { encoding: 'utf-8' }).trim();
+  let pythonBin: string;
+  if (process.platform === 'win32') {
+    pythonBin = execSync('where python', { encoding: 'utf-8' }).trim().split('\n')[0].trim();
+  } else {
+    pythonBin = execSync('which python3.13 || which python3', { encoding: 'utf-8' }).trim();
+  }
   run(`${pythonBin} -m venv ${venvDir}`);
 
   const pip = join(venvDir, process.platform === 'win32' ? 'Scripts/pip.exe' : 'bin/pip');
