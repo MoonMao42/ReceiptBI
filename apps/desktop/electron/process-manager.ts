@@ -56,13 +56,26 @@ export class ProcessManager {
   /** 杀掉占用指定端口的进程 */
   private killPortProcess(port: number): void {
     try {
-      const result = execSync(`lsof -ti tcp:${port}`, { encoding: 'utf-8' }).trim();
+      let cmd: string;
+      if (process.platform === 'win32') {
+        cmd = `powershell -Command "Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | ForEach-Object { $_.OwningProcess }"`;
+      } else {
+        cmd = `lsof -ti tcp:${port}`;
+      }
+      const result = execSync(cmd, { encoding: 'utf-8' }).trim();
       if (result) {
         for (const pid of result.split('\n')) {
-          try {
-            process.kill(parseInt(pid), 'SIGKILL');
-            this.logger.info(`Killed stale process ${pid} on port ${port}`);
-          } catch { /* already dead */ }
+          const p = parseInt(pid.trim());
+          if (p > 0) {
+            try {
+              if (process.platform === 'win32') {
+                execSync(`taskkill /PID ${p} /F`, { encoding: 'utf-8' });
+              } else {
+                process.kill(p, 'SIGKILL');
+              }
+              this.logger.info(`Killed stale process ${p} on port ${port}`);
+            } catch { /* already dead */ }
+          }
         }
       }
     } catch { /* no process on port */ }
@@ -172,30 +185,55 @@ export class ProcessManager {
     };
 
     if (usePacked) {
-      // utilityProcess 不会在 Dock 多出图标
-      this.logger.info(`Starting frontend (utilityProcess): ${serverJs}`);
-
-      const up = utilityProcess.fork(serverJs, [], {
-        cwd: nextDir,
-        env,
-        stdio: 'pipe',
-      });
-
-      up.stdout?.on('data', (data: Buffer) => {
-        this.logger.debug(`[Frontend] ${data.toString().trim()}`);
-      });
-
-      up.stderr?.on('data', (data: Buffer) => {
-        this.logger.debug(`[Frontend] ${data.toString().trim()}`);
-      });
-
-      up.on('exit', (code) => {
-        if (code !== 0) {
-          this.logger.warn(`Frontend exited with code ${code}`);
-        }
-      });
-
-      this.frontendProcess = up as unknown as ChildProcess;
+      // macOS: utilityProcess 不在 Dock 显示图标; Windows: spawn 更稳定
+      if (process.platform === 'win32') {
+        this.logger.info(`Starting frontend (spawn): node ${serverJs}`);
+        const procEnv = {
+          ...process.env,
+          ...env,
+          NODE_PATH: path.join(nextDir, 'node_modules'),
+        };
+        this.frontendProcess = spawn('node', [serverJs], {
+          cwd: nextDir,
+          env: procEnv,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          detached: false,
+          shell: false,
+        });
+        this.frontendProcess.stdout?.on('data', (data) => {
+          this.logger.debug(`[Frontend] ${data.toString().trim()}`);
+        });
+        this.frontendProcess.stderr?.on('data', (data) => {
+          this.logger.debug(`[Frontend] ${data.toString().trim()}`);
+        });
+        this.frontendProcess.on('error', (error) => {
+          this.logger.error('Frontend process error', error);
+        });
+        this.frontendProcess.on('exit', (code) => {
+          if (code !== 0) {
+            this.logger.warn(`Frontend exited with code ${code}`);
+          }
+        });
+      } else {
+        this.logger.info(`Starting frontend (utilityProcess): ${serverJs}`);
+        const up = utilityProcess.fork(serverJs, [], {
+          cwd: nextDir,
+          env,
+          stdio: 'pipe',
+        });
+        up.stdout?.on('data', (data: Buffer) => {
+          this.logger.debug(`[Frontend] ${data.toString().trim()}`);
+        });
+        up.stderr?.on('data', (data: Buffer) => {
+          this.logger.debug(`[Frontend] ${data.toString().trim()}`);
+        });
+        up.on('exit', (code) => {
+          if (code !== 0) {
+            this.logger.warn(`Frontend exited with code ${code}`);
+          }
+        });
+        this.frontendProcess = up as unknown as ChildProcess;
+      }
     } else {
       // 开发模式：用 next start
       this.logger.info('Starting frontend (dev mode): next start');
