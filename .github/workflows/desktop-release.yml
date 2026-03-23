@@ -143,16 +143,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Get release upload URL
+          # Get release ID (draft releases are not queryable by tag, use list API)
           RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}" \
-            | jq -r '.id')
+            "https://api.github.com/repos/${{ github.repository }}/releases" \
+            | jq -r '.[] | select(.tag_name == "${{ github.ref_name }}") | .id' | head -1)
           echo "Release ID: $RELEASE_ID"
 
           for file in apps/desktop/release/*.dmg apps/desktop/release/*.zip apps/desktop/release/*.exe; do
             [ -f "$file" ] || continue
             filename=$(basename "$file")
-            filesize=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)
+            filesize=$(wc -c < "$file" | tr -d ' ')
             echo "Uploading $filename ($filesize bytes)..."
 
             # Delete existing asset if any
