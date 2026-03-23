@@ -1,6 +1,6 @@
 {
   "name": "querygpt-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "QueryGPT Desktop Application",
   "main": "dist-electron/main.js",
   "author": "QueryGPT Team",
