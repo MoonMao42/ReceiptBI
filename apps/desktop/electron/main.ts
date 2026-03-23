@@ -16,7 +16,7 @@ async function createWindow(): Promise<BrowserWindow> {
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    title: 'QueryGPT',
+    title: '',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -54,10 +54,10 @@ app.whenReady().then(async () => {
     mainWindow.show();
     mainWindow.loadURL(`data:text/html,
       <html><body style="font-family:system-ui;padding:40px;background:#1a1a2e;color:#eee">
-      <h1>QueryGPT 启动失败</h1>
-      <p>服务未能正常启动，请检查日志：</p>
+      <h1>QueryGPT failed to start</h1>
+      <p>Check the logs for details:</p>
       <code style="color:#ff6b6b">${String(error).replace(/</g,'&lt;')}</code>
-      <p style="margin-top:20px;color:#888">日志位置: ~/.querygpt-desktop/logs/</p>
+      <p style="margin-top:20px;color:#888">Logs: ~/.querygpt-desktop/logs/</p>
       </body></html>`);
   }
 
