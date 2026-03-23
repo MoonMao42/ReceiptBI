@@ -11,8 +11,8 @@
  */
 
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, copyFileSync, cpSync, rmSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, mkdirSync, writeFileSync, copyFileSync, cpSync, rmSync, readlinkSync, symlinkSync, lstatSync } from 'node:fs';
+import { join, resolve, dirname, relative } from 'node:path';
 
 const ROOT = resolve(__dirname, '../../..');
 const API_DIR = join(ROOT, 'apps/api');
@@ -29,6 +29,39 @@ function run(cmd: string, opts?: { cwd?: string; stdio?: 'inherit' | 'pipe' }) {
     env: process.env,
     shell: true,
   });
+}
+
+function fixSymlinks(dir: string) {
+  const entries = (() => {
+    try {
+      const { readdirSync } = require('node:fs');
+      return readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+  })();
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name !== 'node_modules') {
+        fixSymlinks(full);
+      }
+    } else if (entry.isSymbolicLink()) {
+      try {
+        const target = readlinkSync(full);
+        if (target.startsWith('/')) {
+          // 转为相对路径
+          const dirOfLink = dirname(full);
+          const resolved = resolve(dirOfLink, target);
+          const rel = relative(dirOfLink, resolved);
+          symlinkSync(rel, full);
+          console.log(`  Fixed symlink: ${full} -> ${rel}`);
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
 }
 
 async function main() {
@@ -72,6 +105,8 @@ async function main() {
   console.log('Installing PyInstaller and dependencies...');
   run(`${pip} install pyinstaller==6.19.0`);
   run(`${pip} install -r ${join(BUILD_DIR, 'requirements.txt')}`);
+  // 显式安装 aiosqlite（pydantic-settings 动态加载时需要）
+  run(`${pip} install aiosqlite`);
 
   // 3. 收集可能动态导入的模块
   console.log('\n[3/5] Collecting dynamic imports...');
@@ -179,6 +214,9 @@ coll = COLLECT(
   console.log('\n[5/5] Copying to apps/desktop/backend/...');
   if (existsSync(BACKEND_OUT)) rmSync(BACKEND_OUT, { recursive: true });
   cpSync(outDir, BACKEND_OUT, { recursive: true });
+
+  // 将 _internal 中的绝对路径软链接转为相对路径（PyInstaller 在 macOS 上生成的是指向 CI 机器的绝对路径）
+  fixSymlinks(BACKEND_OUT);
 
   // 复制 .env.example
   const envExample = join(API_DIR, '.env.example');
