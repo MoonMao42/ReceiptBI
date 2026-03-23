@@ -53,9 +53,7 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Install Python dependencies
-        run: |
-          cd apps/api
-          uv sync
+        run: uv sync --package querygpt-api
         shell: bash
 
       - name: Build backend

@@ -75,7 +75,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await ensure_demo_connection(session, demo_db_path)
         # Seed semantic layer demo terms (needs connection_id)
         from sqlalchemy import select as sa_select
+
         from app.db.tables import Connection
+
         demo_conn_id = await session.scalar(
             sa_select(Connection.id).where(Connection.name == "Sample Database")
         )

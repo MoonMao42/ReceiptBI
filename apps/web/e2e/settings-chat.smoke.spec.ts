@@ -6,7 +6,7 @@ test("settings workflow and chat smoke test", async ({ page }) => {
   const modelName = `CI Mock Model ${suffix}`;
 
   await page.goto("/settings");
-  await expect(page.getByRole("heading", { name: "设置" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
 
   await page.getByTestId("settings-tab-connections").click();
   await page.getByTestId("connection-add-button").click();
@@ -26,7 +26,7 @@ test("settings workflow and chat smoke test", async ({ page }) => {
   });
   await expect(connectionCard).toBeVisible();
   await connectionCard.locator('[data-testid^="connection-test-"]').click();
-  await expect(connectionCard.getByText("连接成功")).toBeVisible({ timeout: 15_000 });
+  await expect(connectionCard.getByText("Success")).toBeVisible({ timeout: 15_000 });
 
   await page.getByTestId("settings-tab-models").click();
   await page.getByTestId("model-add-button").click();
@@ -45,18 +45,18 @@ test("settings workflow and chat smoke test", async ({ page }) => {
   });
   await expect(modelCard).toBeVisible();
   await modelCard.locator('[data-testid^="model-test-"]').click();
-  await expect(page.getByTestId("model-test-summary")).toContainText("连接成功", {
+  await expect(page.getByTestId("model-test-summary")).toContainText("Success", {
     timeout: 15_000,
   });
 
   await page.goto("/");
   await expect(page.getByTestId("chat-input")).toBeVisible();
-  await expect(page.getByTestId("chat-connection-select")).toContainText("示例数据库");
+  await expect(page.getByTestId("chat-connection-select")).toContainText("Sample Database");
   await expect(page.getByTestId("chat-model-select")).toContainText(modelName);
 
   await page
     .getByTestId("chat-input")
-    .fill("列出前 3 个产品名称和分类，并给出简短说明。");
+    .fill("List top 3 product names and categories.");
   const streamResponse = page.waitForResponse(
     (response) =>
       response.url().includes("/api/v1/chat/stream") &&
