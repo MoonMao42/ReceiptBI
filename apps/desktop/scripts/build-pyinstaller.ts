@@ -27,7 +27,7 @@ function run(cmd: string, opts?: { cwd?: string; stdio?: 'inherit' | 'pipe' }) {
     stdio: opts?.stdio ?? 'inherit',
     encoding: 'utf-8',
     env: process.env,
-    shell: '/bin/bash',
+    shell: true,
   });
 }
 
