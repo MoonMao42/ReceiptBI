@@ -9,6 +9,8 @@ const internalApiUrl = process.env.INTERNAL_API_URL || publicApiUrl;
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
+  output: 'standalone',
+
   env: {
     NEXT_PUBLIC_API_URL: publicApiUrl,
   },
