@@ -32,33 +32,29 @@ function run(cmd: string, opts?: { cwd?: string; stdio?: 'inherit' | 'pipe' }) {
 }
 
 function fixSymlinks(dir: string) {
-  const entries = (() => {
-    try {
-      const { readdirSync } = require('node:fs');
-      return readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return [];
-    }
-  })();
+  const { readdirSync } = require('node:fs');
+  const entries = readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name !== 'node_modules') {
-        fixSymlinks(full);
-      }
+      if (entry.name !== 'node_modules') fixSymlinks(full);
     } else if (entry.isSymbolicLink()) {
-      try {
-        const target = readlinkSync(full);
-        if (target.startsWith('/')) {
-          // 转为相对路径
-          const dirOfLink = dirname(full);
-          const resolved = resolve(dirOfLink, target);
+      const target = readlinkSync(full);
+      if (target.startsWith('/')) {
+        const dirOfLink = dirname(full);
+        const resolved = resolve(dirOfLink, target);
+        // 如果目标文件存在，直接复制文件替换软链接
+        const { existsSync, copyFileSync, unlinkSync } = require('node:fs');
+        if (existsSync(resolved)) {
+          unlinkSync(full);
+          copyFileSync(resolved, full);
+          console.log(`  Replaced symlink with file: ${entry.name}`);
+        } else {
+          // 目标不存在，转为相对路径
           const rel = relative(dirOfLink, resolved);
           symlinkSync(rel, full);
-          console.log(`  Fixed symlink: ${full} -> ${rel}`);
+          console.log(`  Fixed relative symlink: ${entry.name} -> ${rel}`);
         }
-      } catch {
-        // ignore
       }
     }
   }
