@@ -19,7 +19,7 @@ jobs:
             platform: mac
             arch: arm64
             electron_args: --mac --arm64
-          - os: macos-13
+          - os: macos-14
             platform: mac
             arch: x64
             electron_args: --mac --x64
@@ -72,7 +72,6 @@ jobs:
       - name: Package
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: cd apps/desktop && npx electron-builder ${{ matrix.electron_args }} --config electron-builder.yml
         shell: bash
 

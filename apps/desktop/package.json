@@ -5,6 +5,10 @@
   "main": "dist-electron/main.js",
   "author": "QueryGPT Team",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MoonMao42/QueryGPT.git"
+  },
   "scripts": {
     "dev": "tsc -p tsconfig.electron.json && electron .",
     "build": "npm run build:electron",
