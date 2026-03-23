@@ -32,7 +32,7 @@ function run(cmd: string, opts?: { cwd?: string; stdio?: 'inherit' | 'pipe' }) {
 }
 
 function fixSymlinks(dir: string) {
-  const { readdirSync } = require('node:fs');
+  const { readdirSync, lstatSync, existsSync, copyFileSync, unlinkSync, readlinkSync, symlinkSync } = require('node:fs');
   const entries = readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
     const full = join(dir, entry.name);
@@ -43,17 +43,24 @@ function fixSymlinks(dir: string) {
       if (target.startsWith('/')) {
         const dirOfLink = dirname(full);
         const resolved = resolve(dirOfLink, target);
-        // 如果目标文件存在，直接复制文件替换软链接
-        const { existsSync, copyFileSync, unlinkSync } = require('node:fs');
         if (existsSync(resolved)) {
-          unlinkSync(full);
-          copyFileSync(resolved, full);
-          console.log(`  Replaced symlink with file: ${entry.name}`);
+          if (lstatSync(resolved).isDirectory()) {
+            // 目录符号链接：绝对路径转为相对路径
+            unlinkSync(full);
+            const rel = relative(dirOfLink, resolved);
+            symlinkSync(rel, full);
+            console.log(`  Fixed dir symlink: ${entry.name} -> ${rel}`);
+          } else {
+            unlinkSync(full);
+            copyFileSync(resolved, full);
+            console.log(`  Replaced symlink with file: ${entry.name}`);
+          }
         } else {
-          // 目标不存在，转为相对路径
+          console.warn(`  Warning: symlink target not found: ${target}`);
+          unlinkSync(full);
           const rel = relative(dirOfLink, resolved);
           symlinkSync(rel, full);
-          console.log(`  Fixed relative symlink: ${entry.name} -> ${rel}`);
+          console.log(`  Fixed symlink (target missing): ${entry.name} -> ${rel}`);
         }
       }
     }
@@ -213,11 +220,20 @@ coll = COLLECT(
 
   // 5. 复制输出到 backend/
   console.log('\n[5/5] Copying to apps/desktop/backend/...');
-  if (existsSync(BACKEND_OUT)) rmSync(BACKEND_OUT, { recursive: true });
-  cpSync(outDir, BACKEND_OUT, { recursive: true });
 
-  // 将 _internal 中的绝对路径软链接转为相对路径（PyInstaller 在 macOS 上生成的是指向 CI 机器的绝对路径）
-  fixSymlinks(BACKEND_OUT);
+  // 先在原始输出目录修复绝对符号链接（此时绝对路径仍然有效，existsSync 能正确判断目标类型）
+  if (process.platform !== 'win32') {
+    fixSymlinks(outDir);
+  }
+
+  if (existsSync(BACKEND_OUT)) rmSync(BACKEND_OUT, { recursive: true });
+
+  if (process.platform === 'win32') {
+    cpSync(outDir, BACKEND_OUT, { recursive: true });
+  } else {
+    // cp -a 保留符号链接原样，不会触发 ENOTSUP
+    run(`cp -a "${outDir}/." "${BACKEND_OUT}/"`, { cwd: ROOT });
+  }
 
   // 复制 .env.example
   const envExample = join(API_DIR, '.env.example');
