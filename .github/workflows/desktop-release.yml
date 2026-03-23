@@ -136,22 +136,55 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      # Upload directly to release from build runner (avoids artifact download corruption)
+      # Upload directly to release via GitHub API (gh CLI truncates large files)
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/desktop-v')
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Get release upload URL
+          RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}" \
+            | jq -r '.id')
+          echo "Release ID: $RELEASE_ID"
+
           for file in apps/desktop/release/*.dmg apps/desktop/release/*.zip apps/desktop/release/*.exe; do
             [ -f "$file" ] || continue
-            echo "Uploading $file ..."
+            filename=$(basename "$file")
+            filesize=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)
+            echo "Uploading $filename ($filesize bytes)..."
+
+            # Delete existing asset if any
+            existing=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets" \
+              | jq -r ".[] | select(.name == \"$filename\") | .id")
+            if [ -n "$existing" ]; then
+              curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
+                "https://api.github.com/repos/${{ github.repository }}/releases/assets/$existing"
+              echo "  Deleted existing asset"
+            fi
+
             for attempt in 1 2 3; do
-              if gh release upload "${{ github.ref_name }}" "$file" --clobber; then
-                echo "  OK"
+              response=$(curl -s -w "\n%{http_code}" \
+                -H "Authorization: token $GITHUB_TOKEN" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary "@$file" \
+                "https://uploads.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets?name=$filename")
+              http_code=$(echo "$response" | tail -1)
+              upload_size=$(echo "$response" | head -1 | jq -r '.size // 0')
+
+              if [ "$http_code" = "201" ] && [ "$upload_size" = "$filesize" ]; then
+                echo "  OK (verified: $upload_size bytes)"
                 break
               fi
-              echo "  Attempt $attempt failed, retrying in 10s..."
+              echo "  Attempt $attempt: HTTP $http_code, uploaded $upload_size / expected $filesize"
+              # Clean up partial upload
+              partial=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+                "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets" \
+                | jq -r ".[] | select(.name == \"$filename\") | .id")
+              [ -n "$partial" ] && curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
+                "https://api.github.com/repos/${{ github.repository }}/releases/assets/$partial"
               sleep 10
             done
           done
