@@ -48,3 +48,4 @@ mock-llm.log
 # Build
 *.egg
 *.whl
+QueryGPT-*.dmg
