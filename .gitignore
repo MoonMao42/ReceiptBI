@@ -49,3 +49,4 @@ mock-llm.log
 *.egg
 *.whl
 CLAUDE.md
+QueryGPT-*.dmg
