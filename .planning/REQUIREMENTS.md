@@ -10,7 +10,7 @@ Requirements for this optimization milestone. Each maps to roadmap phases.
 ### Backend Refactoring
 
 - [x] **BACK-01**: gptme_engine.py 拆分为独立服务模块（SQLExecutor、PythonSandbox、ResultProcessor、VisualizationEngine、GptmeEngine orchestrator），每个模块职责单一
-- [ ] **BACK-02**: 拆分后所有现有 API 端点行为不变，SSE 事件格式兼容，现有测试全部通过
+- [x] **BACK-02**: 拆分后所有现有 API 端点行为不变，SSE 事件格式兼容，现有测试全部通过
 - [x] **BACK-03**: 全局异常处理改为具体异常类型（SQLAlchemyError、asyncio.TimeoutError 等），不再使用裸 except
 - [x] **BACK-04**: 移除默认加密 key 硬编码，非开发环境强制要求显式配置 ENCRYPTION_KEY
 - [x] **BACK-05**: DEBUG 模式下错误响应不泄露系统内部信息（堆栈、路径、配置）
@@ -66,7 +66,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | BACK-01 | Phase 1 | Complete |
-| BACK-02 | Phase 1 | Pending |
+| BACK-02 | Phase 1 | Complete |
 | BACK-03 | Phase 1 | Complete |
 | BACK-04 | Phase 1 | Complete |
 | BACK-05 | Phase 1 | Complete |
