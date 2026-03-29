@@ -55,7 +55,6 @@ class ResultProcessor:
             ValueError: Content parsing failed (malformed response)
         """
         from app.services.engine_content import (
-            extract_code_blocks,
             extract_python_block,
             extract_sql_block,
             extract_chart_config,
@@ -142,7 +141,6 @@ class ResultProcessor:
             Chart config dict or None if no visualization requested
         """
         from app.services.engine_content import extract_chart_config
-        from app.services.engine_visualization import validate_chart_config
 
         try:
             chart_config = extract_chart_config(content)
