@@ -2,9 +2,13 @@
 
 from collections.abc import AsyncGenerator
 
+import structlog
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
+
+logger = structlog.get_logger()
 
 # 创建异步引擎
 # SQLite 不支持连接池参数
@@ -28,13 +32,31 @@ AsyncSessionLocal = async_sessionmaker(
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """获取数据库会话（依赖注入用）"""
+    """Get database session with explicit exception handling.
+
+    Per D-04: Use specific exception types instead of bare except.
+    """
     async with AsyncSessionLocal() as session:
         try:
             yield session
             await session.commit()
-        except Exception:
+        except SQLAlchemyError as exc:
+            # Database layer errors
             await session.rollback()
+            logger.error(
+                "Database session error",
+                error_type=type(exc).__name__,
+                exception_detail=str(exc),
+            )
+            raise
+        except Exception as exc:
+            # Unexpected error in session management
+            await session.rollback()
+            logger.error(
+                "Unexpected error in get_db",
+                error_type=type(exc).__name__,
+                exception_detail=str(exc),
+            )
             raise
         finally:
             await session.close()
