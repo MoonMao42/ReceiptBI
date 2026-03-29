@@ -5,6 +5,31 @@ from __future__ import annotations
 from typing import Any
 
 
+def validate_chart_config(config: dict[str, Any]) -> bool:
+    """Validates chart configuration structure.
+
+    Args:
+        config: Chart configuration dict to validate
+
+    Returns:
+        True if config is valid, False otherwise
+    """
+    if not isinstance(config, dict):
+        return False
+
+    # Check required fields
+    chart_type = config.get("type")
+    if not chart_type or not isinstance(chart_type, str):
+        return False
+
+    # Valid chart types
+    valid_types = {"bar", "line", "pie", "scatter", "area", "table"}
+    if chart_type not in valid_types:
+        return False
+
+    return True
+
+
 def build_chart_from_config(
     config: dict[str, Any],
     data: list[dict[str, Any]],

@@ -96,10 +96,33 @@ class Settings(BaseSettings):
         """检查是否使用了默认的不安全密钥"""
         return self.ENCRYPTION_KEY == "your-encryption-key-32-bytes-long"
 
+    @property
+    def is_staging(self) -> bool:
+        """Check if running in staging environment."""
+        return self.ENVIRONMENT == "staging"
+
     def validate_secrets(self) -> None:
-        """验证密钥配置，生产环境必须更改默认密钥"""
-        if self.is_production and self.is_using_default_secrets:
-            raise ValueError("生产环境不能使用默认加密密钥！请设置 ENCRYPTION_KEY 环境变量")
+        """验证密钥配置，生产和预发布环境必须使用显式密钥
+
+        Raises:
+            ValueError: If encryption key is misconfigured or too short
+        """
+        # Check key length first (>= 32 bytes for Fernet)
+        if len(self.ENCRYPTION_KEY) < 32:
+            raise ValueError(
+                "ENCRYPTION_KEY must be at least 32 bytes long for Fernet encryption. "
+                "Generate one with: python -c \"from cryptography.fernet import Fernet; "
+                "print(Fernet.generate_key().decode())\" and set as export ENCRYPTION_KEY=<key>"
+            )
+
+        # Production and staging environments must use explicit key (not default)
+        if (self.is_production or self.is_staging) and self.is_using_default_secrets:
+            raise ValueError(
+                f"Cannot use default encryption key in {self.ENVIRONMENT} environment. "
+                "Please set ENCRYPTION_KEY environment variable explicitly. "
+                "Generate with: python -c \"from cryptography.fernet import Fernet; "
+                "print(Fernet.generate_key().decode())\" and export ENCRYPTION_KEY=<generated_key>"
+            )
 
 
 @lru_cache
