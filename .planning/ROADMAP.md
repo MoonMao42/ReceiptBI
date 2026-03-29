@@ -28,7 +28,7 @@
 4. Non-development environments require explicit ENCRYPTION_KEY configuration — application fails fast if missing
 5. Bug fixes and dead code removal from refactoring are tracked and documented in commits
 
-**Plans:** 6 plans organized by execution wave
+**Plans:** 7 plans organized by execution wave
 
 | Plan | Wave | Status | Objective |
 |------|------|--------|-----------|
@@ -37,7 +37,8 @@
 | 01-03 | 2 | ✓ Created | Create VisualizationEngine and refactor GptmeEngine orchestrator |
 | 01-04 | 2 | ✓ Created | Standardize error handling (BACK-03, BACK-05) |
 | 01-05 | 2 | ✓ Created | Secure encryption key configuration (BACK-04, BACK-05) |
-| 01-06 | 3 | ✓ Created | Run tests and document bug fixes (BACK-02, BACK-06) |
+| 01-06 | 3 | ✓ Created | Run tests and validate API compatibility (BACK-02) |
+| 01-06b | 3 | ✓ Created | Execute service tests and code review (BACK-06) |
 
 ### Phase 2: Frontend Component Optimization
 
@@ -77,9 +78,9 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Backend Service Decomposition | 6/6 | Planning complete | — |
-| 2. Frontend Component Optimization | 0/3 | Not started | — |
-| 3. Chinese Documentation | 0/2 | Not started | — |
+| 1. Backend Service Decomposition | 7/7 | Planning complete | — |
+| 2. Frontend Component Optimization | 0/? | Not started | — |
+| 3. Chinese Documentation | 0/? | Not started | — |
 
 ---
 
