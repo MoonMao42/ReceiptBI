@@ -1,6 +1,15 @@
 """
 gptme 执行引擎封装
 使用 LiteLLM 进行 AI 调用，支持 SQL 和 Python 代码执行
+
+Refactored to thin orchestrator delegating to service modules:
+- SQLExecutor: SQL query execution
+- PythonSandbox: Python code execution with security analysis
+- ResultProcessor: AI output parsing and artifact extraction
+- VisualizationEngine: Chart generation
+
+Per D-01: Service modules handle their responsibilities, GptmeEngine coordinates workflow.
+Per D-04: Specific exception types for error handling.
 """
 
 from __future__ import annotations
@@ -45,6 +54,10 @@ from app.services.python_runtime import (
     PythonSecurityAnalyzer,
     validate_python_code,
 )
+from app.services.sql_executor import SQLExecutor
+from app.services.python_sandbox import PythonSandbox
+from app.services.result_processor import ResultProcessor
+from app.services.visualization_engine import VisualizationEngine
 
 logger = structlog.get_logger()
 
@@ -58,7 +71,7 @@ class StopRequestedError(RuntimeError):
 
 
 class GptmeEngine:
-    """AI 执行引擎"""
+    """AI 执行引擎 - 编排工作流，委托给服务模块"""
 
     def __init__(
         self,
@@ -93,6 +106,14 @@ class GptmeEngine:
         ]
         self.analytics_installed = analytics_installed
         self.language = language
+
+        # Initialize service modules (D-01: Service module delegation)
+        self._sql_executor = SQLExecutor(language=language)
+        self._python_sandbox = PythonSandbox(language=language)
+        self._result_processor = ResultProcessor(language=language)
+        self._visualization_engine = VisualizationEngine(language=language)
+
+        # Keep Python runtime for backward compatibility with existing methods
         self._python_runtime = PythonExecutionRuntime(
             available_python_libraries=self.available_python_libraries,
             analytics_installed=self.analytics_installed,
@@ -531,7 +552,8 @@ class GptmeEngine:
         start_time = time.time()
 
         try:
-            state.final_data, state.final_rows_count = await self._execute_sql(
+            # Delegate to SQLExecutor service module (D-01)
+            state.final_data, state.final_rows_count = await self._sql_executor.execute_sql(
                 state.final_sql,
                 state.db_config,
             )
@@ -648,7 +670,8 @@ class GptmeEngine:
         logger.debug("Executing Python code", attempt=state.attempt)
 
         try:
-            state.python_output, state.python_images = await self._execute_python(
+            # Delegate to PythonSandbox service module (D-01)
+            state.python_output, state.python_images = await self._python_sandbox.execute(
                 state.final_python
             )
             diagnostic = self._record_diagnostic(
@@ -929,21 +952,23 @@ class GptmeEngine:
                 yield event
             return
 
+    # Keep these wrapper methods for backward compatibility
     async def _execute_sql(
         self,
         sql: str,
         db_config: dict[str, Any],
     ) -> tuple[list[dict[str, Any]] | None, int | None]:
-        """执行 SQL 查询"""
-        db_manager = create_database_manager(db_config)
-        result = db_manager.execute_query(sql, read_only=True)
-        return result.data, result.rows_count
+        """执行 SQL 查询 - 后向兼容包装"""
+        return await self._sql_executor.execute_sql(sql, db_config)
 
     async def _execute_python(self, code: str, timeout: int = 30) -> tuple[str | None, list[str]]:
-        output = await self._python_runtime.execute(code, timeout=timeout)
-        self._ipython = self._python_runtime.ipython
-        self._sql_data = self._python_runtime.sql_data
-        return output
+        """执行 Python 代码 - 后向兼容包装"""
+        output, images = await self._python_sandbox.execute(code, timeout=timeout)
+        # Also update internal state for backward compatibility
+        if output:
+            self._ipython = self._python_runtime.ipython
+            self._sql_data = self._python_runtime.sql_data
+        return output, images
 
     def _execute_python_sync(self, code: str) -> tuple[str | None, list[str]]:
         output = self._python_runtime.execute_sync(code)
