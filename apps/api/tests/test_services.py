@@ -48,7 +48,7 @@ class TestSQLExecutor:
         ]
         mock_result.rows_count = 2
 
-        with patch("app.services.sql_executor.create_database_manager") as mock_create_db:
+        with patch("app.services.database.create_database_manager") as mock_create_db:
             mock_db = MagicMock()
             mock_db.execute_query = MagicMock(return_value=mock_result)
             mock_create_db.return_value = mock_db
@@ -66,7 +66,7 @@ class TestSQLExecutor:
         """Test SQL execution with OperationalError (database connection error)"""
         from sqlalchemy.exc import OperationalError
 
-        with patch("app.services.sql_executor.create_database_manager") as mock_create_db:
+        with patch("app.services.database.create_database_manager") as mock_create_db:
             mock_db = MagicMock()
             mock_db.execute_query = MagicMock(
                 side_effect=OperationalError("Connection refused", None, None)
@@ -87,7 +87,7 @@ class TestSQLExecutor:
         """Test SQL execution with ProgrammingError (SQL syntax error)"""
         from sqlalchemy.exc import ProgrammingError
 
-        with patch("app.services.sql_executor.create_database_manager") as mock_create_db:
+        with patch("app.services.database.create_database_manager") as mock_create_db:
             mock_db = MagicMock()
             mock_db.execute_query = MagicMock(
                 side_effect=ProgrammingError(
@@ -107,7 +107,7 @@ class TestSQLExecutor:
     @pytest.mark.asyncio
     async def test_execute_sql_value_error(self, executor):
         """Test SQL execution with ValueError (validation error)"""
-        with patch("app.services.sql_executor.create_database_manager") as mock_create_db:
+        with patch("app.services.database.create_database_manager") as mock_create_db:
             mock_db = MagicMock()
             mock_db.execute_query = MagicMock(
                 side_effect=ValueError("Read-only check failed")
@@ -184,12 +184,12 @@ class TestPythonSandbox:
         """Test executing safe Python code"""
         safe_code = "x = 1 + 2\nprint(x)"
 
-        with patch("app.services.python_sandbox.PythonSecurityAnalyzer") as mock_analyzer_class:
+        with patch("app.services.python_runtime.PythonSecurityAnalyzer") as mock_analyzer_class:
             mock_analyzer = MagicMock()
             mock_analyzer.analyze = MagicMock(return_value=[])  # No violations
             mock_analyzer_class.return_value = mock_analyzer
 
-            with patch("app.services.python_sandbox.PythonExecutionRuntime") as mock_runtime_class:
+            with patch("app.services.python_runtime.PythonExecutionRuntime") as mock_runtime_class:
                 mock_runtime = MagicMock()
                 mock_runtime.inject_sql_data = MagicMock()
                 mock_runtime_class.return_value = mock_runtime
@@ -208,7 +208,7 @@ class TestPythonSandbox:
         """Test executing unsafe Python code (security check fails)"""
         unsafe_code = "import os\nos.system('rm -rf /')"
 
-        with patch("app.services.python_sandbox.PythonSecurityAnalyzer") as mock_analyzer_class:
+        with patch("app.services.python_runtime.PythonSecurityAnalyzer") as mock_analyzer_class:
             mock_analyzer = MagicMock()
             # Simulate security violation detection
             mock_analyzer.analyze = MagicMock(
@@ -226,12 +226,12 @@ class TestPythonSandbox:
         """Test code execution timeout handling"""
         slow_code = "import time\ntime.sleep(100)"
 
-        with patch("app.services.python_sandbox.PythonSecurityAnalyzer") as mock_analyzer_class:
+        with patch("app.services.python_runtime.PythonSecurityAnalyzer") as mock_analyzer_class:
             mock_analyzer = MagicMock()
             mock_analyzer.analyze = MagicMock(return_value=[])
             mock_analyzer_class.return_value = mock_analyzer
 
-            with patch("app.services.python_sandbox.PythonExecutionRuntime") as mock_runtime_class:
+            with patch("app.services.python_runtime.PythonExecutionRuntime") as mock_runtime_class:
                 mock_runtime = MagicMock()
                 mock_runtime_class.return_value = mock_runtime
 
@@ -250,12 +250,12 @@ class TestPythonSandbox:
         code = "print(sql_results)"
         sql_data = {"sql_results": [{"id": 1}]}
 
-        with patch("app.services.python_sandbox.PythonSecurityAnalyzer") as mock_analyzer_class:
+        with patch("app.services.python_runtime.PythonSecurityAnalyzer") as mock_analyzer_class:
             mock_analyzer = MagicMock()
             mock_analyzer.analyze = MagicMock(return_value=[])
             mock_analyzer_class.return_value = mock_analyzer
 
-            with patch("app.services.python_sandbox.PythonExecutionRuntime") as mock_runtime_class:
+            with patch("app.services.python_runtime.PythonExecutionRuntime") as mock_runtime_class:
                 mock_runtime = MagicMock()
                 mock_runtime.inject_sql_data = MagicMock()
                 mock_runtime_class.return_value = mock_runtime
@@ -303,12 +303,12 @@ class TestResultProcessor:
         This will fetch active users.
         """
 
-        with patch("app.services.result_processor.extract_sql_block") as mock_extract:
+        with patch("app.services.engine_content.extract_sql_block") as mock_extract:
             mock_extract.return_value = "SELECT id, name FROM users WHERE status = 'active'"
 
-            with patch("app.services.result_processor.extract_python_block"):
-                with patch("app.services.result_processor.extract_chart_config"):
-                    with patch("app.services.result_processor.parse_thinking_markers"):
+            with patch("app.services.engine_content.extract_python_block"):
+                with patch("app.services.engine_content.extract_chart_config"):
+                    with patch("app.services.engine_content.parse_thinking_markers"):
                         result = await processor.extract_results(ai_content)
 
                         assert result["sql_code"] is not None
@@ -327,14 +327,14 @@ class TestResultProcessor:
         ```
         """
 
-        with patch("app.services.result_processor.extract_sql_block"):
-            with patch("app.services.result_processor.extract_python_block") as mock_extract:
+        with patch("app.services.engine_content.extract_sql_block"):
+            with patch("app.services.engine_content.extract_python_block") as mock_extract:
                 mock_extract.return_value = """import pandas as pd
 df['average'] = df['value'].mean()
 print(df)"""
 
-                with patch("app.services.result_processor.extract_chart_config"):
-                    with patch("app.services.result_processor.parse_thinking_markers"):
+                with patch("app.services.engine_content.extract_chart_config"):
+                    with patch("app.services.engine_content.parse_thinking_markers"):
                         result = await processor.extract_results(ai_content)
 
                         assert result["python_code"] is not None
@@ -350,11 +350,11 @@ print(df)"""
         Now I'll create the query...
         """
 
-        with patch("app.services.result_processor.extract_sql_block"):
-            with patch("app.services.result_processor.extract_python_block"):
-                with patch("app.services.result_processor.extract_chart_config"):
+        with patch("app.services.engine_content.extract_sql_block"):
+            with patch("app.services.engine_content.extract_python_block"):
+                with patch("app.services.engine_content.extract_chart_config"):
                     with patch(
-                        "app.services.result_processor.parse_thinking_markers"
+                        "app.services.engine_content.parse_thinking_markers"
                     ) as mock_thinking:
                         mock_thinking.return_value = [
                             "Analyzing the problem",
@@ -371,10 +371,10 @@ print(df)"""
         """Test handling of malformed AI response"""
         ai_content = "This is just plain text with no code blocks"
 
-        with patch("app.services.result_processor.extract_sql_block"):
-            with patch("app.services.result_processor.extract_python_block"):
-                with patch("app.services.result_processor.extract_chart_config"):
-                    with patch("app.services.result_processor.parse_thinking_markers"):
+        with patch("app.services.engine_content.extract_sql_block", return_value=None):
+            with patch("app.services.engine_content.extract_python_block", return_value=None):
+                with patch("app.services.engine_content.extract_chart_config", return_value=None):
+                    with patch("app.services.engine_content.parse_thinking_markers", return_value=[]):
                         result = await processor.extract_results(ai_content)
 
                         assert result["sql_code"] is None
@@ -391,7 +391,7 @@ print(df)"""
         - Y-axis: revenue
         """
 
-        with patch("app.services.result_processor.extract_chart_config") as mock_extract:
+        with patch("app.services.engine_content.extract_chart_config") as mock_extract:
             mock_extract.return_value = {
                 "type": "bar",
                 "xKey": "date",
@@ -409,7 +409,7 @@ print(df)"""
             mock_extract.assert_called()
 
     @pytest.mark.asyncio
-    async def test_build_chart_payload(self, processor):
+    def test_build_chart_payload(self, processor):
         """Test building complete chart payload"""
         chart_config = {
             "type": "line",
@@ -421,15 +421,15 @@ print(df)"""
             {"month": "Feb", "sales": 200},
         ]
 
-        with patch("app.services.result_processor.build_chart_from_config") as mock_build:
-            mock_build.return_value = {
-                "type": "line",
-                "xKey": "month",
-                "yKeys": ["sales"],
-                "data": data,
-            }
+        expected_chart = {
+            "type": "line",
+            "xKey": "month",
+            "yKeys": ["sales"],
+            "data": data,
+        }
 
-            result = await processor.build_chart_payload(chart_config, data)
+        with patch("app.services.engine_visualization.build_chart_from_config", return_value=expected_chart) as mock_build:
+            result = processor.build_chart_payload(chart_config, data)
 
             assert result is not None
             assert result["type"] == "line"
@@ -461,10 +461,10 @@ class TestVisualizationEngine:
             {"category": "B", "count": 20},
         ]
 
-        with patch("app.services.visualization_engine.validate_chart_config") as mock_validate:
+        with patch("app.services.engine_visualization.validate_chart_config") as mock_validate:
             mock_validate.return_value = True
 
-            with patch("app.services.visualization_engine.build_chart_from_config") as mock_build:
+            with patch("app.services.engine_visualization.build_chart_from_config") as mock_build:
                 mock_build.return_value = {
                     "type": "bar",
                     "xKey": "category",
@@ -486,7 +486,7 @@ class TestVisualizationEngine:
         }
         data = [{"a": 1, "b": 2}]
 
-        with patch("app.services.visualization_engine.validate_chart_config") as mock_validate:
+        with patch("app.services.engine_visualization.validate_chart_config") as mock_validate:
             mock_validate.return_value = False
 
             result = await engine.generate_chart(chart_config, data)
@@ -503,10 +503,10 @@ class TestVisualizationEngine:
         }
         data = [{"a": 1, "b": 2}]
 
-        with patch("app.services.visualization_engine.validate_chart_config") as mock_validate:
+        with patch("app.services.engine_visualization.validate_chart_config") as mock_validate:
             mock_validate.return_value = True
 
-            with patch("app.services.visualization_engine.build_chart_from_config") as mock_build:
+            with patch("app.services.engine_visualization.build_chart_from_config") as mock_build:
                 mock_build.side_effect = ValueError("Missing key in data")
 
                 result = await engine.generate_chart(chart_config, data)
@@ -590,7 +590,7 @@ class TestServiceModuleIntegration:
         ]
         mock_result.rows_count = 2
 
-        with patch("app.services.sql_executor.create_database_manager") as mock_create_db:
+        with patch("app.services.database.create_database_manager") as mock_create_db:
             mock_db = MagicMock()
             mock_db.execute_query = MagicMock(return_value=mock_result)
             mock_create_db.return_value = mock_db
@@ -619,16 +619,16 @@ class TestServiceModuleIntegration:
         - Y-axis: count
         """
 
-        with patch("app.services.result_processor.extract_sql_block"):
-            with patch("app.services.result_processor.extract_python_block"):
-                with patch("app.services.result_processor.extract_chart_config") as mock_extract:
+        with patch("app.services.engine_content.extract_sql_block"):
+            with patch("app.services.engine_content.extract_python_block"):
+                with patch("app.services.engine_content.extract_chart_config") as mock_extract:
                     mock_extract.return_value = {
                         "type": "bar",
                         "xKey": "category",
                         "yKeys": ["count"],
                     }
 
-                    with patch("app.services.result_processor.parse_thinking_markers"):
+                    with patch("app.services.engine_content.parse_thinking_markers"):
                         result = await processor.extract_results(ai_content)
 
                         assert result is not None
