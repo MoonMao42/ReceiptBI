@@ -1,0 +1,77 @@
+# Roadmap: QueryGPT 精进
+
+**Milestone:** QueryGPT 优化迭代
+**Created:** 2026-03-29
+**Granularity:** COARSE (3-5 phases)
+**Status:** Pending user approval
+
+## Phases
+
+- [ ] **Phase 1: Backend Service Decomposition** - Modularize gptme_engine.py, standardize error handling, secure configuration
+- [ ] **Phase 2: Frontend Component Optimization** - Split large components, implement message pagination with virtual scrolling
+- [ ] **Phase 3: Chinese Documentation** - Complete Chinese README and documentation
+
+## Phase Details
+
+### Phase 1: Backend Service Decomposition
+
+**Goal:** Refactor gptme_engine.py from a 990-line monolith into focused service modules (SQLExecutor, PythonSandbox, ResultProcessor, VisualizationEngine, GptmeEngine orchestrator), maintaining full API compatibility while improving code quality and maintainability.
+
+**Depends on:** Nothing (first phase)
+
+**Requirements:** BACK-01, BACK-02, BACK-03, BACK-04, BACK-05, BACK-06
+
+**Success Criteria** (what must be TRUE):
+1. Users can run all existing API endpoints with identical behavior — SSE event format unchanged, no functionality gaps
+2. All existing test suite passes, no regressions detected in unit/integration tests
+3. Error responses use explicit exception types (SQLAlchemyError, asyncio.TimeoutError, etc.) instead of bare except clauses
+4. Non-development environments require explicit ENCRYPTION_KEY configuration — application fails fast if missing
+5. Bug fixes and dead code removal from refactoring are tracked and documented in commits
+
+**Plans:** TBD
+
+### Phase 2: Frontend Component Optimization
+
+**Goal:** Decompose large React components (ChatArea 408 lines, SchemaSettings 618 lines) into maintainable sub-components with custom hooks, implement message pagination with backend API support, and optimize rendering performance with virtual scrolling for conversations with 1000+ messages.
+
+**Depends on:** Phase 1 (stable API contracts)
+
+**Requirements:** FRONT-01, FRONT-02, FRONT-03, FRONT-04, FRONT-05, FRONT-06, FRONT-07
+
+**Success Criteria** (what must be TRUE):
+1. ChatArea and SchemaSettings are decomposed into focused sub-components, each <120 lines, with clear responsibility boundaries
+2. Message history pagination works end-to-end: backend API serves paginated messages, frontend loads additional messages on scroll
+3. Virtual scrolling renders large message lists (1000+ messages) without UI stutter, maintains smooth 60 FPS scrolling
+4. Schema relationship suggestions are cached (memoized), avoiding recalculation on component re-renders
+5. Bug fixes and race conditions found during refactoring are documented in commits
+
+**Plans:** TBD
+
+**UI hint:** yes
+
+### Phase 3: Chinese Documentation
+
+**Goal:** Create complete Chinese language documentation (README.zh.md) with feature parity to English README, enabling Chinese-speaking developers and users to understand and contribute to QueryGPT.
+
+**Depends on:** Nothing (can run in parallel)
+
+**Requirements:** DOC-01
+
+**Success Criteria** (what must be TRUE):
+1. README.zh.md is complete with all major sections translated: Features, Quick Start, Tech Stack, Configuration, Development, Troubleshooting
+2. Chinese documentation maintains feature and content parity with English version
+3. Technical terminology is consistent across documentation (e.g., "semantic layer" = "语义层")
+
+**Plans:** TBD
+
+## Progress
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 1. Backend Service Decomposition | 0/3 | Not started | — |
+| 2. Frontend Component Optimization | 0/3 | Not started | — |
+| 3. Chinese Documentation | 0/2 | Not started | — |
+
+---
+
+**Next:** Awaiting user approval. Once approved, proceed to `/gsd:plan-phase 1` for detailed planning.

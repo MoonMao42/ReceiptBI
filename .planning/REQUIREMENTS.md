@@ -37,7 +37,7 @@ Deferred to future release. Tracked but not in current roadmap.
 ### Performance
 
 - **PERF-01**: 查询结果缓存（dogpile.cache + Redis），重复查询不打数据库
-- **PERF-02**: 关系建议算法优化（O(n²) → 预计算缓存）
+- **PERF-02**: 关系建议算法优化（O(n²) → 缓存）
 
 ### Security
 
@@ -65,26 +65,27 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BACK-01 | — | Pending |
-| BACK-02 | — | Pending |
-| BACK-03 | — | Pending |
-| BACK-04 | — | Pending |
-| BACK-05 | — | Pending |
-| BACK-06 | — | Pending |
-| FRONT-01 | — | Pending |
-| FRONT-02 | — | Pending |
-| FRONT-03 | — | Pending |
-| FRONT-04 | — | Pending |
-| FRONT-05 | — | Pending |
-| FRONT-06 | — | Pending |
-| FRONT-07 | — | Pending |
-| DOC-01 | — | Pending |
+| BACK-01 | Phase 1 | Pending |
+| BACK-02 | Phase 1 | Pending |
+| BACK-03 | Phase 1 | Pending |
+| BACK-04 | Phase 1 | Pending |
+| BACK-05 | Phase 1 | Pending |
+| BACK-06 | Phase 1 | Pending |
+| FRONT-01 | Phase 2 | Pending |
+| FRONT-02 | Phase 2 | Pending |
+| FRONT-03 | Phase 2 | Pending |
+| FRONT-04 | Phase 2 | Pending |
+| FRONT-05 | Phase 2 | Pending |
+| FRONT-06 | Phase 2 | Pending |
+| FRONT-07 | Phase 2 | Pending |
+| DOC-01 | Phase 3 | Pending |
 
 **Coverage:**
 - v1 requirements: 14 total
-- Mapped to phases: 0
-- Unmapped: 14 ⚠️
+- Mapped to phases: 14 ✓
+- Unmapped: 0
 
 ---
+
 *Requirements defined: 2026-03-29*
-*Last updated: 2026-03-29 after initial definition*
+*Last updated: 2026-03-29 after roadmap creation*
