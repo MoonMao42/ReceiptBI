@@ -1,0 +1,90 @@
+# QueryGPT 精进
+
+## What This Is
+
+QueryGPT 是一个开源 AI 数据库助手，用自然语言提问，自动生成只读 SQL 并执行，返回结果、分析和图表。支持语义层定义和 schema 关系图可视化。这次的目标是全面精进：优化架构质量、提升使用体验、补充中文文档。
+
+## Core Value
+
+自然语言查询数据库并获得完整的结果分析——这个核心流程必须流畅可靠。
+
+## Requirements
+
+### Validated
+
+- ✓ 自然语言转 SQL 并执行 — existing
+- ✓ 自动 Python 分析和图表生成 — existing
+- ✓ 语义层（业务术语定义） — existing
+- ✓ Schema 关系图可视化拖拽连接 — existing
+- ✓ 多模型支持（OpenAI、Anthropic、Ollama、自定义） — existing
+- ✓ 多数据库支持（SQLite、MySQL、PostgreSQL） — existing
+- ✓ SSE 实时流式响应 — existing
+- ✓ SQL/Python 自动修复重试 — existing
+- ✓ 配置导入导出 — existing
+- ✓ i18n 国际化支持（next-intl + 后端 i18n） — existing
+- ✓ Docker 部署支持 — existing
+- ✓ 桌面客户端（Electron） — existing
+- ✓ CI/CD（GitHub Actions 多层测试） — existing
+
+### Active
+
+- [ ] 中文 README 文档
+- [ ] gptme_engine.py 大文件拆分（990 行 → 多模块）
+- [ ] 前端大组件拆分（SchemaSettings、ChatArea 等）
+- [ ] 聊天消息分页和虚拟滚动
+- [ ] 查询结果缓存
+- [ ] Python 执行沙箱加固（资源限制）
+- [ ] 默认加密 key 安全处理
+- [ ] 全局异常处理优化（避免泄露内部信息）
+- [ ] Schema 可视化性能优化（大数据库场景）
+- [ ] 关系建议算法优化（O(n²) → 缓存）
+
+### Out of Scope
+
+- 多租户/用户认证 — 个人使用，不需要
+- 实时协作 — 单人使用场景
+- 写操作 SQL — 核心设计决策，只读更安全
+- 移动端适配 — 桌面场景足够
+- 批量查询执行 — 个人使用不需要
+
+## Context
+
+- 项目已有完整功能，这次是优化迭代而非从零构建
+- 前后端分离架构：Next.js 15 + FastAPI，SSE 通信
+- 代码库映射已完成，见 `.planning/codebase/`
+- 主要技术债：大文件、泛异常处理、缺少分页、沙箱不够严格
+- 已有 CI/CD 和测试覆盖，但 E2E 测试较薄
+
+## Constraints
+
+- **Tech Stack**: 保持现有技术栈（Next.js + FastAPI + SQLAlchemy），不做大规模技术迁移
+- **兼容性**: 重构不能破坏现有功能，需要保持 API 兼容
+- **个人项目**: 以实用为主，不需要过度工程化
+
+## Key Decisions
+
+| Decision | Rationale | Outcome |
+|----------|-----------|---------|
+| 优先架构优化而非新功能 | 代码质量问题会持续拖慢后续开发 | — Pending |
+| 安全加固降优先级 | 个人使用，风险可控 | — Pending |
+| 保持现有技术栈 | 避免引入迁移风险，专注于打磨 | — Pending |
+
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd:transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd:complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
+
+---
+*Last updated: 2026-03-29 after initialization*
