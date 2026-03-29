@@ -14,7 +14,7 @@ Requirements for this optimization milestone. Each maps to roadmap phases.
 - [x] **BACK-03**: 全局异常处理改为具体异常类型（SQLAlchemyError、asyncio.TimeoutError 等），不再使用裸 except
 - [x] **BACK-04**: 移除默认加密 key 硬编码，非开发环境强制要求显式配置 ENCRYPTION_KEY
 - [x] **BACK-05**: DEBUG 模式下错误响应不泄露系统内部信息（堆栈、路径、配置）
-- [ ] **BACK-06**: 重构过程中发现的 bug 和 dead code 顺手修复，commit 中标注
+- [x] **BACK-06**: 重构过程中发现的 bug 和 dead code 顺手修复，commit 中标注
 
 ### Frontend Refactoring
 
@@ -70,7 +70,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BACK-03 | Phase 1 | Complete |
 | BACK-04 | Phase 1 | Complete |
 | BACK-05 | Phase 1 | Complete |
-| BACK-06 | Phase 1 | Pending |
+| BACK-06 | Phase 1 | Complete |
 | FRONT-01 | Phase 2 | Pending |
 | FRONT-02 | Phase 2 | Pending |
 | FRONT-03 | Phase 2 | Pending |
