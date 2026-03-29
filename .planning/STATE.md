@@ -87,9 +87,11 @@ From SUMMARY.md, phases with special research needs:
 
 ### Decisions Made
 
-— awaiting roadmap approval.
-
-- [Phase 01]: Use specific exception types (OperationalError, ProgrammingError, ValueError) in SQLExecutor per D-04 pattern
+- [Phase 01-02]: Extracted PythonSandbox module with security analysis and timeout protection (PythonSecurityAnalyzer integration)
+- [Phase 01-02]: Extracted ResultProcessor module with graceful partial artifact extraction (collects errors without failing)
+- [Phase 01-02]: Used specific exception types per D-04: ValueError for security, RuntimeError for execution errors
+- [Phase 01-02]: TYPE_CHECKING guards prevent circular imports while maintaining type safety
+- [Phase 01-02]: Both modules use structlog for detailed diagnostic logging per D-03 pattern
 
 ### TODOs
 
@@ -104,12 +106,13 @@ None currently.
 
 ## Session Continuity
 
-**Last Update:** 2026-03-29 (initialization)
-**Last Action:** Created ROADMAP.md, STATE.md, updated REQUIREMENTS.md traceability
+**Last Update:** 2026-03-29 (Plan 01-02 execution)
+**Last Action:** Completed Plan 01-02: Extracted PythonSandbox and ResultProcessor modules
 
 **Context for Next Session:**
 
-- Roadmap is pending user approval
-- 14 v1 requirements fully mapped to 3 phases
-- All success criteria derived from requirements, no gaps found
-- Ready for phase planning once approved
+- Plan 01-02 complete: 2 service modules created with full feature set
+- PythonSandbox ready for Phase 01-03 integration (security analysis, timeout handling, SQL injection)
+- ResultProcessor ready for Phase 01-03 integration (content parsing, artifact extraction)
+- Both modules verified: syntax OK, exception types specific, circular imports prevented, structlog integrated
+- Ready for Plan 01-03: Orchestrator refactoring to integrate new service modules
