@@ -3,17 +3,20 @@ AI 执行服务
 使用 gptme 作为执行引擎
 """
 
+from asyncio import TimeoutError as AsyncioTimeoutError
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
 import structlog
+from sqlalchemy.exc import OperationalError, ProgrammingError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.tables import Connection, Model
 from app.models import RelationshipContext, SemanticContext, SSEEvent, SystemCapabilities
 from app.services.app_settings import detect_system_capabilities
+from app.services.engine_diagnostics import categorize_sql_error
 from app.services.execution_context import ExecutionContextResolver
 from app.services.system_prompt_builder import build_system_prompt
 
@@ -213,7 +216,11 @@ class ExecutionService:
         exclude_message_id: UUID | None = None,
         stop_checker: Callable[[], bool] | None = None,
     ) -> AsyncGenerator[SSEEvent, None]:
-        """流式执行查询"""
+        """Stream execution results with proper error handling per D-03, D-04.
+
+        Per D-04: Use specific exception types instead of bare except.
+        Per D-03: Detailed diagnostic logging via structlog, concise errors to client.
+        """
         try:
             inputs = await self._load_execution_inputs(
                 conversation_id=conversation_id,
@@ -240,15 +247,91 @@ class ExecutionService:
                 stop_checker=stop_checker,
             ):
                 yield event
-        except Exception as exc:
-            logger.exception(
-                "Execution stream failed",
+
+        except (OperationalError, ProgrammingError) as exc:
+            # SQL errors with categorization
+            error_code, category, _ = categorize_sql_error(str(exc))
+            logger.error(
+                "SQL error during execution",
+                error_code=error_code,
+                error_category=category,
                 conversation_id=str(conversation_id),
-                error=str(exc),
+                exception_detail=str(exc),
             )
             yield SSEEvent.error(
-                "EXECUTION_ERROR",
-                str(exc),
+                error_code,
+                "数据库查询执行失败，请检查查询语句",
+                error_category="sql",
+                failed_stage="execution",
+            )
+
+        except SQLAlchemyError as exc:
+            # General SQLAlchemy errors
+            logger.error(
+                "SQLAlchemy error during execution",
+                conversation_id=str(conversation_id),
+                exception_detail=str(exc),
+                error_type=type(exc).__name__,
+            )
+            yield SSEEvent.error(
+                "DB_ERROR",
+                "数据库操作失败",
+                error_category="database",
+                failed_stage="execution",
+            )
+
+        except AsyncioTimeoutError as exc:
+            # Timeout errors - these are expected in some scenarios
+            logger.warning(
+                "Timeout during execution",
+                conversation_id=str(conversation_id),
+            )
+            yield SSEEvent.error(
+                "TIMEOUT",
+                "执行超时，请重试或简化查询",
+                error_category="timeout",
+                failed_stage="execution",
+            )
+
+        except ValueError as exc:
+            # Validation errors from input/context resolution
+            logger.warning(
+                "Validation error during execution",
+                conversation_id=str(conversation_id),
+                exception_detail=str(exc),
+            )
+            yield SSEEvent.error(
+                "VALIDATION_ERROR",
+                "输入参数无效",
+                error_category="validation",
+                failed_stage="execution",
+            )
+
+        except RuntimeError as exc:
+            # Runtime errors from execution engine
+            logger.error(
+                "Runtime error during execution",
+                conversation_id=str(conversation_id),
+                exception_detail=str(exc),
+            )
+            yield SSEEvent.error(
+                "RUNTIME_ERROR",
+                "执行引擎错误",
+                error_category="execution",
+                failed_stage="execution",
+            )
+
+        except Exception as exc:
+            # Unexpected exceptions
+            logger.exception(
+                "Unexpected error during execution stream",
+                conversation_id=str(conversation_id),
+                error_type=type(exc).__name__,
+                exception_detail=str(exc),
+            )
+            yield SSEEvent.error(
+                "INTERNAL_ERROR",
+                "发生未知错误，请联系技术支持",
                 error_category="execution",
                 failed_stage="execution",
             )
