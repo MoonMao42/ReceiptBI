@@ -2,18 +2,20 @@
 
 import asyncio
 from collections.abc import AsyncGenerator
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
 from app.db import get_db
-from app.db.tables import Message
+from app.db.tables import Conversation, Message
 from app.i18n import get_progress_message, t
-from app.models import APIResponse, ChatStopRequest, SSEEvent
+from app.models import APIResponse, ChatStopRequest, MessagePaginatedResponse, MessageResponse, SSEEvent
 from app.services.app_settings import get_or_create_app_settings, settings_to_dict
 from app.services.chat_runtime import (
     ActiveQueryRegistry,
@@ -187,4 +189,93 @@ async def stop_chat(request: ChatStopRequest) -> APIResponse[dict[str, Any]]:
     return APIResponse.ok(
         data={"stopped": False},
         message=t("stop.not_found", "zh"),
+    )
+
+
+@router.get("/{conversation_id}/messages", response_model=APIResponse[MessagePaginatedResponse])
+async def list_messages(
+    conversation_id: str,
+    cursor: str | None = Query(None, description="游标（ISO datetime），获取此之前的消息"),
+    limit: int = Query(50, ge=1, le=100, description="返回数量"),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse[MessagePaginatedResponse]:
+    """
+    分页获取对话消息。
+
+    Args:
+        conversation_id: 对话 UUID
+        cursor: ISO datetime 格式的游标，用于获取更早的消息。为 null 时获取最新消息。
+        limit: 返回消息数量（1-100，默认 50）
+
+    Returns:
+        消息分页响应，包含 items、total 和 next_cursor
+    """
+    try:
+        conv_id = UUID(conversation_id)
+    except ValueError:
+        return APIResponse.fail(
+            code="INVALID_UUID",
+            message="无效的对话 ID 格式",
+        )
+
+    # 验证对话存在
+    conv_query = select(Conversation).where(Conversation.id == conv_id)
+    result = await db.execute(conv_query)
+    conversation = result.scalar_one_or_none()
+    if not conversation:
+        return APIResponse.fail(
+            code="NOT_FOUND",
+            message="对话不存在",
+        )
+
+    # 统计总消息数
+    count_query = select(func.count(Message.id)).where(Message.conversation_id == conv_id)
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    # 构建消息查询
+    messages_query = select(Message).where(Message.conversation_id == conv_id)
+
+    # 应用游标过滤（获取此时间之前的消息，用于向后翻页）
+    if cursor:
+        try:
+            cursor_dt = datetime.fromisoformat(cursor.replace("Z", "+00:00"))
+            messages_query = messages_query.where(Message.created_at < cursor_dt)
+        except ValueError:
+            return APIResponse.fail(
+                code="INVALID_CURSOR",
+                message="无效的游标格式，应为 ISO datetime",
+            )
+
+    # 按创建时间降序排列（最新的在前），再加载 limit+1 个来判断是否有下一页
+    messages_query = messages_query.order_by(desc(Message.created_at)).limit(limit + 1)
+
+    result = await db.execute(messages_query)
+    messages = list(result.scalars())
+
+    # 判断是否有更多消息
+    next_cursor = None
+    if len(messages) > limit:
+        # 有更多消息，截取到 limit 个，设置 next_cursor 为最后一条消息的时间
+        messages = messages[:limit]
+        next_cursor = messages[-1].created_at.isoformat()
+
+    # 将 Message 对象转换为 MessageResponse
+    message_responses = [
+        MessageResponse(
+            id=msg.id,
+            role=msg.role,
+            content=msg.content,
+            metadata=msg.extra_data,
+            created_at=msg.created_at,
+        )
+        for msg in messages
+    ]
+
+    return APIResponse.ok(
+        data=MessagePaginatedResponse(
+            items=message_responses,
+            total=total,
+            next_cursor=next_cursor,
+        )
     )
