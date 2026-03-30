@@ -30,8 +30,6 @@ export function useMessageVirtualizer(messages: ChatMessage[]) {
         : undefined,
     // Render 10 items beyond viewport for smooth rapid scrolling
     overscan: 10,
-    // Automatically adjust scroll position when item sizes change (prevents jump when loading older messages)
-    shouldAdjustScrollPositionOnItemSizeChange: true,
   });
 
   // Scroll-to-top trigger: detect when user scrolls to top to load earlier messages
