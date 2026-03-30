@@ -16,7 +16,7 @@ interface PaginatedMessagesResponse {
  * When user scrolls to top, call fetchPreviousPage() to load older messages.
  *
  * Data flow:
- * 1. Initial load: cursor=null → fetch 50 most recent messages
+ * 1. Initial load: cursor=undefined → fetch 50 most recent messages
  * 2. User scrolls to top → calls fetchPreviousPage()
  * 3. Next query: cursor=oldest_timestamp → fetch 50 older messages
  * 4. Messages prepended to list (appear at top due to reverse ordering)
@@ -32,7 +32,7 @@ export function useMessagePagination(conversationId: string | null) {
     error,
   } = useInfiniteQuery({
     queryKey: ["messages", conversationId],
-    queryFn: async ({ pageParam }) => {
+    queryFn: async ({ pageParam }: { pageParam: string | undefined }) => {
       if (!conversationId) {
         return { items: [], total: 0, next_cursor: null };
       }
@@ -41,7 +41,7 @@ export function useMessagePagination(conversationId: string | null) {
         `/api/v1/conversations/${conversationId}/messages`,
         {
           params: {
-            cursor: pageParam || null,
+            cursor: pageParam || undefined,
             limit: 50,
           },
         }
@@ -49,18 +49,18 @@ export function useMessagePagination(conversationId: string | null) {
 
       return response.data.data;
     },
-    initialPageParam: null, // Start with no cursor (most recent messages first)
-    getNextPageParam: (lastPage) => lastPage.next_cursor,
+    initialPageParam: undefined as string | undefined, // Start with no cursor (most recent messages first)
+    getNextPageParam: (lastPage: PaginatedMessagesResponse) => lastPage.next_cursor || undefined,
     enabled: !!conversationId,
-    // Flatten pages into single array for rendering
-    select: (data) => {
-      const allMessages = data.pages.flatMap((page) => page.items);
-      return allMessages;
-    },
   });
 
+  // Flatten pages into single array and convert APIMessage to ChatMessage
+  const messages: ChatMessage[] = data?.pages
+    ? data.pages.flatMap((page: PaginatedMessagesResponse) => page.items.map(mapApiMessage))
+    : [];
+
   return {
-    messages: data || [],
+    messages,
     isFetchingPreviousPage,
     hasMoreMessages: hasNextPage,
     loadEarlierMessages: fetchPreviousPage,
