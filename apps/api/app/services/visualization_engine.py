@@ -8,6 +8,7 @@ Per D-04: Specific exception handling for chart config errors.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+
 import structlog
 
 if TYPE_CHECKING:

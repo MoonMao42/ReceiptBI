@@ -54,9 +54,9 @@ from app.services.python_runtime import (
     PythonSecurityAnalyzer,
     validate_python_code,
 )
-from app.services.sql_executor import SQLExecutor
 from app.services.python_sandbox import PythonSandbox
 from app.services.result_processor import ResultProcessor
+from app.services.sql_executor import SQLExecutor
 from app.services.visualization_engine import VisualizationEngine
 
 logger = structlog.get_logger()

@@ -15,7 +15,13 @@ from sse_starlette.sse import EventSourceResponse
 from app.db import get_db
 from app.db.tables import Conversation, Message
 from app.i18n import get_progress_message, t
-from app.models import APIResponse, ChatStopRequest, MessagePaginatedResponse, MessageResponse, SSEEvent
+from app.models import (
+    APIResponse,
+    ChatStopRequest,
+    MessagePaginatedResponse,
+    MessageResponse,
+    SSEEvent,
+)
 from app.services.app_settings import get_or_create_app_settings, settings_to_dict
 from app.services.chat_runtime import (
     ActiveQueryRegistry,
