@@ -6,7 +6,6 @@ import { Brain, Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import type { ChatMessage } from "@/lib/types/chat";
 import type { AppSettings } from "@/lib/types/api";
-import { cn } from "@/lib/utils";
 import { useChatStore } from "@/lib/stores/chat";
 import { useMessagePagination } from "@/lib/hooks/useMessagePagination";
 import { useMessageVirtualizer } from "@/lib/hooks/useMessageVirtualizer";
@@ -55,7 +54,7 @@ export function MessageList({
   const allMessages = [...historyMessages, ...messages];
 
   // Virtual scrolling with dynamic heights
-  const { parentRef, virtualizer, virtualItems, getTotalSize } = useMessageVirtualizer(allMessages);
+  const { parentRef, virtualItems, getTotalSize } = useMessageVirtualizer(allMessages);
 
   // Scroll to top auto-triggers loading earlier messages
   useEffect(() => {
@@ -70,7 +69,7 @@ export function MessageList({
       container.addEventListener("scroll", handleScroll);
       return () => container.removeEventListener("scroll", handleScroll);
     }
-  }, [hasMoreMessages, isFetchingPreviousPage, loadEarlierMessages]);
+  }, [parentRef, hasMoreMessages, isFetchingPreviousPage, loadEarlierMessages]);
 
   // Auto-scroll to bottom when new messages arrive (user was already at bottom)
   const wasAtBottomRef = useRef(true);
@@ -89,7 +88,7 @@ export function MessageList({
         }, 0);
       }
     }
-  }, [messages.length, isLoading, hasPendingScroll]);
+  }, [parentRef, messages.length, isLoading, hasPendingScroll]);
 
   if (allMessages.length === 0 && !isFetchingPreviousPage) {
     return (

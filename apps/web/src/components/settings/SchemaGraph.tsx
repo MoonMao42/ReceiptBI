@@ -44,7 +44,7 @@ interface SchemaGraphProps {
 }
 
 export function SchemaGraph({
-  _schemaInfo,
+  schemaInfo: _schemaInfo,
   relationships,
   visibleTables,
   currentLayout,
@@ -113,9 +113,10 @@ export function SchemaGraph({
   };
 
   useEffect(() => {
+    const currentTimeout = saveTimeoutRef.current;
     return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
+      if (currentTimeout) {
+        clearTimeout(currentTimeout);
       }
     };
   }, []);
