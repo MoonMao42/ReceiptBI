@@ -171,3 +171,11 @@ class ConversationListParams(BaseModel):
     offset: int = Field(default=0, ge=0, description="偏移量")
     favorites: bool = Field(default=False, description="仅收藏")
     q: str | None = Field(default=None, max_length=100, description="搜索关键词")
+
+
+class MessagePaginatedResponse(BaseModel):
+    """消息分页响应（游标分页）"""
+
+    items: list[MessageResponse] = Field(..., description="消息列表")
+    total: int = Field(..., description="总消息数")
+    next_cursor: str | None = Field(default=None, description="下一页游标（ISO datetime）")

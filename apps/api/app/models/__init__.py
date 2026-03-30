@@ -28,6 +28,7 @@ from app.models.history import (
     ConversationResponse,
     ConversationSummary,
     MessageCreate,
+    MessagePaginatedResponse,
     MessageResponse,
 )
 from app.models.schema import (
@@ -79,6 +80,7 @@ __all__ = [
     "ConversationSummary",
     "MessageCreate",
     "MessageResponse",
+    "MessagePaginatedResponse",
     # Semantic
     "SemanticTermCreate",
     "SemanticTermUpdate",
