@@ -26,7 +26,7 @@ test("settings workflow and chat smoke test", async ({ page }) => {
   });
   await expect(connectionCard).toBeVisible();
   await connectionCard.locator('[data-testid^="connection-test-"]').click();
-  await expect(connectionCard.getByText("Success")).toBeVisible({ timeout: 15_000 });
+  await expect(connectionCard.getByText(/连接成功|Success/)).toBeVisible({ timeout: 15_000 });
 
   await page.getByTestId("settings-tab-models").click();
   await page.getByTestId("model-add-button").click();
@@ -45,7 +45,7 @@ test("settings workflow and chat smoke test", async ({ page }) => {
   });
   await expect(modelCard).toBeVisible();
   await modelCard.locator('[data-testid^="model-test-"]').click();
-  await expect(page.getByTestId("model-test-summary")).toContainText("Success", {
+  await expect(page.getByTestId("model-test-summary")).toContainText(/Success|成功/, {
     timeout: 15_000,
   });
 
