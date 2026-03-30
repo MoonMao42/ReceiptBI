@@ -3,12 +3,12 @@
 **Milestone:** QueryGPT 优化迭代
 **Created:** 2026-03-29
 **Granularity:** COARSE (3-5 phases)
-**Status:** Planning complete for Phases 1-2
+**Status:** Phases 1-2 COMPLETE. Phase 3 ready for execution.
 
 ## Phases
 
 - [x] **Phase 1: Backend Service Decomposition** ✓ COMPLETE - Modularize gptme_engine.py, standardize error handling, secure configuration
-- [ ] **Phase 2: Frontend Component Optimization** - Split large components, implement message pagination with virtual scrolling
+- [x] **Phase 2: Frontend Component Optimization** ✓ COMPLETE - Split large components, implement message pagination with virtual scrolling
 - [ ] **Phase 3: Chinese Documentation** - Complete Chinese README and documentation
 
 ## Phase Details
@@ -59,11 +59,11 @@
 
 | Plan | Wave | Status | Objective |
 |------|------|--------|-----------|
-| 02-01 | 1 | Created | ChatArea decomposition: MessageList, InputBar sub-components (FRONT-01) |
-| 02-02 | 1 | Created | SchemaSettings decomposition: SchemaGraph, RelationshipPanel, LayoutControls (FRONT-02) |
+| 02-01 | 1 | ✓ COMPLETE | ChatArea decomposition: MessageList, InputBar sub-components (FRONT-01) |
+| 02-02 | 1 | ✓ COMPLETE | SchemaSettings decomposition: SchemaGraph, RelationshipPanel, LayoutControls (FRONT-02) |
 | 02-03 | 2 | ✓ COMPLETE | Message pagination API + useMessagePagination + useMessageVirtualizer hooks (FRONT-03, FRONT-04) |
-| 02-04 | 3 | Created | Schema optimization: memoized nodes/edges, useSchemaLayout hook (FRONT-05, FRONT-06) |
-| 02-05 | 4 | Created | Testing, verification, bug documentation (FRONT-07) |
+| 02-04 | 3 | ✓ COMPLETE | Schema optimization: memoized nodes/edges, useSchemaLayout hook (FRONT-05, FRONT-06) |
+| 02-05 | 4 | ✓ COMPLETE | Testing, verification, bug documentation (FRONT-07) |
 
 **UI hint:** yes
 

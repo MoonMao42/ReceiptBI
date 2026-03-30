@@ -20,11 +20,11 @@ Requirements for this optimization milestone. Each maps to roadmap phases.
 
 - [x] **FRONT-01**: ChatArea.tsx（408行）拆分为容器组件 + 子组件 + 自定义 hooks
 - [x] **FRONT-02**: SchemaSettings.tsx（618行）拆分为图表组件 + 关系管理 + 布局管理
-- [ ] **FRONT-03**: 聊天消息支持分页加载（新增后端 API 端点 + 前端无限滚动）
-- [ ] **FRONT-04**: 消息列表使用虚拟滚动（TanStack Virtual），大对话不卡顿
+- [x] **FRONT-03**: 聊天消息支持分页加载（新增后端 API 端点 + 前端无限滚动）
+- [x] **FRONT-04**: 消息列表使用虚拟滚动（TanStack Virtual），大对话不卡顿
 - [x] **FRONT-05**: Schema 可视化使用 useMemo 优化，节点/边数组避免不必要重渲染
 - [x] **FRONT-06**: Schema 图表布局计算提取为独立 hook
-- [ ] **FRONT-07**: 重构过程中发现的 bug、race condition、低效写法顺手修复
+- [x] **FRONT-07**: 重构过程中发现的 bug、race condition、低效写法顺手修复
 
 ### Documentation
 
@@ -73,17 +73,19 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BACK-06 | Phase 1 | Complete |
 | FRONT-01 | Phase 2 | Complete |
 | FRONT-02 | Phase 2 | Complete |
-| FRONT-03 | Phase 2 | Pending |
-| FRONT-04 | Phase 2 | Pending |
+| FRONT-03 | Phase 2 | Complete |
+| FRONT-04 | Phase 2 | Complete |
 | FRONT-05 | Phase 2 | Complete |
 | FRONT-06 | Phase 2 | Complete |
-| FRONT-07 | Phase 2 | Pending |
+| FRONT-07 | Phase 2 | Complete |
 | DOC-01 | Phase 3 | Pending |
 
 **Coverage:**
 - v1 requirements: 14 total
 - Mapped to phases: 14 ✓
 - Unmapped: 0
+- **Phases Complete:** Phase 1 (6/6) ✓, Phase 2 (7/7) ✓
+- **Remaining:** Phase 3 (1/1)
 
 ---
 
