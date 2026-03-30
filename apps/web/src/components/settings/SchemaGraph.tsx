@@ -8,7 +8,6 @@ import {
   MiniMap,
   useNodesState,
   useEdgesState,
-  useReactFlow,
   type Connection,
   type Edge,
   type Node,
@@ -45,7 +44,7 @@ interface SchemaGraphProps {
 }
 
 export function SchemaGraph({
-  schemaInfo,
+  _schemaInfo,
   relationships,
   visibleTables,
   currentLayout,
