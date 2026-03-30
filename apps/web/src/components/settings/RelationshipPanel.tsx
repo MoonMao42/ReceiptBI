@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { Lightbulb, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import type {
@@ -24,21 +25,36 @@ export function RelationshipPanel({
 }: RelationshipPanelProps) {
   const t = useTranslations("schema");
 
-  if (suggestions.length === 0 && relationships.length === 0) {
+  // Memoize suggestions list to prevent re-render when parent re-renders
+  // Suggestions are expensive to calculate (O(n²) analysis) so memoization is critical
+  const memoizedSuggestions = useMemo(() => {
+    if (!suggestions || suggestions.length === 0) {
+      return [];
+    }
+    // Sort by confidence (highest first)
+    return [...suggestions].sort((a, b) => b.confidence - a.confidence);
+  }, [suggestions]);
+
+  // Memoize existing relationships
+  const memoizedRelationships = useMemo(() => {
+    return relationships || [];
+  }, [relationships]);
+
+  if (memoizedSuggestions.length === 0 && memoizedRelationships.length === 0) {
     return null;
   }
 
   return (
     <div className="space-y-4 mb-4">
       {/* Suggestions Panel */}
-      {suggestions.length > 0 && (
+      {memoizedSuggestions.length > 0 && (
         <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
           <div className="flex items-center gap-2 text-primary text-sm font-medium mb-2">
             <Lightbulb size={14} />
             {t("detectedRelationships")}
           </div>
           <div className="flex flex-wrap gap-2">
-            {suggestions.slice(0, 5).map((suggestion, index) => (
+            {memoizedSuggestions.slice(0, 5).map((suggestion, index) => (
               <button
                 key={index}
                 onClick={() => onApplySuggestion(suggestion)}
@@ -55,9 +71,9 @@ export function RelationshipPanel({
       )}
 
       {/* Existing Relationships */}
-      {relationships.length > 0 && (
+      {memoizedRelationships.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2">
-          {relationships.map((rel) => (
+          {memoizedRelationships.map((rel) => (
             <div
               key={rel.id}
               className="flex items-center gap-2 px-2 py-1 text-xs bg-primary/10 text-primary rounded"
