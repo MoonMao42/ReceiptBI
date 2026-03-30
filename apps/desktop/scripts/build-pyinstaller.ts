@@ -99,17 +99,33 @@ async function main() {
   } else {
     pythonBin = execSync('which python3.13 || which python3', { encoding: 'utf-8' }).trim();
   }
-  run(`${pythonBin} -m venv ${venvDir}`);
 
-  const pip = join(venvDir, process.platform === 'win32' ? 'Scripts/pip.exe' : 'bin/pip');
+  // Try uv first (handles uv-installed Python where ensurepip fails), fall back to stdlib venv
+  const hasUv = (() => { try { execSync('which uv', { encoding: 'utf-8' }); return true; } catch { return false; } })();
+  if (hasUv) {
+    run(`uv venv ${venvDir} --python ${pythonBin}`);
+  } else {
+    run(`${pythonBin} -m venv ${venvDir}`);
+  }
+
   const python = join(venvDir, process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python3');
+
+  // Use uv pip if available (faster + works without pip in venv), fall back to venv pip
+  const pip = join(venvDir, process.platform === 'win32' ? 'Scripts/pip.exe' : 'bin/pip');
+  const pipInstall = (pkg: string) => {
+    if (hasUv) {
+      run(`uv pip install --python ${python} ${pkg}`);
+    } else {
+      run(`${pip} install ${pkg}`);
+    }
+  };
 
   // 安装 pyinstaller 和依赖
   console.log('Installing PyInstaller and dependencies...');
-  run(`${pip} install pyinstaller==6.19.0`);
-  run(`${pip} install -r ${join(BUILD_DIR, 'requirements.txt')}`);
+  pipInstall('pyinstaller==6.19.0');
+  pipInstall(`-r ${join(BUILD_DIR, 'requirements.txt')}`);
   // 显式安装 aiosqlite（pydantic-settings 动态加载时需要）
-  run(`${pip} install aiosqlite`);
+  pipInstall('aiosqlite');
 
   // 2.5. 预生成 demo.db + querygpt.db（构建时生成，运行时直接复制到用户目录）
   console.log('\nPre-generating databases...');
