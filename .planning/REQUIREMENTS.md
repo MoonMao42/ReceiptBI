@@ -18,7 +18,7 @@ Requirements for this optimization milestone. Each maps to roadmap phases.
 
 ### Frontend Refactoring
 
-- [ ] **FRONT-01**: ChatArea.tsx（408行）拆分为容器组件 + 子组件 + 自定义 hooks
+- [x] **FRONT-01**: ChatArea.tsx（408行）拆分为容器组件 + 子组件 + 自定义 hooks
 - [x] **FRONT-02**: SchemaSettings.tsx（618行）拆分为图表组件 + 关系管理 + 布局管理
 - [ ] **FRONT-03**: 聊天消息支持分页加载（新增后端 API 端点 + 前端无限滚动）
 - [ ] **FRONT-04**: 消息列表使用虚拟滚动（TanStack Virtual），大对话不卡顿
@@ -71,7 +71,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BACK-04 | Phase 1 | Complete |
 | BACK-05 | Phase 1 | Complete |
 | BACK-06 | Phase 1 | Complete |
-| FRONT-01 | Phase 2 | Pending |
+| FRONT-01 | Phase 2 | Complete |
 | FRONT-02 | Phase 2 | Complete |
 | FRONT-03 | Phase 2 | Pending |
 | FRONT-04 | Phase 2 | Pending |
