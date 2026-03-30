@@ -7,12 +7,13 @@ Per D-04: Use specific exception types for security and execution errors.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
 import asyncio
+from typing import TYPE_CHECKING, Any
+
 import structlog
 
 if TYPE_CHECKING:
-    from app.services.engine_workflow import EngineRunState
+    pass
 
 logger = structlog.get_logger()
 
@@ -92,7 +93,7 @@ class PythonSandbox:
                     self._execute_with_timeout(code),
                     timeout=timeout,
                 )
-            except asyncio.TimeoutError as exc:
+            except TimeoutError as exc:
                 logger.error("Python execution timeout", timeout=timeout)
                 raise RuntimeError(f"Code execution timeout ({timeout}s)") from exc
 

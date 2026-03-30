@@ -3,7 +3,6 @@ AI 执行服务
 使用 gptme 作为执行引擎
 """
 
-from asyncio import TimeoutError as AsyncioTimeoutError
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -280,7 +279,7 @@ class ExecutionService:
                 failed_stage="execution",
             )
 
-        except AsyncioTimeoutError as exc:
+        except TimeoutError:
             # Timeout errors - these are expected in some scenarios
             logger.warning(
                 "Timeout during execution",

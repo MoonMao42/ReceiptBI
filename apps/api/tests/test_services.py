@@ -10,13 +10,13 @@ Per BACK-02: Verify service modules work correctly and API contracts maintained.
 Per BACK-06: Code review and test coverage documentation.
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, Mock
-from typing import Any
+from unittest.mock import MagicMock, patch
 
-from app.services.sql_executor import SQLExecutor
+import pytest
+
 from app.services.python_sandbox import PythonSandbox
 from app.services.result_processor import ResultProcessor
+from app.services.sql_executor import SQLExecutor
 from app.services.visualization_engine import VisualizationEngine
 
 
@@ -236,8 +236,7 @@ class TestPythonSandbox:
                 mock_runtime_class.return_value = mock_runtime
 
                 with patch("asyncio.wait_for") as mock_wait:
-                    import asyncio
-                    mock_wait.side_effect = asyncio.TimeoutError()
+                    mock_wait.side_effect = TimeoutError()
 
                     with pytest.raises(RuntimeError) as exc_info:
                         await sandbox.execute(slow_code, timeout=5)
@@ -398,12 +397,8 @@ print(df)"""
                 "yKeys": ["revenue"],
             }
 
-            sql_data = [
-                {"date": "2024-01-01", "revenue": 1000},
-                {"date": "2024-01-02", "revenue": 2000},
-            ]
 
-            result = await processor.extract_results(ai_content)
+            await processor.extract_results(ai_content)
 
             # Since extract_chart_config is mocked, verify the mock is set up
             mock_extract.assert_called()
@@ -428,7 +423,7 @@ print(df)"""
             "data": data,
         }
 
-        with patch("app.services.engine_visualization.build_chart_from_config", return_value=expected_chart) as mock_build:
+        with patch("app.services.engine_visualization.build_chart_from_config", return_value=expected_chart):
             result = processor.build_chart_payload(chart_config, data)
 
             assert result is not None
@@ -580,7 +575,7 @@ class TestServiceModuleIntegration:
     async def test_sql_to_python_pipeline(self):
         """Test pipeline: SQL execution → Python analysis"""
         sql_executor = SQLExecutor()
-        python_sandbox = PythonSandbox()
+        PythonSandbox()
 
         # Mock SQL execution result
         mock_result = MagicMock()
@@ -608,7 +603,7 @@ class TestServiceModuleIntegration:
     async def test_result_processor_to_visualization_pipeline(self):
         """Test pipeline: Result extraction → Chart generation"""
         processor = ResultProcessor()
-        engine = VisualizationEngine()
+        VisualizationEngine()
 
         ai_content = """
         SQL: SELECT category, COUNT(*) as count FROM items GROUP BY category
@@ -646,7 +641,6 @@ class TestErrorHandling:
         executor = SQLExecutor()
 
         # Check that code uses specific exception types
-        from sqlalchemy.exc import OperationalError, ProgrammingError
         import inspect
 
         source = inspect.getsource(executor.execute_sql)
@@ -695,9 +689,9 @@ class TestAPICCompatibility:
 
     def test_service_modules_importable(self):
         """Verify all service modules can be imported"""
-        from app.services.sql_executor import SQLExecutor
         from app.services.python_sandbox import PythonSandbox
         from app.services.result_processor import ResultProcessor
+        from app.services.sql_executor import SQLExecutor
         from app.services.visualization_engine import VisualizationEngine
 
         assert SQLExecutor is not None
@@ -707,9 +701,9 @@ class TestAPICCompatibility:
 
     def test_gptme_engine_imports_services(self):
         """Verify GptmeEngine imports and uses service modules"""
-        from app.services.gptme_engine import GptmeEngine
-
         import inspect
+
+        from app.services.gptme_engine import GptmeEngine
 
         source = inspect.getsource(GptmeEngine)
 
@@ -721,8 +715,9 @@ class TestAPICCompatibility:
 
     def test_service_module_type_hints(self):
         """Verify service modules have proper type hints per BACK-06 checklist"""
-        from app.services.sql_executor import SQLExecutor
         import inspect
+
+        from app.services.sql_executor import SQLExecutor
 
         # Check type hints on main methods
         sig = inspect.signature(SQLExecutor.execute_sql)
@@ -730,11 +725,12 @@ class TestAPICCompatibility:
 
     def test_no_bare_except_clauses(self):
         """Verify no bare except clauses per D-04"""
-        from app.services.sql_executor import SQLExecutor
+        import inspect
+
         from app.services.python_sandbox import PythonSandbox
         from app.services.result_processor import ResultProcessor
+        from app.services.sql_executor import SQLExecutor
         from app.services.visualization_engine import VisualizationEngine
-        import inspect
 
         modules = [
             (SQLExecutor, "SQLExecutor"),
@@ -752,7 +748,7 @@ class TestAPICCompatibility:
                 if stripped.startswith("except:"):
                     # Allow "except:" if it's followed by comment or if it's part of error message
                     # But flag actual bare except clauses in try blocks
-                    if "except:" in line and not "except:" in "# except:":
+                    if "except:" in line and "except:" not in "# except:":
                         # This is a potential bare except - would fail per D-04
                         pass  # Acceptable in test context
 

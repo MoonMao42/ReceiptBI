@@ -8,6 +8,7 @@ Per D-04: Specific exception handling for malformed responses.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+
 import structlog
 
 if TYPE_CHECKING:
@@ -55,9 +56,9 @@ class ResultProcessor:
             ValueError: Content parsing failed (malformed response)
         """
         from app.services.engine_content import (
+            extract_chart_config,
             extract_python_block,
             extract_sql_block,
-            extract_chart_config,
             parse_thinking_markers,
         )
 
