@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale } from "next-intl";
 import type { AppSettings, ConnectionSummary, ModelSummary } from "@/lib/types/api";
 import { api } from "@/lib/api/client";
 import { useChatStore } from "@/lib/stores/chat";
@@ -19,7 +19,6 @@ interface ChatAreaProps {
 export function ChatArea({ sidebarOpen: _sidebarOpen, onToggleSidebar }: ChatAreaProps) {
   const router = useRouter();
   const locale = useLocale();
-  const t = useTranslations("chat");
   const { messages, isLoading, sendMessage, stopGeneration, retryMessage, rerunMessage } =
     useChatStore();
 
