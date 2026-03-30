@@ -76,20 +76,24 @@
 **Requirements:** DOC-01
 
 **Success Criteria** (what must be TRUE):
-1. README.zh.md is complete with all major sections translated: Features, Quick Start, Tech Stack, Configuration, Development, Troubleshooting
+1. README.zh.md is complete with all major sections translated: Features, How It Works, Quick Start, Tech Stack, Configuration, Development, Deployment, Known Limitations
 2. Chinese documentation maintains feature and content parity with English version
-3. Technical terminology is consistent across documentation (e.g., "semantic layer" = "语义层")
+3. Technical terminology is consistent across documentation, using zh.json UI glossary as source of truth
 
-**Plans:** TBD
+**Plans:** 1 plan
+
+| Plan | Wave | Status | Objective |
+|------|------|--------|-----------|
+| 03-01 | 1 | ✓ Created | Create README.zh.md with complete Chinese translation and add language links (DOC-01) |
 
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Backend Service Decomposition | 7/7 | ✓ COMPLETE | 01-01, 01-02, 01-03, 01-04, 01-05, 01-06, 01-06b |
-| 2. Frontend Component Optimization | 1/5 | ✓ EXECUTING | 02-03 ✓ (FRONT-03, FRONT-04 satisfied) |
-| 3. Chinese Documentation | 0/? | Not started | — |
+| 2. Frontend Component Optimization | 5/5 | ✓ COMPLETE | 02-01, 02-02, 02-03, 02-04, 02-05 |
+| 3. Chinese Documentation | 0/1 | Ready to plan | — |
 
 ---
 
-**Next:** Execute Phase 2 plans (Frontend Component Optimization) via `/gsd:execute-phase 02`. Phase 1 complete with 100% plan execution and all requirements satisfied (BACK-01 through BACK-06).
+**Next:** Execute Phase 3 plan (Chinese Documentation) via `/gsd:execute-phase 03`. All phases planned and ready for execution.
