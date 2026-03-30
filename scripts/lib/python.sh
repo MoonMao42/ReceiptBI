@@ -1,8 +1,21 @@
 create_venv_if_needed() {
   ensure_python_selected
-  if [ ! -d "$API_DIR/.venv" ]; then
+  if [ ! -d "$API_DIR/.venv" ] || [ ! -x "$(venv_python)" ]; then
     info "创建 Python 虚拟环境..."
-    (cd "$API_DIR" && "$PYTHON_CMD" -m venv .venv)
+    if command -v uv >/dev/null 2>&1; then
+      (cd "$API_DIR" && uv venv .venv --python "$PYTHON_CMD")
+    else
+      (cd "$API_DIR" && "$PYTHON_CMD" -m venv .venv --clear)
+    fi
+  fi
+}
+
+# Use uv pip if available, fall back to venv pip
+_pip_install() {
+  if command -v uv >/dev/null 2>&1; then
+    uv pip install --python "$(venv_python)" "$@"
+  else
+    "$(venv_pip)" install "$@"
   fi
 }
 
@@ -22,7 +35,7 @@ install_python_profile() {
   fi
 
   info "安装 Python $profile 依赖..."
-  (cd "$API_DIR" && "$(venv_pip)" install -e "$install_target")
+  (cd "$API_DIR" && _pip_install -e "$install_target")
   mkdir -p "$(dirname "$fingerprint_file")"
   echo "$expected_fingerprint" > "$fingerprint_file"
   success "Python $profile 依赖已就绪"
@@ -45,6 +58,6 @@ ensure_aiosqlite() {
   py="$(venv_python)"
   if ! "$py" -c "import aiosqlite" >/dev/null 2>&1; then
     info "补装 aiosqlite..."
-    "$(venv_pip)" install aiosqlite >/dev/null
+    _pip_install aiosqlite >/dev/null
   fi
 }
