@@ -204,7 +204,7 @@ async def list_messages(
     cursor: str | None = Query(None, description="游标（ISO datetime），获取此之前的消息"),
     limit: int = Query(50, ge=1, le=100, description="返回数量"),
     db: AsyncSession = Depends(get_db),
-) -> APIResponse[MessagePaginatedResponse]:
+) -> APIResponse[MessagePaginatedResponse] | APIResponse[None]:
     """
     分页获取对话消息。
 
@@ -266,17 +266,8 @@ async def list_messages(
         messages = messages[:limit]
         next_cursor = messages[-1].created_at.isoformat()
 
-    # 将 Message 对象转换为 MessageResponse
-    message_responses = [
-        MessageResponse(
-            id=msg.id,
-            role=msg.role,
-            content=msg.content,
-            metadata=msg.extra_data,
-            created_at=msg.created_at,
-        )
-        for msg in messages
-    ]
+    # 将 Message 对象转换为 MessageResponse（from_attributes + model_validator 处理字段映射）
+    message_responses = [MessageResponse.model_validate(msg) for msg in messages]
 
     return APIResponse.ok(
         data=MessagePaginatedResponse(
