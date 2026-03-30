@@ -111,8 +111,8 @@ class Settings(BaseSettings):
         if len(self.ENCRYPTION_KEY) < 32:
             raise ValueError(
                 "ENCRYPTION_KEY must be at least 32 bytes long for Fernet encryption. "
-                "Generate one with: python -c \"from cryptography.fernet import Fernet; "
-                "print(Fernet.generate_key().decode())\" and set as export ENCRYPTION_KEY=<key>"
+                'Generate one with: python -c "from cryptography.fernet import Fernet; '
+                'print(Fernet.generate_key().decode())" and set as export ENCRYPTION_KEY=<key>'
             )
 
         # Production and staging environments must use explicit key (not default)
@@ -120,8 +120,8 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"Cannot use default encryption key in {self.ENVIRONMENT} environment. "
                 "Please set ENCRYPTION_KEY environment variable explicitly. "
-                "Generate with: python -c \"from cryptography.fernet import Fernet; "
-                "print(Fernet.generate_key().decode())\" and export ENCRYPTION_KEY=<generated_key>"
+                'Generate with: python -c "from cryptography.fernet import Fernet; '
+                'print(Fernet.generate_key().decode())" and export ENCRYPTION_KEY=<generated_key>'
             )
 
 

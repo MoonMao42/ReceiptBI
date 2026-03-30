@@ -28,6 +28,7 @@ services:
       PORT: "8000"
       ENVIRONMENT: development
       DEBUG: "true"
+      ENCRYPTION_KEY: "docker-dev-key-min-32-bytes-long!!"
       LOG_FORMAT: console
       CORS_ORIGINS_STR: http://localhost:3000,http://127.0.0.1:3000
       MPLBACKEND: Agg

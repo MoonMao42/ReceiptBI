@@ -250,7 +250,11 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
     if settings.DEBUG:
         # In debug mode: include request path but NOT full stack trace
         response_data["debug_detail"] = str(exc)
-        logger.debug("Debug error details", request_path=str(request.url.path), full_exception=traceback.format_exc())
+        logger.debug(
+            "Debug error details",
+            request_path=str(request.url.path),
+            full_exception=traceback.format_exc(),
+        )
 
     return JSONResponse(
         status_code=status_code,

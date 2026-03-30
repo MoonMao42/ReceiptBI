@@ -106,15 +106,15 @@ class ResultProcessor:
                 chart_config = extract_chart_config(ai_content)
                 if chart_config:
                     result["chart_config"] = chart_config
-                    logger.info("Extracted chart configuration", chart_type=chart_config.get("type"))
+                    logger.info(
+                        "Extracted chart configuration", chart_type=chart_config.get("type")
+                    )
             except Exception as exc:
                 logger.warning("Failed to extract chart config", error=str(exc))
                 result["errors"].append(f"Chart extraction: {exc}")
 
             artifact_count = sum(
-                1
-                for k, v in result.items()
-                if k != "errors" and k != "thinking" and v is not None
+                1 for k, v in result.items() if k != "errors" and k != "thinking" and v is not None
             )
             logger.info(
                 "Result extraction completed",
