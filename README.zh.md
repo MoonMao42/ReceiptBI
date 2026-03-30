@@ -1,5 +1,3 @@
-[English](README.md) | [中文](README.zh.md)
-
 <div align="center">
 
 <img src="docs/images/logo.svg" width="400" alt="QueryGPT logo">
@@ -8,7 +6,7 @@
 
 用自然语言提问，自动生成只读 SQL，获取结果、分析和图表。
 
-[功能特性](#功能特性) | [工作原理](#工作原理) | [快速开始](#快速开始) | [技术栈](#技术栈)
+[English](README.md) | [中文](README.zh.md)
 
 </div>
 

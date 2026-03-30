@@ -1,5 +1,3 @@
-[English](README.md) | [中文](README.zh.md)
-
 <div align="center">
 
 <img src="docs/images/logo.svg" width="400" alt="QueryGPT logo">
@@ -8,7 +6,7 @@
 
 Ask questions in plain English, auto-generate read-only SQL, and get results, analysis, and charts.
 
-[Features](#features) | [How It Works](#how-it-works) | [Quick Start](#quick-start) | [Tech Stack](#tech-stack)
+[English](README.md) | [中文](README.zh.md)
 
 </div>
 
