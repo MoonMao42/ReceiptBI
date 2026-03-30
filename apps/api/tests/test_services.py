@@ -90,9 +90,7 @@ class TestSQLExecutor:
         with patch("app.services.database.create_database_manager") as mock_create_db:
             mock_db = MagicMock()
             mock_db.execute_query = MagicMock(
-                side_effect=ProgrammingError(
-                    "syntax error", None, None
-                )
+                side_effect=ProgrammingError("syntax error", None, None)
             )
             mock_create_db.return_value = mock_db
 
@@ -109,9 +107,7 @@ class TestSQLExecutor:
         """Test SQL execution with ValueError (validation error)"""
         with patch("app.services.database.create_database_manager") as mock_create_db:
             mock_db = MagicMock()
-            mock_db.execute_query = MagicMock(
-                side_effect=ValueError("Read-only check failed")
-            )
+            mock_db.execute_query = MagicMock(side_effect=ValueError("Read-only check failed"))
             mock_create_db.return_value = mock_db
 
             result, count = await executor.execute_sql(
@@ -152,9 +148,7 @@ class TestSQLExecutor:
         sql = "SELECT * FROM users"
         data = [{"id": 1}]
 
-        code = await executor.inject_sql_data(
-            sql, data, variable_name="custom_var"
-        )
+        code = await executor.inject_sql_data(sql, data, variable_name="custom_var")
 
         assert "custom_var" in code
         assert isinstance(code, str)
@@ -194,10 +188,7 @@ class TestPythonSandbox:
                 mock_runtime.inject_sql_data = MagicMock()
                 mock_runtime_class.return_value = mock_runtime
 
-                with patch.object(
-                    sandbox, "_execute_with_timeout",
-                    return_value=("3", [])
-                ):
+                with patch.object(sandbox, "_execute_with_timeout", return_value=("3", [])):
                     output, images = await sandbox.execute(safe_code)
 
                     assert output == "3"
@@ -260,8 +251,7 @@ class TestPythonSandbox:
                 mock_runtime_class.return_value = mock_runtime
 
                 with patch.object(
-                    sandbox, "_execute_with_timeout",
-                    return_value=("[{'id': 1}]", [])
+                    sandbox, "_execute_with_timeout", return_value=("[{'id': 1}]", [])
                 ):
                     output, images = await sandbox.execute(code, sql_data=sql_data)
 
@@ -373,7 +363,9 @@ print(df)"""
         with patch("app.services.engine_content.extract_sql_block", return_value=None):
             with patch("app.services.engine_content.extract_python_block", return_value=None):
                 with patch("app.services.engine_content.extract_chart_config", return_value=None):
-                    with patch("app.services.engine_content.parse_thinking_markers", return_value=[]):
+                    with patch(
+                        "app.services.engine_content.parse_thinking_markers", return_value=[]
+                    ):
                         result = await processor.extract_results(ai_content)
 
                         assert result["sql_code"] is None
@@ -396,7 +388,6 @@ print(df)"""
                 "xKey": "date",
                 "yKeys": ["revenue"],
             }
-
 
             await processor.extract_results(ai_content)
 
@@ -423,7 +414,9 @@ print(df)"""
             "data": data,
         }
 
-        with patch("app.services.engine_visualization.build_chart_from_config", return_value=expected_chart):
+        with patch(
+            "app.services.engine_visualization.build_chart_from_config", return_value=expected_chart
+        ):
             result = processor.build_chart_payload(chart_config, data)
 
             assert result is not None
