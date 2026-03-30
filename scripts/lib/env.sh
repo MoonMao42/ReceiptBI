@@ -131,6 +131,17 @@ setup_env_files() {
     warn "已创建 apps/api/.env，请按需修改"
   fi
 
+  # Auto-generate ENCRYPTION_KEY if still placeholder
+  if [ -f "$API_DIR/.env" ] && grep -q 'ENCRYPTION_KEY=your-fernet-key-here' "$API_DIR/.env" 2>/dev/null; then
+    local fernet_key
+    fernet_key="$(python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())' 2>/dev/null || true)"
+    if [ -n "$fernet_key" ]; then
+      sed -i.bak "s|ENCRYPTION_KEY=your-fernet-key-here|ENCRYPTION_KEY=$fernet_key|" "$API_DIR/.env"
+      rm -f "$API_DIR/.env.bak"
+      success "已自动生成 ENCRYPTION_KEY"
+    fi
+  fi
+
   if [ ! -f "$WEB_DIR/.env.local" ]; then
     echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > "$WEB_DIR/.env.local"
     success "已创建 apps/web/.env.local"

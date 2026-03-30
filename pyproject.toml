@@ -22,6 +22,7 @@ dev-dependencies = [
 
 [tool.uv.workspace]
 members = ["apps/*", "packages/*"]
+exclude = ["apps/data", "apps/desktop", "apps/web"]
 
 [tool.ruff]
 target-version = "py311"
