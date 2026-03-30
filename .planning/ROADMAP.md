@@ -3,7 +3,7 @@
 **Milestone:** QueryGPT 优化迭代
 **Created:** 2026-03-29
 **Granularity:** COARSE (3-5 phases)
-**Status:** Planning complete for Phase 1
+**Status:** Planning complete for Phases 1-2
 
 ## Phases
 
@@ -55,7 +55,15 @@
 4. Schema relationship suggestions are cached (memoized), avoiding recalculation on component re-renders
 5. Bug fixes and race conditions found during refactoring are documented in commits
 
-**Plans:** TBD
+**Plans:** 5 plans organized by execution wave
+
+| Plan | Wave | Status | Objective |
+|------|------|--------|-----------|
+| 02-01 | 1 | Created | ChatArea decomposition: MessageList, InputBar sub-components (FRONT-01) |
+| 02-02 | 1 | Created | SchemaSettings decomposition: SchemaGraph, RelationshipPanel, LayoutControls (FRONT-02) |
+| 02-03 | 2 | Created | Message pagination API + useMessagePagination + useMessageVirtualizer hooks (FRONT-03, FRONT-04) |
+| 02-04 | 3 | Created | Schema optimization: memoized nodes/edges, useSchemaLayout hook (FRONT-05, FRONT-06) |
+| 02-05 | 4 | Created | Testing, verification, bug documentation (FRONT-07) |
 
 **UI hint:** yes
 
@@ -79,9 +87,9 @@
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Backend Service Decomposition | 7/7 | ✓ COMPLETE | 01-01, 01-02, 01-03, 01-04, 01-05, 01-06, 01-06b |
-| 2. Frontend Component Optimization | 0/? | Not started | — |
+| 2. Frontend Component Optimization | 5/5 | Created | 02-01, 02-02, 02-03, 02-04, 02-05 |
 | 3. Chinese Documentation | 0/? | Not started | — |
 
 ---
 
-**Next:** Begin Phase 2 planning (Frontend Component Optimization). Phase 1 complete with 100% plan execution and all requirements satisfied (BACK-01 through BACK-06).
+**Next:** Execute Phase 2 plans (Frontend Component Optimization) via `/gsd:execute-phase 02`. Phase 1 complete with 100% plan execution and all requirements satisfied (BACK-01 through BACK-06).
