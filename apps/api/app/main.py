@@ -21,7 +21,7 @@ from sqlalchemy.exc import OperationalError, ProgrammingError, SQLAlchemyError
 
 from app.api.v1 import api_router
 from app.core.config import settings
-from app.core.demo_db import fix_demo_db_path, init_demo_database
+from app.core.demo_db import ensure_demo_connection, fix_demo_db_path, init_demo_database
 from app.db import AsyncSessionLocal, engine
 from app.db.base import Base
 from app.services.engine_diagnostics import categorize_sql_error
@@ -99,9 +99,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # 确保 demo.db 存在（构建时已预生成，这里只是 fallback）
     demo_db_path = init_demo_database()
 
-    # 修正预打包数据库中的占位符路径
+    # 修正预打包数据库中的占位符路径，并确保 demo 连接存在
     async with AsyncSessionLocal() as session:
         await fix_demo_db_path(session, demo_db_path)
+        await ensure_demo_connection(session, demo_db_path)
         await session.commit()
 
     logger.info(

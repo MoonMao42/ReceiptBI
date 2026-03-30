@@ -124,6 +124,33 @@ def init_demo_database() -> str:
     return get_demo_db_path()
 
 
+async def ensure_demo_connection(db: AsyncSession, demo_db_path: str) -> None:
+    """Ensure a Sample Database connection exists. Creates one if the connections table is empty."""
+    from sqlalchemy import func
+
+    from app.services.app_settings import get_or_create_app_settings
+
+    count = await db.scalar(select(func.count(Connection.id)))
+    if count and count > 0:
+        return
+
+    conn = Connection(
+        name=DEMO_CONNECTION_NAME,
+        driver="sqlite",
+        database_name=demo_db_path,
+        extra_options={},
+        is_default=True,
+    )
+    db.add(conn)
+    await db.flush()
+
+    settings = await get_or_create_app_settings(db)
+    settings.default_connection_id = conn.id
+    settings.demo_initialized = True
+
+    logger.info("Created demo connection", name=DEMO_CONNECTION_NAME, path=demo_db_path)
+
+
 async def fix_demo_db_path(db: AsyncSession, demo_db_path: str) -> None:
     """修正预打包数据库中的占位符路径为实际的 demo.db 绝对路径"""
     result = await db.scalar(
