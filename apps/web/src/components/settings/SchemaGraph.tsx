@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -17,10 +17,10 @@ import {
 import "@xyflow/react/dist/style.css";
 import { TableNode } from "@/components/schema/TableNode";
 import {
-  buildLayoutSnapshot,
   buildRelationshipEdges,
   buildSchemaNodes,
 } from "@/lib/settings/schema";
+import { useSchemaLayout } from "@/lib/hooks/useSchemaLayout";
 import type {
   SchemaInfo,
   TableRelationship,
@@ -57,56 +57,56 @@ export function SchemaGraph({
 }: SchemaGraphProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChangeInternal] = useEdgesState<Edge>([]);
-  const { getViewport } = useReactFlow();
+  const { debouncedSaveLayout } = useSchemaLayout(
+    currentLayout,
+    visibleTables,
+    hiddenTables,
+    onSaveLayout
+  );
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastSavedRef = useRef<string>("");
 
-  // Initialize nodes from visible tables
-  useEffect(() => {
+  // Memoize nodes — only rebuild when visibleTables or currentLayout change
+  // Do NOT rebuild on every node position change (which updates nodes state)
+  const memoizedNodes = useMemo(() => {
     if (!visibleTables || visibleTables.length === 0) {
-      setNodes([]);
-      return;
+      return [];
     }
-    setNodes(buildSchemaNodes(visibleTables, currentLayout));
-  }, [visibleTables, currentLayout, setNodes]);
+    return buildSchemaNodes(visibleTables, currentLayout);
+  }, [visibleTables, currentLayout]);
 
-  // Initialize edges from relationships
-  useEffect(() => {
+  // Memoize edges — only rebuild when relationships or visibleTables change
+  const memoizedEdges = useMemo(() => {
     if (relationships.length === 0 || visibleTables.length === 0) {
-      setEdges([]);
-      return;
+      return [];
     }
-    setEdges(buildRelationshipEdges(visibleTables, relationships));
-  }, [relationships, visibleTables, setEdges]);
+    return buildRelationshipEdges(visibleTables, relationships);
+  }, [relationships, visibleTables]);
 
-  // Auto-save layout on node position change
-  const saveLayout = useCallback(() => {
-    if (!currentLayout?.id) return;
+  // Update nodes only when memoized version changes (not on every drag)
+  useEffect(() => {
+    setNodes(memoizedNodes);
+  }, [memoizedNodes, setNodes]);
 
-    const snapshot = buildLayoutSnapshot(nodes, getViewport(), schemaInfo?.tables, hiddenTables);
+  // Update edges only when memoized version changes
+  useEffect(() => {
+    setEdges(memoizedEdges);
+  }, [memoizedEdges, setEdges]);
 
-    if (snapshot.signature === lastSavedRef.current) return;
-    lastSavedRef.current = snapshot.signature;
-
-    onSaveLayout(snapshot.payload);
-  }, [nodes, getViewport, currentLayout, schemaInfo, hiddenTables, onSaveLayout]);
-
+  // Handle node changes with debounced save
   const handleNodesChange = useCallback(
     (changes: NodeChange<Node>[]) => {
       onNodesChange(changes);
 
+      // Only save layout if position changed
       const hasPositionChange = changes.some(
         (change) => change.type === "position" && change.dragging === false
       );
 
       if (hasPositionChange) {
-        if (saveTimeoutRef.current) {
-          clearTimeout(saveTimeoutRef.current);
-        }
-        saveTimeoutRef.current = setTimeout(saveLayout, 500);
+        debouncedSaveLayout(nodes);
       }
     },
-    [onNodesChange, saveLayout]
+    [nodes, onNodesChange, debouncedSaveLayout]
   );
 
   const nodeTypes = {
