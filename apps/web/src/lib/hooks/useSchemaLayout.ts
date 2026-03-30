@@ -1,7 +1,7 @@
 import { useCallback, useRef } from "react";
-import { useReactFlow } from "@xyflow/react";
+import { useReactFlow, type Node } from "@xyflow/react";
 import { buildLayoutSnapshot } from "@/lib/settings/schema";
-import type { Node, SchemaLayout, SchemaLayoutUpdate, TableInfo } from "@/lib/types/schema";
+import type { SchemaLayout, SchemaLayoutUpdate, TableInfo } from "@/lib/types/schema";
 
 /**
  * Hook for schema layout save logic with debouncing.
