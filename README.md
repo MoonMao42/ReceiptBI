@@ -1,3 +1,5 @@
+[English](README.md) | [中文](README.zh.md)
+
 <div align="center">
 
 <img src="docs/images/logo.svg" width="400" alt="QueryGPT logo">
