@@ -5,6 +5,11 @@ on:
     tags:
       - 'desktop-v*'
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Upload to existing release (e.g. v1.0.0). Leave empty for build-only.'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -60,7 +65,7 @@ jobs:
 
   build:
     needs: create-release
-    if: always()
+    if: always() && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped')
     strategy:
       fail-fast: false
       matrix:
@@ -138,15 +143,27 @@ jobs:
 
       # Upload directly to release via GitHub API (gh CLI truncates large files)
       - name: Upload to release
-        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        if: startsWith(github.ref, 'refs/tags/desktop-v') || inputs.release_tag != ''
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Get release ID (draft releases are not queryable by tag, use list API)
+          # Determine which release to upload to
+          if [ -n "${{ inputs.release_tag }}" ]; then
+            RELEASE_TAG="${{ inputs.release_tag }}"
+          else
+            RELEASE_TAG="${{ github.ref_name }}"
+          fi
+          echo "Target release: $RELEASE_TAG"
+
           RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
             "https://api.github.com/repos/${{ github.repository }}/releases" \
-            | jq -r '.[] | select(.tag_name == "${{ github.ref_name }}") | .id' | head -1)
+            | jq -r --arg tag "$RELEASE_TAG" '.[] | select(.tag_name == $tag) | .id' | head -1)
+
+          if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
+            echo "Release not found for tag: $RELEASE_TAG"
+            exit 1
+          fi
           echo "Release ID: $RELEASE_ID"
 
           for file in apps/desktop/release/*.dmg apps/desktop/release/*.zip apps/desktop/release/*.exe; do
