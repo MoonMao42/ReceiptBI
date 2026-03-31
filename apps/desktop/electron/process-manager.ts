@@ -58,24 +58,34 @@ export class ProcessManager {
     try {
       let cmd: string;
       if (process.platform === 'win32') {
-        cmd = `powershell -Command "Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | ForEach-Object { $_.OwningProcess }"`;
+        // Use cmd+netstat instead of PowerShell to avoid 1-2s cold start delay
+        cmd = `cmd /c "netstat -ano | findstr :${port} | findstr LISTENING"`;
       } else {
         cmd = `lsof -ti tcp:${port}`;
       }
       const result = execSync(cmd, { encoding: 'utf-8', timeout: 3000 }).trim();
       if (result) {
-        for (const pid of result.split('\n')) {
-          const p = parseInt(pid.trim());
-          if (p > 0) {
-            try {
-              if (process.platform === 'win32') {
-                execSync(`taskkill /PID ${p} /F`, { encoding: 'utf-8' });
-              } else {
-                process.kill(p, 'SIGKILL');
-              }
-              this.logger.info(`Killed stale process ${p} on port ${port}`);
-            } catch { /* already dead */ }
+        const pids = new Set<number>();
+        for (const line of result.split('\n')) {
+          if (process.platform === 'win32') {
+            // netstat -ano output: "  TCP  0.0.0.0:18080  0.0.0.0:0  LISTENING  1234"
+            const parts = line.trim().split(/\s+/);
+            const p = parseInt(parts[parts.length - 1]);
+            if (p > 0) pids.add(p);
+          } else {
+            const p = parseInt(line.trim());
+            if (p > 0) pids.add(p);
           }
+        }
+        for (const p of pids) {
+          try {
+            if (process.platform === 'win32') {
+              execSync(`taskkill /PID ${p} /F`, { encoding: 'utf-8' });
+            } else {
+              process.kill(p, 'SIGKILL');
+            }
+            this.logger.info(`Killed stale process ${p} on port ${port}`);
+          } catch { /* already dead */ }
         }
       }
     } catch { /* no process on port */ }
