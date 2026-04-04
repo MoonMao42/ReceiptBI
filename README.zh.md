@@ -1,53 +1,19 @@
-<div align="center">
+# QueryGPT
 
 <img src="docs/images/logo.svg" width="400" alt="QueryGPT logo">
 
-### 开源 AI 数据库助手
-
-用自然语言提问，自动生成只读 SQL，获取结果、分析和图表。
+Text-to-SQL 工具——用自然语言提问，生成只读 SQL，拿到结果、分析和图表。
 
 [English](README.md) | [中文](README.zh.md)
 
-</div>
+![](docs/images/chat.png)
 
-<img src="docs/images/chat.png" alt="Chat workspace" width="100%">
+## 功能
 
-## 功能特性
-
-<table>
-<tr>
-<td width="50%">
-
-**自然语言查询**
-
-用自然语言描述你的需求——QueryGPT 会生成并执行只读 SQL，然后返回结构化结果。
-
-</td>
-<td width="50%">
-
-**自动分析管道**
-
-查询结果自动流入 Python 分析和图表生成，所以一个问题会得到完整答案。
-
-</td>
-</tr>
-<tr>
-<td>
-
-**语义层**
-
-定义业务术语（GMV、AOV 等），QueryGPT 会自动引用它们，消除查询中的歧义。
-
-</td>
-<td>
-
-**Schema 关系图**
-
-通过拖拽可视化连接表定义 JOIN 关系。QueryGPT 会自动选择正确的连接路径。
-
-</td>
-</tr>
-</table>
+- **自然语言查询** — 描述你的需求，拿到 SQL + 结果
+- **自动分析** — 查询结果自动流入 Python 做进一步分析和出图
+- **语义层** — 定义业务术语（GMV、AOV 等），生成的 SQL 不会有歧义
+- **Schema 关系图** — 拖拽连接表定义 JOIN 关系，自动选择连接路径
 
 ## 工作原理
 
@@ -70,16 +36,9 @@ flowchart LR
 
 ## 截图
 
-<img src="docs/images/schema.png" alt="Schema relationship view" width="100%">
+![Schema 关系图](docs/images/schema.png)
 
-<p align="center"><strong>Schema 关系图</strong></p>
-
-<br>
-<br>
-
-<img src="docs/images/semantic.png" alt="Semantic layer config" width="100%">
-
-<p align="center"><strong>语义层配置</strong></p>
+![语义层配置](docs/images/semantic.png)
 
 ## 快速开始
 
@@ -90,106 +49,38 @@ git clone git@github.com:MKY508/QueryGPT.git
 cd QueryGPT
 ```
 
-### 2. 选择你的平台
+### 2. 运行
 
-<table>
-<tr>
-<th width="33%">macOS</th>
-<th width="33%">Linux</th>
-<th width="33%">Windows</th>
-</tr>
-<tr>
-<td>
-
-**方案 A — 直接运行**
-
-需要 Python 3.11+ 和 Node.js LTS
+**macOS / Linux** — 需要 Python 3.11+ 和 Node.js LTS：
 
 ```bash
 ./start.sh
 ```
 
-**方案 B — Docker**
-
-需要 [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+或者用 Docker：
 
 ```bash
 docker compose up --build
 ```
 
-</td>
-<td>
+**Windows** — 用 [Docker Desktop](https://www.docker.com/products/docker-desktop/)，或者 [WSL2](https://learn.microsoft.com/windows/wsl/install) + `./start.sh`。
 
-**方案 A — 直接运行**
+### 3. 配置
 
-需要 Python 3.11+ 和 Node.js LTS
+打开 `http://localhost:3000`：
 
-```bash
-./start.sh
-```
-
-**方案 B — Docker**
-
-需要 Docker Engine
-
-```bash
-docker compose up --build
-```
-
-</td>
-<td>
-
-**推荐 — Docker Desktop**
-
-Windows 用户应该使用 Docker。`.bat` / `.ps1` 脚本不再维护。
-
-安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/)，然后：
-
-```bash
-docker compose up --build
-```
-
-**替代方案 — WSL2**
-
-安装 [WSL2](https://learn.microsoft.com/windows/wsl/install) 后，从 WSL 终端运行 `./start.sh`，就像在 Linux 上一样。
-
-</td>
-</tr>
-</table>
-
-### 3. 配置并启动
-
-启动后，打开 `http://localhost:3000`：
-
-1. 转到设置页面，添加一个模型（提供商 + API 密钥）
-2. 使用内置的演示数据库，或连接你自己的 SQLite / MySQL / PostgreSQL
+1. 进设置页面，添加模型（提供商 + API 密钥）
+2. 用内置的演示数据库，或者连你自己的 SQLite / MySQL / PostgreSQL
 3. 可选：设置默认模型、默认连接和对话上下文轮数
-4. 进入聊天页面，开始提问
+4. 开始提问
 
-> 项目自带内置 SQLite 演示数据库（`demo.db`）。如果没有工作区数据，首次启动时会自动创建一个示例连接。
+> 自带 SQLite 演示数据库（`demo.db`），首次启动会自动创建示例连接。
 
 ## 技术栈
 
-**项目**<br>
-![License](https://img.shields.io/badge/License-MIT-F7DF1E?style=flat-square)
-
-**前端**<br>
-![Next.js](https://img.shields.io/badge/Next.js-15-000000?style=flat-square&logo=next.js&logoColor=white)
-![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)
-![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)
-![Zustand](https://img.shields.io/badge/Zustand-5-764ABC?style=flat-square)
-![TanStack Query](https://img.shields.io/badge/TanStack_Query-5-FF4154?style=flat-square)
-
-**后端**<br>
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi&logoColor=white)
-![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0-D71F00?style=flat-square)
-![LiteLLM](https://img.shields.io/badge/LiteLLM-latest-blue?style=flat-square)
-![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)
-
-**数据库**<br>
-![SQLite](https://img.shields.io/badge/SQLite-3-003B57?style=flat-square&logo=sqlite&logoColor=white)
-![MySQL](https://img.shields.io/badge/MySQL-8-4479A1?style=flat-square&logo=mysql&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white)
+- **前端**：Next.js 15, React 19, TypeScript, Zustand, TanStack Query
+- **后端**：FastAPI, SQLAlchemy 2.0, LiteLLM, Python 3.11+
+- **数据库**：SQLite, MySQL, PostgreSQL
 
 <details>
 <summary><strong>配置参考</strong></summary>
@@ -252,10 +143,10 @@ QUERYGPT_BACKEND_HOST=0.0.0.0 ./start.sh # 监听所有接口
 <details>
 <summary><strong>Docker 开发</strong></summary>
 
-Windows 开发者应该使用 Docker；`start.ps1` / `start.bat` 不再维护。
+Windows 开发者用 Docker；`start.ps1` / `start.bat` 不再维护。
 
-默认开发栈启动：
-- `web`: Next.js 开发服务器（HMR 启用）
+默认开发栈：
+- `web`: Next.js 开发服务器（HMR）
 - `api`: FastAPI 开发服务器（`--reload`）
 - `db`: PostgreSQL 16
 
@@ -274,11 +165,11 @@ docker-compose run --rm web npm test
 ```
 
 注意：
-- 前端默认位置：`http://localhost:3000`
-- 后端默认位置：`http://localhost:8000`
-- PostgreSQL 暴露在 `localhost:5432`
-- 更改依赖后运行 `docker-compose up --build`
-- 如果已安装 Docker Compose 插件，用 `docker compose` 替换 `docker-compose`
+- 前端：`http://localhost:3000`
+- 后端：`http://localhost:8000`
+- PostgreSQL：`localhost:5432`
+- 改了依赖后跑 `docker-compose up --build`
+- 装了 Docker Compose 插件的话用 `docker compose` 替换 `docker-compose`
 
 </details>
 
@@ -332,10 +223,10 @@ cd apps/web && npm run type-check && npm test && npm run build
 
 ### GitHub CI 分层
 
-GitHub Actions 分为两层：
+GitHub Actions 分两层：
 
 - **快速层**：后端 `ruff + mypy (chat/config 主路径) + pytest`，前端 `lint + type-check + vitest + build`
-- **集成层**：Docker 全栈、Playwright 冒烟测试、`start.sh` 主机模式冒烟测试、SQLite / PostgreSQL / MySQL 连接测试、使用模拟网关的模型测试
+- **集成层**：Docker 全栈、Playwright 冒烟测试、`start.sh` 主机模式冒烟测试、SQLite / PostgreSQL / MySQL 连接测试、模拟网关模型测试
 
 本地运行：
 
@@ -360,11 +251,11 @@ cd apps/web && npm run test:e2e
 
 ### 后端
 
-仓库包含 [render.yaml](render.yaml) 供 Render Blueprint 直接部署。
+仓库有 [render.yaml](render.yaml) 可以直接 Render Blueprint 部署。
 
 ### 前端
 
-推荐在 Vercel 部署：
+推荐 Vercel：
 
 - 根目录：`apps/web`
 - 环境变量：`NEXT_PUBLIC_API_URL=<your-api-url>`
@@ -373,14 +264,11 @@ cd apps/web && npm run test:e2e
 
 ## 已知局限
 
-- 仅允许只读 SQL；写操作被阻止
+- 只允许只读 SQL，写操作会被拦
 - 自动修复覆盖 SQL、Python 和图表配置错误（可恢复的）
 - `/chat/stop` 按单实例语义工作
-- 开发时推荐 Node.js LTS；如果 `next dev` 表现异常，清除 `apps/web/.next`
+- 开发用 Node.js LTS；`next dev` 有问题的话清 `apps/web/.next`
 
-## 许可证
+## License
 
 MIT
-
----
-> Built with ❤️

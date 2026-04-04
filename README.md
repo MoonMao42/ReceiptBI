@@ -1,53 +1,19 @@
-<div align="center">
+# QueryGPT
 
 <img src="docs/images/logo.svg" width="400" alt="QueryGPT logo">
 
-### Open-Source AI Database Assistant
-
-Ask questions in plain English, auto-generate read-only SQL, and get results, analysis, and charts.
+Text-to-SQL tool — ask questions in plain English, get read-only SQL, results, Python analysis, and charts.
 
 [English](README.md) | [中文](README.zh.md)
 
-</div>
-
-<img src="docs/images/chat.png" alt="Chat workspace" width="100%">
+![](docs/images/chat.png)
 
 ## Features
 
-<table>
-<tr>
-<td width="50%">
-
-**Natural Language Queries**
-
-Describe what you need in plain English — QueryGPT generates and executes read-only SQL, then returns structured results.
-
-</td>
-<td width="50%">
-
-**Automatic Analysis Pipeline**
-
-Query results automatically flow into Python analysis and chart generation, so a single question gets you a complete answer.
-
-</td>
-</tr>
-<tr>
-<td>
-
-**Semantic Layer**
-
-Define business terms (GMV, AOV, etc.) and QueryGPT references them automatically, eliminating ambiguity in your queries.
-
-</td>
-<td>
-
-**Schema Relationship Graph**
-
-Visually drag and connect tables to define JOIN relationships. QueryGPT picks the right join path automatically.
-
-</td>
-</tr>
-</table>
+- **Natural language queries** — describe what you need, get SQL + results back
+- **Auto analysis** — query results feed into Python for deeper analysis and chart generation
+- **Semantic layer** — define business terms (GMV, AOV, etc.) so the generated SQL stays unambiguous
+- **Schema relationship graph** — drag-and-drop table connections, QueryGPT picks the right join path
 
 ## How It Works
 
@@ -70,16 +36,9 @@ flowchart LR
 
 ## Screenshots
 
-<img src="docs/images/schema.png" alt="Schema relationship view" width="100%">
+![Schema relationship view](docs/images/schema.png)
 
-<p align="center"><strong>Schema Relationship Graph</strong></p>
-
-<br>
-<br>
-
-<img src="docs/images/semantic.png" alt="Semantic layer config" width="100%">
-
-<p align="center"><strong>Semantic Layer Configuration</strong></p>
+![Semantic layer config](docs/images/semantic.png)
 
 ## Quick Start
 
@@ -90,106 +49,38 @@ git clone git@github.com:MKY508/QueryGPT.git
 cd QueryGPT
 ```
 
-### 2. Choose your platform
+### 2. Run it
 
-<table>
-<tr>
-<th width="33%">macOS</th>
-<th width="33%">Linux</th>
-<th width="33%">Windows</th>
-</tr>
-<tr>
-<td>
-
-**Option A — Run directly**
-
-Requires Python 3.11+ and Node.js LTS
+**macOS / Linux** — needs Python 3.11+ and Node.js LTS:
 
 ```bash
 ./start.sh
 ```
 
-**Option B — Docker**
-
-Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+Or with Docker:
 
 ```bash
 docker compose up --build
 ```
 
-</td>
-<td>
+**Windows** — use [Docker Desktop](https://www.docker.com/products/docker-desktop/), or [WSL2](https://learn.microsoft.com/windows/wsl/install) + `./start.sh`.
 
-**Option A — Run directly**
+### 3. Configure
 
-Requires Python 3.11+ and Node.js LTS
-
-```bash
-./start.sh
-```
-
-**Option B — Docker**
-
-Requires Docker Engine
-
-```bash
-docker compose up --build
-```
-
-</td>
-<td>
-
-**Recommended — Docker Desktop**
-
-Windows users should use Docker. `.bat` / `.ps1` scripts are no longer maintained.
-
-Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), then:
-
-```bash
-docker compose up --build
-```
-
-**Alternative — WSL2**
-
-After installing [WSL2](https://learn.microsoft.com/windows/wsl/install), run `./start.sh` from the WSL terminal as you would on Linux.
-
-</td>
-</tr>
-</table>
-
-### 3. Configure and start
-
-After startup, open `http://localhost:3000`:
+Open `http://localhost:3000`:
 
 1. Go to Settings and add a model (provider + API key)
 2. Use the built-in demo database, or connect your own SQLite / MySQL / PostgreSQL
 3. Optionally set a default model, default connection, and conversation context rounds
-4. Head to the chat page and start asking questions
+4. Start asking questions
 
-> The project ships with a built-in SQLite demo database (`demo.db`). A sample connection is auto-created on first launch if no workspace data exists.
+> Ships with a built-in SQLite demo database (`demo.db`). A sample connection is auto-created on first launch.
 
 ## Tech Stack
 
-**Project**<br>
-![License](https://img.shields.io/badge/License-MIT-F7DF1E?style=flat-square)
-
-**Frontend**<br>
-![Next.js](https://img.shields.io/badge/Next.js-15-000000?style=flat-square&logo=next.js&logoColor=white)
-![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)
-![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)
-![Zustand](https://img.shields.io/badge/Zustand-5-764ABC?style=flat-square)
-![TanStack Query](https://img.shields.io/badge/TanStack_Query-5-FF4154?style=flat-square)
-
-**Backend**<br>
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi&logoColor=white)
-![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0-D71F00?style=flat-square)
-![LiteLLM](https://img.shields.io/badge/LiteLLM-latest-blue?style=flat-square)
-![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)
-
-**Databases**<br>
-![SQLite](https://img.shields.io/badge/SQLite-3-003B57?style=flat-square&logo=sqlite&logoColor=white)
-![MySQL](https://img.shields.io/badge/MySQL-8-4479A1?style=flat-square&logo=mysql&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white)
+- **Frontend**: Next.js 15, React 19, TypeScript, Zustand, TanStack Query
+- **Backend**: FastAPI, SQLAlchemy 2.0, LiteLLM, Python 3.11+
+- **Databases**: SQLite, MySQL, PostgreSQL
 
 <details>
 <summary><strong>Configuration Reference</strong></summary>
@@ -381,6 +272,3 @@ Recommended deployment on Vercel:
 ## License
 
 MIT
-
----
-> Built with ❤️
