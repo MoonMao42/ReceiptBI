@@ -1,10 +1,12 @@
-# QueryGPT
+<div align="center">
 
 <img src="docs/images/logo.svg" width="400" alt="QueryGPT logo">
 
 Text-to-SQL tool — ask questions in plain English, get read-only SQL, results, Python analysis, and charts.
 
 [English](README.md) | [中文](README.zh.md)
+
+</div>
 
 ![](docs/images/chat.png)
 
