@@ -1,10 +1,12 @@
-# QueryGPT
+<div align="center">
 
 <img src="docs/images/logo.svg" width="400" alt="QueryGPT logo">
 
 Text-to-SQL 工具——用自然语言提问，生成只读 SQL，拿到结果、分析和图表。
 
 [English](README.md) | [中文](README.zh.md)
+
+</div>
 
 ![](docs/images/chat.png)
 
