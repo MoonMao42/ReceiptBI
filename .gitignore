@@ -50,3 +50,4 @@ mock-llm.log
 *.whl
 CLAUDE.md
 QueryGPT-*.dmg
+.planning/
