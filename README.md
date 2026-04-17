@@ -47,7 +47,7 @@ flowchart LR
 ### 1. Clone the repo
 
 ```bash
-git clone git@github.com:MKY508/QueryGPT.git
+git clone git@github.com:MoonMao43/QueryGPT.git
 cd QueryGPT
 ```
 
