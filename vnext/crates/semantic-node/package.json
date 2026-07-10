@@ -1,0 +1,35 @@
+{
+  "name": "@querygpt/semantic-node",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local Node-API bindings for the QueryGPT semantic compiler",
+  "license": "MIT",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*.node"
+  ],
+  "napi": {
+    "binaryName": "querygpt-semantic",
+    "targets": [
+      "aarch64-apple-darwin",
+      "x86_64-apple-darwin",
+      "x86_64-pc-windows-msvc"
+    ]
+  },
+  "scripts": {
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform",
+    "artifacts": "napi artifacts",
+    "smoke": "node smoke.cjs",
+    "test:smoke": "node smoke.cjs"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "3.7.2"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  }
+}

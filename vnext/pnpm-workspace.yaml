@@ -1,0 +1,8 @@
+packages:
+  - apps/*
+  - packages/*
+  - crates/semantic-node
+
+allowBuilds:
+  esbuild: true
+  sharp: true

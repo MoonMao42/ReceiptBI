@@ -1,0 +1,23 @@
+[workspace]
+members = [
+  "crates/semantic-core",
+  "crates/semantic-node",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95.0"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+napi = { version = "=3.10.3", default-features = false, features = ["napi9"] }
+napi-build = "=2.3.2"
+napi-derive = "=3.5.9"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

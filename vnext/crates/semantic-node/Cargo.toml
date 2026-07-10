@@ -1,0 +1,19 @@
+[package]
+name = "querygpt-semantic-node"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+napi.workspace = true
+napi-derive.workspace = true
+querygpt-semantic-core = { path = "../semantic-core" }
+
+[build-dependencies]
+napi-build.workspace = true

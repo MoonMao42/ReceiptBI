@@ -1,0 +1,26 @@
+{
+  "name": "querygpt-vnext",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.11.0",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present run build",
+    "build:native": "pnpm --filter @querygpt/semantic-node run build",
+    "build:workspace": "pnpm --filter @querygpt/workspace run build",
+    "check": "pnpm run check:paths && pnpm run typecheck && pnpm run test:targeted",
+    "check:native-env": "node scripts/assert-native-environment.mjs",
+    "check:paths": "node scripts/check-path-construction.mjs",
+    "test:path-policy": "node --test scripts/check-path-construction.test.mjs",
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "test:targeted": "pnpm run test:path-policy && pnpm --filter @querygpt/platform test",
+    "test:rust": "cargo test --workspace",
+    "format:rust": "cargo fmt --all -- --check"
+  },
+  "devDependencies": {
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  }
+}

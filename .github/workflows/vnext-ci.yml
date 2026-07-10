@@ -1,0 +1,121 @@
+name: vNext macOS and Windows
+
+on:
+  pull_request:
+    paths:
+      - "vnext/**"
+      - ".github/workflows/vnext-ci.yml"
+  push:
+    paths:
+      - "vnext/**"
+      - ".github/workflows/vnext-ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: vnext-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: vnext
+
+jobs:
+  static-contracts:
+    name: Static contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.11.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: pnpm
+          cache-dependency-path: vnext/pnpm-lock.yaml
+      - name: Install exact workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Reject handwritten filesystem separators
+        run: pnpm check:paths
+      - name: Type-check clean-room packages
+        run: pnpm typecheck
+      - name: Run targeted TypeScript checks
+        run: pnpm test:targeted
+      - name: Build static workspace renderer
+        run: pnpm build:workspace
+
+  native-binding:
+    name: N-API · ${{ matrix.label }}
+    needs: static-contracts
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS arm64
+            os: macos-15
+            rust_target: aarch64-apple-darwin
+            node_arch: arm64
+            node_platform: darwin
+          - label: macOS Intel
+            os: macos-15-intel
+            rust_target: x86_64-apple-darwin
+            node_arch: x64
+            node_platform: darwin
+          - label: Windows x64
+            os: windows-2022
+            rust_target: x86_64-pc-windows-msvc
+            node_arch: x64
+            node_platform: win32
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.11.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: pnpm
+          cache-dependency-path: vnext/pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+          targets: ${{ matrix.rust_target }}
+          components: rustfmt, clippy
+      - name: Install exact workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Assert native runner and toolchain
+        env:
+          EXPECTED_NODE_ABI: "127"
+          EXPECTED_NODE_ARCH: ${{ matrix.node_arch }}
+          EXPECTED_NODE_PLATFORM: ${{ matrix.node_platform }}
+          EXPECTED_RUST_TARGET: ${{ matrix.rust_target }}
+        run: pnpm check:native-env
+      - name: Check host-native TypeScript paths
+        run: pnpm --filter @querygpt/platform test
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+      - name: Lint native workspace
+        run: cargo clippy --workspace --all-targets --locked --target ${{ matrix.rust_target }} -- -D warnings
+      - name: Run focused Rust tests
+        run: cargo test --workspace --locked --target ${{ matrix.rust_target }}
+      - name: Build N-API binding
+        run: pnpm --filter @querygpt/semantic-node run build --target ${{ matrix.rust_target }}
+      - name: Load native binding
+        run: pnpm --filter @querygpt/semantic-node run test:smoke
+      - uses: actions/upload-artifact@v4
+        with:
+          name: semantic-node-${{ matrix.rust_target }}
+          path: |
+            vnext/crates/semantic-node/*.node
+            vnext/crates/semantic-node/index.js
+            vnext/crates/semantic-node/index.d.ts
+          if-no-files-found: error
+          retention-days: 7

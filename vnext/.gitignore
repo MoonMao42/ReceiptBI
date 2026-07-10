@@ -1,0 +1,10 @@
+.next/
+dist/
+node_modules/
+out/
+target/
+*.node
+*.log
+*.tsbuildinfo
+.DS_Store
+coverage/

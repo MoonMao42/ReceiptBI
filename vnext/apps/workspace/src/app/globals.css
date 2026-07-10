@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --background: oklch(0.985 0.004 260);
+  --canvas: oklch(1 0 0);
+  --surface: oklch(0.97 0.006 260);
+  --surface-raised: oklch(1 0 0);
+  --foreground: oklch(0.205 0.014 260);
+  --muted: oklch(0.525 0.025 260);
+  --border: oklch(0.91 0.012 260);
+  --accent: oklch(0.59 0.205 258);
+  --accent-soft: oklch(0.94 0.04 258);
+  --success: oklch(0.59 0.15 160);
+  --warning: oklch(0.68 0.16 75);
+  --danger: oklch(0.59 0.2 25);
+  --chart-primary: oklch(0.61 0.19 258);
+  --chart-secondary: oklch(0.72 0.12 205);
+  --shadow-soft: 0 18px 45px rgb(31 41 55 / 0.08);
+}
+
+.dark {
+  color-scheme: dark;
+  --background: oklch(0.15 0.012 260);
+  --canvas: oklch(0.19 0.014 260);
+  --surface: oklch(0.225 0.016 260);
+  --surface-raised: oklch(0.255 0.018 260);
+  --foreground: oklch(0.94 0.008 260);
+  --muted: oklch(0.7 0.02 260);
+  --border: oklch(0.31 0.018 260);
+  --accent: oklch(0.7 0.17 258);
+  --accent-soft: oklch(0.28 0.055 258);
+  --success: oklch(0.71 0.14 160);
+  --warning: oklch(0.78 0.14 75);
+  --danger: oklch(0.7 0.18 25);
+  --chart-primary: oklch(0.72 0.16 258);
+  --chart-secondary: oklch(0.78 0.11 205);
+  --shadow-soft: 0 24px 60px rgb(0 0 0 / 0.28);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  border-color: var(--border);
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), sans-serif;
+  margin: 0;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
