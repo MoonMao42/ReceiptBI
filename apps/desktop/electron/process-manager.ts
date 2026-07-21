@@ -1,9 +1,23 @@
-import { spawn, execSync, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { createServer } from 'node:net';
 import path from 'node:path';
-import os from 'node:os';
 import fs from 'node:fs';
 import { app, utilityProcess, type UtilityProcess } from 'electron';
 import type { Logger } from './logger.js';
+import type { DesktopDataPaths } from './data-migration.js';
+import {
+  markLegacyModelMigrationImported,
+  prepareLegacyModelMigration,
+  validateLegacyModelMigrationAck,
+  type LegacyModelMigrationPreparation,
+} from './legacy-model-migration.js';
+import { validateFrontendBundle } from './frontend-bundle.js';
+import {
+  extractNextStaticScriptUrls,
+  isHtmlContentType,
+  isJavaScriptContentType,
+} from './frontend-reliability.js';
 
 export interface ServiceStatus {
   name: string;
@@ -13,21 +27,55 @@ export interface ServiceStatus {
   error?: string;
 }
 
+type ServiceName = 'backend' | 'frontend';
+
+interface OwnedProcess {
+  readonly child: ChildProcess | UtilityProcess;
+  readonly name: ServiceName;
+  readonly kind: 'child' | 'utility';
+  readonly exitPromise: Promise<void>;
+  exited: boolean;
+}
+
+interface BackendHealthPayload {
+  readonly instance_token?: unknown;
+  readonly legacy_model_migration?: unknown;
+}
+
+type ReadyLegacyModelMigration = Extract<
+  LegacyModelMigrationPreparation,
+  { readonly status: 'ready' }
+>;
+
 // 固定端口
 const BACKEND_PORT = 18080;
 const FRONTEND_PORT = 13000;
 
 export class ProcessManager {
-  private backendProcess: ChildProcess | null = null;
-  private frontendProcess: UtilityProcess | ChildProcess | null = null;
+  private backendProcess: OwnedProcess | null = null;
+  private frontendProcess: OwnedProcess | null = null;
+  private backendReady = false;
+  private frontendReady = false;
+  private backendError: string | undefined;
+  private frontendError: string | undefined;
+  private startPromise: Promise<void> | null = null;
+  private stopPromise: Promise<void> | null = null;
+  private lifecycleGeneration = 0;
   private readonly logger: Logger;
   private readonly baseDir: string;
   private readonly userDataDir: string;
+  private readonly dataDir: string;
+  private readonly databasePath: string;
+  private readonly instanceToken = randomBytes(24).toString('hex');
+  private readonly desktopControlToken = randomBytes(32).toString('hex');
+  private pendingLegacyModelMigration: ReadyLegacyModelMigration | null = null;
 
-  constructor(logger: Logger) {
+  constructor(logger: Logger, dataPaths: DesktopDataPaths) {
     this.logger = logger;
     this.baseDir = this.getResourceBaseDir();
-    this.userDataDir = path.join(os.homedir(), '.querygpt-desktop');
+    this.userDataDir = dataPaths.userDataDir;
+    this.dataDir = dataPaths.dataDir;
+    this.databasePath = dataPaths.databasePath;
   }
 
   private getResourceBaseDir(): string {
@@ -53,97 +101,224 @@ export class ProcessManager {
     return path.join(this.baseDir, 'next');
   }
 
-  /** 杀掉占用指定端口的进程 */
-  private killPortProcess(port: number): void {
-    try {
-      let cmd: string;
-      if (process.platform === 'win32') {
-        // Use cmd+netstat instead of PowerShell to avoid 1-2s cold start delay
-        cmd = `cmd /c "netstat -ano | findstr :${port} | findstr LISTENING"`;
+  private isValidEncryptionKey(value: string): boolean {
+    if (!/^[A-Za-z0-9_-]{43}=$/.test(value)) return false;
+    const decoded = Buffer.from(value.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+    return decoded.length === 32;
+  }
+
+  private readLegacyEncryptionKey(): string | null {
+    const envPath = path.join(this.userDataDir, '.env');
+    if (!fs.existsSync(envPath)) return null;
+
+    let candidate: string | null = null;
+    for (const line of fs.readFileSync(envPath, 'utf-8').split(/\r?\n/)) {
+      const match = line.match(/^\s*(?:export\s+)?ENCRYPTION_KEY\s*=\s*(.*?)\s*$/);
+      if (!match) continue;
+      let value = match[1].trim();
+      const quote = value[0];
+      if (quote === '"' || quote === "'") {
+        const closingQuote = value.indexOf(quote, 1);
+        if (closingQuote >= 1) value = value.slice(1, closingQuote);
       } else {
-        cmd = `lsof -ti tcp:${port}`;
+        value = value.split('#', 1)[0].trim();
       }
-      const result = execSync(cmd, { encoding: 'utf-8', timeout: 3000 }).trim();
-      if (result) {
-        const pids = new Set<number>();
-        for (const line of result.split('\n')) {
-          if (process.platform === 'win32') {
-            // netstat -ano output: "  TCP  0.0.0.0:18080  0.0.0.0:0  LISTENING  1234"
-            const parts = line.trim().split(/\s+/);
-            const p = parseInt(parts[parts.length - 1]);
-            if (p > 0) pids.add(p);
-          } else {
-            const p = parseInt(line.trim());
-            if (p > 0) pids.add(p);
-          }
-        }
-        for (const p of pids) {
-          try {
-            if (process.platform === 'win32') {
-              execSync(`taskkill /PID ${p} /F`, { encoding: 'utf-8' });
-            } else {
-              process.kill(p, 'SIGKILL');
-            }
-            this.logger.info(`Killed stale process ${p} on port ${port}`);
-          } catch { /* already dead */ }
-        }
-      }
-    } catch { /* no process on port */ }
-  }
-
-  /** 首次启动时从打包资源复制预生成的数据库到用户数据目录 */
-  private copyBundledDatabases(): void {
-    const dataDir = path.join(this.userDataDir, 'data');
-    // 打包资源中的 data/ 目录（由 PyInstaller 打包进 backend/_internal/data/）
-    const bundledDataDir = path.join(this.getBackendOutDir(), '_internal', 'data');
-
-    for (const dbName of ['demo.db', 'querygpt.db']) {
-      const dest = path.join(dataDir, dbName);
-      if (fs.existsSync(dest)) continue;
-
-      const src = path.join(bundledDataDir, dbName);
-      if (fs.existsSync(src)) {
-        fs.copyFileSync(src, dest);
-        this.logger.info(`Copied bundled ${dbName} to user data dir`);
-      }
+      if (this.isValidEncryptionKey(value)) candidate = value;
     }
+    return candidate;
   }
 
-  async startAll(): Promise<void> {
+  private ensureEncryptionKey(): string {
+    const keyPath = path.join(this.userDataDir, 'encryption.key');
+    if (fs.existsSync(keyPath)) {
+      const existing = fs.readFileSync(keyPath, 'utf-8').trim();
+      if (!this.isValidEncryptionKey(existing)) {
+        throw new Error(`Desktop encryption key is invalid: ${keyPath}`);
+      }
+      if (process.platform !== 'win32') fs.chmodSync(keyPath, 0o600);
+      return existing;
+    }
+
+    const legacyKey = this.readLegacyEncryptionKey();
+    const generated =
+      legacyKey ??
+      randomBytes(32)
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_');
+    const temporary = `${keyPath}.${process.pid}.tmp`;
+    fs.writeFileSync(temporary, `${generated}\n`, { encoding: 'utf-8', mode: 0o600 });
+    fs.renameSync(temporary, keyPath);
+    this.logger.info(
+      legacyKey
+        ? 'Preserved the existing desktop encryption key'
+        : 'Created a private desktop encryption key'
+    );
+    return generated;
+  }
+
+  private prepareLegacyModelImport(): NodeJS.ProcessEnv {
+    const preparation = prepareLegacyModelMigration(this.userDataDir);
+
+    if (preparation.status === 'imported') {
+      // The model transaction was acknowledged on an earlier launch. Keep the
+      // active historical files untouched: without cooperation from the old
+      // process, automatic deletion cannot exclude a concurrent SQLite writer.
+      this.pendingLegacyModelMigration = null;
+      return {};
+    }
+
+    if (preparation.status !== 'ready') {
+      this.pendingLegacyModelMigration = null;
+      return {};
+    }
+
+    this.pendingLegacyModelMigration = preparation;
+    const migrationEnvironment: NodeJS.ProcessEnv = {
+      RECEIPTBI_LEGACY_MODEL_SNAPSHOT: preparation.databaseSnapshotPath,
+      RECEIPTBI_LEGACY_MODEL_ROOT: this.userDataDir,
+    };
+    if (preparation.databaseSourcePath !== null) {
+      migrationEnvironment.RECEIPTBI_LEGACY_MODEL_SOURCE =
+        preparation.databaseSourcePath;
+    }
+    if (preparation.legacyEncryptionKey !== null) {
+      migrationEnvironment.RECEIPTBI_LEGACY_MODEL_ENCRYPTION_KEY =
+        preparation.legacyEncryptionKey;
+    }
+    return migrationEnvironment;
+  }
+
+  private async assertPortAvailable(port: number): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      const server = createServer();
+      server.unref();
+      server.once('error', (error: NodeJS.ErrnoException) => {
+        if (error.code === 'EADDRINUSE') {
+          reject(new Error(`Port ${port} is already in use; ReceiptBI did not stop that process`));
+          return;
+        }
+        reject(error);
+      });
+      server.listen(port, '127.0.0.1', () => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    });
+  }
+
+  private ownProcess(
+    child: ChildProcess | UtilityProcess,
+    name: ServiceName,
+    kind: OwnedProcess['kind']
+  ): OwnedProcess {
+    let resolveExit!: () => void;
+    const owned: OwnedProcess = {
+      child,
+      name,
+      kind,
+      exited: false,
+      exitPromise: new Promise<void>((resolve) => {
+        resolveExit = resolve;
+      }),
+    };
+
+    const markExited = (code: number | null): void => {
+      if (owned.exited) return;
+      owned.exited = true;
+      resolveExit();
+
+      if (name === 'backend') {
+        this.backendReady = false;
+        if (this.backendProcess === owned) this.backendProcess = null;
+      } else {
+        this.frontendReady = false;
+        if (this.frontendProcess === owned) this.frontendProcess = null;
+      }
+
+      if (code !== 0 && code !== null) {
+        this.logger.warn(`${name === 'backend' ? 'Backend' : 'Frontend'} exited with code ${code}`);
+      }
+    };
+
+    if (kind === 'utility') {
+      (child as UtilityProcess).once('exit', markExited);
+    } else {
+      // "close" also fires after a spawn error, while "exit" does not necessarily do so.
+      (child as ChildProcess).once('close', markExited);
+    }
+
+    return owned;
+  }
+
+  startAll(): Promise<void> {
+    if (this.isReady()) return Promise.resolve();
+    if (this.startPromise) return this.startPromise;
+
+    const pendingStop =
+      this.stopPromise ??
+      (this.backendProcess || this.frontendProcess ? this.stopAll() : Promise.resolve());
+    // Allocate the generation synchronously so an immediate stopAll() cancels this start.
+    const generation = ++this.lifecycleGeneration;
+    const startPromise = pendingStop.then(() => this.doStartAll(generation));
+    this.startPromise = startPromise;
+    startPromise.then(
+      () => {
+        if (this.startPromise === startPromise) this.startPromise = null;
+      },
+      () => {
+        if (this.startPromise === startPromise) this.startPromise = null;
+      }
+    );
+    return startPromise;
+  }
+
+  private async doStartAll(generation: number): Promise<void> {
+    if (generation !== this.lifecycleGeneration) throw new Error('Service startup was cancelled');
+    if (this.backendProcess || this.frontendProcess) {
+      throw new Error('Previously owned services did not stop');
+    }
+
+    this.backendReady = false;
+    this.frontendReady = false;
+    this.backendError = undefined;
+    this.frontendError = undefined;
+
     fs.mkdirSync(this.userDataDir, { recursive: true });
     fs.mkdirSync(path.join(this.userDataDir, 'logs'), { recursive: true });
-    fs.mkdirSync(path.join(this.userDataDir, 'data'), { recursive: true });
+    fs.mkdirSync(this.dataDir, { recursive: true });
 
-    const userEnv = path.join(this.userDataDir, '.env');
-    const backendEnvExample = path.join(this.getBackendOutDir(), '.env.example');
-    if (!fs.existsSync(userEnv) && fs.existsSync(backendEnvExample)) {
-      fs.copyFileSync(backendEnvExample, userEnv);
-      this.logger.info('Created user .env from example');
+    // A port owned by another app is a startup error, never a reason to kill it.
+    await this.assertPortAvailable(BACKEND_PORT);
+    await this.assertPortAvailable(FRONTEND_PORT);
+    if (generation !== this.lifecycleGeneration) throw new Error('Service startup was cancelled');
+
+    // Start only after ruling out another service owner on the control ports.
+    try {
+      this.startBackend();
+      if (generation !== this.lifecycleGeneration) throw new Error('Service startup was cancelled');
+      this.startFrontend();
+      await this.waitForServices(generation);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!this.backendReady) this.backendError = message;
+      if (!this.frontendReady) this.frontendError = message;
+      this.pendingLegacyModelMigration = null;
+      await this.stopAll();
+      throw error;
     }
-
-    // 首次启动：从打包资源复制预生成的数据库到用户目录
-    this.copyBundledDatabases();
-
-    // 清理可能残留的旧进程
-    this.killPortProcess(BACKEND_PORT);
-    this.killPortProcess(FRONTEND_PORT);
-
-    this.startBackend();
-    this.startFrontend();
-    await this.waitForServices();
   }
 
   private startBackend(): void {
     const apiDir = this.getApiDir();
     const backendDir = this.getBackendOutDir();
-    const isPacked = fs.existsSync(backendDir);
+    const isPacked = app.isPackaged;
 
     let exePath: string;
     let args: string[] = [];
     let cwd: string;
 
     if (isPacked) {
-      const exeName = process.platform === 'win32' ? 'querygpt-api.exe' : 'querygpt-api';
+      const exeName = process.platform === 'win32' ? 'receiptbi-api.exe' : 'receiptbi-api';
       exePath = path.join(backendDir, exeName);
       cwd = backendDir;
       if (!fs.existsSync(exePath)) {
@@ -151,54 +326,78 @@ export class ProcessManager {
       }
     } else {
       cwd = apiDir;
-      exePath = process.platform === 'win32' ? 'python.exe' : 'python3';
+      const pythonRelativePath = process.platform === 'win32'
+        ? path.join('Scripts', 'python.exe')
+        : path.join('bin', 'python');
+      const candidates = [
+        path.join(this.baseDir, '.venv', pythonRelativePath),
+        path.join(apiDir, '.venv', pythonRelativePath),
+      ];
+      exePath = candidates.find((candidate) => fs.existsSync(candidate)) ?? '';
+      if (!exePath) {
+        throw new Error(
+          `ReceiptBI Python environment is not installed. Expected one of: ${candidates.join(', ')}`
+        );
+      }
       args = ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', String(BACKEND_PORT)];
     }
 
     this.logger.info(`Starting backend: ${exePath} ${args.join(' ')}`);
 
-    const dataDir = path.join(this.userDataDir, 'data');
-    const dbPath = path.join(dataDir, 'querygpt.db');
+    const encryptionKey = this.ensureEncryptionKey();
+    const legacyModelEnvironment = this.prepareLegacyModelImport();
 
-    const env = {
+    const env: NodeJS.ProcessEnv = {
       ...process.env,
+      APP_NAME: 'ReceiptBI',
       HOST: '127.0.0.1',
       PORT: String(BACKEND_PORT),
-      ENVIRONMENT: 'development',
+      ENVIRONMENT: app.isPackaged ? 'production' : 'development',
       CORS_ORIGINS_STR: `http://127.0.0.1:${FRONTEND_PORT},http://localhost:${FRONTEND_PORT}`,
-      DATA_DIR: dataDir,
-      METADATA_DB_PATH: path.join(dataDir, 'metadata.db'),
-      DATABASE_URL: `sqlite+aiosqlite:///${dbPath}`,
-      QUERYGPT_ENV_FILE: path.join(this.userDataDir, '.env'),
+      DATA_DIR: this.dataDir,
+      WORKSPACE_ROOT: path.join(this.dataDir, 'projects'),
+      DATABASE_URL: `sqlite+aiosqlite:///${this.databasePath}`,
+      RECEIPTBI_ENV_FILE: path.join(this.userDataDir, '.env'),
+      RECEIPTBI_INSTANCE_TOKEN: this.instanceToken,
+      RECEIPTBI_DESKTOP_CONTROL_TOKEN: this.desktopControlToken,
+      ENCRYPTION_KEY: encryptionKey,
+      ...legacyModelEnvironment,
     };
+
+    const sqliteSidecarName = process.platform === 'win32'
+      ? 'receiptbi-sqlite-executor-sidecar.exe'
+      : 'receiptbi-sqlite-executor-sidecar';
+    const sqliteSidecarPath = path.join(backendDir, sqliteSidecarName);
+    if (app.isPackaged && !fs.existsSync(sqliteSidecarPath)) {
+      throw new Error(`Trusted SQLite executor not found: ${sqliteSidecarPath}`);
+    }
+    if (fs.existsSync(sqliteSidecarPath)) {
+      env.RECEIPTBI_SQLITE_EXECUTOR_PATH = sqliteSidecarPath;
+    }
 
     if (isPacked && process.platform === 'linux') {
       (env as NodeJS.ProcessEnv).MPLBACKEND = 'Agg';
     }
 
-    this.backendProcess = spawn(exePath, args, {
+    const backend = spawn(exePath, args, {
       cwd,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: false,
     });
+    this.backendProcess = this.ownProcess(backend, 'backend', 'child');
 
-    this.backendProcess.stdout?.on('data', (data) => {
+    backend.stdout?.on('data', (data) => {
       this.logger.debug(`[Backend] ${data.toString().trim()}`);
     });
 
-    this.backendProcess.stderr?.on('data', (data) => {
+    backend.stderr?.on('data', (data) => {
       this.logger.debug(`[Backend] ${data.toString().trim()}`);
     });
 
-    this.backendProcess.on('error', (error) => {
+    backend.on('error', (error) => {
+      this.backendError = error.message;
       this.logger.error('Backend process error', error);
-    });
-
-    this.backendProcess.on('exit', (code) => {
-      if (code !== 0 && code !== null) {
-        this.logger.warn(`Backend exited with code ${code}`);
-      }
     });
   }
 
@@ -206,17 +405,26 @@ export class ProcessManager {
     const webDir = this.getWebDir();
     const nextDir = this.getNextOutDir();
     const serverJs = path.join(nextDir, 'server.js');
-    const usePacked = fs.existsSync(serverJs);
 
     const env: Record<string, string> = {
       NEXT_PUBLIC_API_URL: `http://127.0.0.1:${BACKEND_PORT}`,
       PORT: String(FRONTEND_PORT),
       HOSTNAME: '127.0.0.1',
-      NODE_ENV: 'production',
+      NODE_ENV: app.isPackaged ? 'production' : 'development',
     };
 
-    if (usePacked) {
-      this.logger.info(`Starting frontend (utilityProcess): ${serverJs}`);
+    if (app.isPackaged) {
+      let frontendBuild;
+      try {
+        frontendBuild = validateFrontendBundle(nextDir);
+      } catch (error) {
+        throw new Error('Packaged ReceiptBI frontend is incomplete or unverified', {
+          cause: error,
+        });
+      }
+      this.logger.info(
+        `Starting frontend build ${frontendBuild.buildId} (utilityProcess): ${serverJs}`
+      );
       const up = utilityProcess.fork(serverJs, [], {
         cwd: nextDir,
         env: { ...process.env, ...env },
@@ -228,23 +436,36 @@ export class ProcessManager {
       up.stderr?.on('data', (data: Buffer) => {
         this.logger.debug(`[Frontend] ${data.toString().trim()}`);
       });
-      up.on('exit', (code) => {
-        if (code !== 0) {
-          this.logger.warn(`Frontend exited with code ${code}`);
-        }
+      up.on('error', (type, location) => {
+        this.frontendError = `${type} at ${location}`;
+        this.logger.error('Frontend utility process error', type, location);
       });
-      this.frontendProcess = up as unknown as ChildProcess;
+      this.frontendProcess = this.ownProcess(up, 'frontend', 'utility');
     } else {
-      // 开发模式：用 next start
-      this.logger.info('Starting frontend (dev mode): next start');
-      const nextExe = process.platform === 'win32' ? 'next.cmd' : 'next';
+      // Source development must always render the current workspace. A stale
+      // standalone bundle may exist from an earlier packaging run, but it is
+      // never authoritative outside a packaged application.
+      const nextExe = path.join(
+        webDir,
+        'node_modules',
+        '.bin',
+        process.platform === 'win32' ? 'next.cmd' : 'next'
+      );
+      if (!fs.existsSync(nextExe)) {
+        throw new Error(`ReceiptBI web dependencies are not installed: ${nextExe}`);
+      }
+      this.logger.info('Starting frontend (source mode): next dev');
 
-      const devProc = spawn(nextExe, ['start', '-p', String(FRONTEND_PORT)], {
-        cwd: webDir,
-        env: { ...process.env, ...env },
-        stdio: ['ignore', 'pipe', 'pipe'],
-        detached: false,
-      });
+      const devProc = spawn(
+        nextExe,
+        ['dev', '--hostname', '127.0.0.1', '--port', String(FRONTEND_PORT)],
+        {
+          cwd: webDir,
+          env: { ...process.env, ...env },
+          stdio: ['ignore', 'pipe', 'pipe'],
+          detached: false,
+        }
+      );
 
       devProc.stdout?.on('data', (data) => {
         this.logger.debug(`[Frontend] ${data.toString().trim()}`);
@@ -253,100 +474,408 @@ export class ProcessManager {
         this.logger.debug(`[Frontend] ${data.toString().trim()}`);
       });
       devProc.on('error', (error) => {
+        this.frontendError = error.message;
         this.logger.error('Frontend process error', error);
       });
-      devProc.on('exit', (code) => {
-        if (code !== 0 && code !== null) {
-          this.logger.warn(`Frontend exited with code ${code}`);
-        }
-      });
-
-      this.frontendProcess = devProc;
+      this.frontendProcess = this.ownProcess(devProc, 'frontend', 'child');
     }
   }
 
-  private async waitForServices(): Promise<void> {
+  private async waitForServices(generation: number): Promise<void> {
     const http = await import('node:http');
     const maxAttempts = 60;
     const delay = 500;
+    const backend = this.backendProcess;
+    const frontend = this.frontendProcess;
+    if (!backend || !frontend) throw new Error('Services were not started');
 
-    // 等待后端
-    for (let i = 0; i < maxAttempts; i++) {
-      try {
-        await this.checkHttp(`http://127.0.0.1:${BACKEND_PORT}/health`, http);
-        this.logger.info('Backend is ready');
-        break;
-      } catch {
-        if (i === maxAttempts - 1) throw new Error('Backend failed to start');
-        await new Promise((r) => setTimeout(r, delay));
-      }
-    }
+    const backendHealth = await this.waitForService(
+      backend,
+      generation,
+      maxAttempts,
+      delay,
+      () =>
+        this.checkHttp(
+          `http://127.0.0.1:${BACKEND_PORT}/health`,
+          http,
+          this.instanceToken
+        )
+    );
+    this.acknowledgePendingLegacyModelMigration(backendHealth);
+    this.backendReady = true;
+    this.logger.info('Backend is ready');
 
-    // 等待前端
-    for (let i = 0; i < maxAttempts; i++) {
-      try {
-        await this.checkHttp(`http://127.0.0.1:${FRONTEND_PORT}`, http);
-        this.logger.info('Frontend is ready');
-        break;
-      } catch {
-        if (i === maxAttempts - 1) throw new Error('Frontend failed to start');
-        await new Promise((r) => setTimeout(r, delay));
-      }
+    await this.waitForService(
+      frontend,
+      generation,
+      maxAttempts,
+      delay,
+      () => this.checkFrontendReady(`http://127.0.0.1:${FRONTEND_PORT}`, http)
+    );
+    this.frontendReady = true;
+    this.logger.info('Frontend is ready');
+
+    if (!app.isPackaged) {
+      const warmup = setTimeout(() => {
+        if (generation !== this.lifecycleGeneration || frontend.exited) return;
+        void this.checkHttp(`http://127.0.0.1:${FRONTEND_PORT}/settings`, http)
+          .then(() => this.logger.debug('Settings route is warm'))
+          .catch((error) => {
+            this.logger.debug(`Settings route warmup skipped: ${String(error)}`);
+          });
+      }, 750);
+      warmup.unref();
     }
   }
 
-  private checkHttp(url: string, http: typeof import('node:http')): Promise<void> {
+  private async waitForService<T>(
+    owned: OwnedProcess,
+    generation: number,
+    maxAttempts: number,
+    delay: number,
+    readinessCheck: () => Promise<T>
+  ): Promise<T> {
+    for (let i = 0; i < maxAttempts; i++) {
+      if (generation !== this.lifecycleGeneration) throw new Error('Service startup was cancelled');
+      if (owned.exited) throw new Error(`${owned.name} exited before becoming ready`);
+      try {
+        const payload = await readinessCheck();
+        if (generation !== this.lifecycleGeneration || owned.exited) {
+          throw new Error('Service startup was cancelled');
+        }
+        return payload;
+      } catch (error) {
+        if (generation !== this.lifecycleGeneration || owned.exited) throw error;
+        if (i === maxAttempts - 1) {
+          throw new Error(`${owned.name} failed to become ready`, { cause: error });
+        }
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+    throw new Error(`${owned.name} failed to become ready`);
+  }
+
+  private checkHttp(
+    url: string,
+    http: typeof import('node:http'),
+    expectedInstanceToken?: string
+  ): Promise<BackendHealthPayload | undefined> {
     return new Promise((resolve, reject) => {
-      const req = http.get(url, { timeout: 2000 }, () => resolve());
-      req.on('error', reject);
-      req.on('timeout', () => {
-        req.destroy();
-        reject(new Error('Timeout'));
+      const req = http.get(url, (response) => {
+        const status = response.statusCode ?? 0;
+        if (status < 200 || status >= 300) {
+          response.resume();
+          reject(new Error(`HTTP ${status}`));
+          return;
+        }
+
+        if (!expectedInstanceToken) {
+          response.resume();
+          resolve(undefined);
+          return;
+        }
+
+        let body = '';
+        let settled = false;
+        response.setEncoding('utf-8');
+        response.on('data', (chunk: string) => {
+          if (settled) return;
+          body += chunk;
+          if (body.length > 64 * 1024) {
+            settled = true;
+            response.destroy();
+            reject(new Error('Health response was too large'));
+          }
+        });
+        response.on('end', () => {
+          if (settled) return;
+          try {
+            const payload = JSON.parse(body) as BackendHealthPayload;
+            if (payload.instance_token !== expectedInstanceToken) {
+              reject(new Error('Health response came from a different ReceiptBI instance'));
+              return;
+            }
+            resolve(payload);
+          } catch (error) {
+            reject(new Error('Health response was not valid JSON', { cause: error }));
+          }
+        });
       });
+      req.on('error', reject);
+      req.setTimeout(2000, () => req.destroy(new Error('Timeout')));
     });
   }
 
-  async stopAll(): Promise<void> {
+  private readHttpText(
+    url: string,
+    http: typeof import('node:http'),
+    maxBytes: number
+  ): Promise<{ body: string; contentType: string | string[] | undefined }> {
+    return new Promise((resolve, reject) => {
+      const req = http.get(url, (response) => {
+        const status = response.statusCode ?? 0;
+        if (status < 200 || status >= 300) {
+          response.resume();
+          reject(new Error(`HTTP ${status}`));
+          return;
+        }
+
+        let body = '';
+        let settled = false;
+        response.setEncoding('utf-8');
+        response.on('data', (chunk: string) => {
+          if (settled) return;
+          body += chunk;
+          if (Buffer.byteLength(body, 'utf-8') > maxBytes) {
+            settled = true;
+            response.destroy();
+            reject(new Error(`HTTP response exceeded ${maxBytes} bytes`));
+          }
+        });
+        response.on('end', () => {
+          if (settled) return;
+          settled = true;
+          resolve({ body, contentType: response.headers['content-type'] });
+        });
+        response.on('error', (error) => {
+          if (settled) return;
+          settled = true;
+          reject(error);
+        });
+      });
+      req.on('error', reject);
+      req.setTimeout(5000, () => req.destroy(new Error('Timeout')));
+    });
+  }
+
+  private checkStaticJavaScript(
+    url: string,
+    http: typeof import('node:http')
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const req = http.get(url, (response) => {
+        const status = response.statusCode ?? 0;
+        if (status < 200 || status >= 300) {
+          response.resume();
+          reject(new Error(`Static asset returned HTTP ${status}: ${url}`));
+          return;
+        }
+        if (!isJavaScriptContentType(response.headers['content-type'])) {
+          response.resume();
+          reject(new Error(`Static asset was not JavaScript: ${url}`));
+          return;
+        }
+
+        let receivedContent = false;
+        response.on('data', (chunk: Buffer) => {
+          if (chunk.length > 0) receivedContent = true;
+        });
+        response.on('end', () => {
+          if (!receivedContent) {
+            reject(new Error(`Static asset was empty: ${url}`));
+            return;
+          }
+          resolve();
+        });
+        response.on('error', reject);
+      });
+      req.on('error', reject);
+      req.setTimeout(5000, () => req.destroy(new Error('Timeout')));
+    });
+  }
+
+  private async checkFrontendReady(
+    url: string,
+    http: typeof import('node:http')
+  ): Promise<void> {
+    const { body, contentType } = await this.readHttpText(url, http, 1024 * 1024);
+    if (!isHtmlContentType(contentType) || !/<html(?:\s|>)/i.test(body)) {
+      throw new Error('Frontend root did not return an HTML document');
+    }
+
+    const scriptUrls = extractNextStaticScriptUrls(body, url);
+    if (scriptUrls.length === 0) {
+      throw new Error('Frontend HTML did not reference any Next.js JavaScript chunks');
+    }
+    if (scriptUrls.length > 32) {
+      throw new Error(`Frontend HTML referenced too many JavaScript chunks: ${scriptUrls.length}`);
+    }
+
+    await Promise.all(scriptUrls.map((scriptUrl) => this.checkStaticJavaScript(scriptUrl, http)));
+  }
+
+  private acknowledgePendingLegacyModelMigration(
+    health: BackendHealthPayload | undefined
+  ): void {
+    const pending = this.pendingLegacyModelMigration;
+    if (!pending) return;
+
+    validateLegacyModelMigrationAck(
+      health?.legacy_model_migration,
+      this.instanceToken
+    );
+
+    markLegacyModelMigrationImported(this.userDataDir, pending.migrationId);
+    this.pendingLegacyModelMigration = null;
+    this.logger.info('Migrated the legacy model configuration and retained its legacy sources');
+  }
+
+  stopAll(): Promise<void> {
+    if (this.stopPromise) return this.stopPromise;
+
+    ++this.lifecycleGeneration;
+    const stopPromise = this.doStopAll();
+    this.stopPromise = stopPromise;
+    stopPromise.then(
+      () => {
+        if (this.stopPromise === stopPromise) this.stopPromise = null;
+      },
+      () => {
+        if (this.stopPromise === stopPromise) this.stopPromise = null;
+      }
+    );
+    return stopPromise;
+  }
+
+  private async doStopAll(): Promise<void> {
     this.logger.info('Stopping all services...');
 
-    // 停止前端 (可能是 UtilityProcess 或 ChildProcess)
-    if (this.frontendProcess) {
-      this.frontendProcess.kill();
-      await new Promise((r) => setTimeout(r, 500));
+    const frontend = this.frontendProcess;
+    const backend = this.backendProcess;
+    if (backend && this.backendReady && !backend.exited) {
+      await this.prepareBackendShutdown();
     }
 
-    // 停止后端
-    if (this.backendProcess) {
-      this.backendProcess.kill('SIGTERM');
-      await new Promise((r) => setTimeout(r, 1000));
-      if (!this.backendProcess.killed) this.backendProcess.kill('SIGKILL');
+    this.backendReady = false;
+    this.frontendReady = false;
+    await Promise.all([
+      frontend ? this.stopOwnedProcess(frontend) : Promise.resolve(),
+      backend ? this.stopOwnedProcess(backend) : Promise.resolve(),
+    ]);
+
+    if (frontend?.exited && this.frontendProcess === frontend) {
+      this.frontendProcess = null;
+    }
+    if (backend?.exited && this.backendProcess === backend) {
+      this.backendProcess = null;
     }
 
-    this.frontendProcess = null;
-    this.backendProcess = null;
+    if (this.frontendProcess || this.backendProcess) {
+      this.logger.warn('Some owned services did not exit after being force-killed');
+    } else {
+      this.logger.info('All services stopped');
+    }
+  }
 
-    // 确保端口释放
-    this.killPortProcess(BACKEND_PORT);
-    this.killPortProcess(FRONTEND_PORT);
+  private async prepareBackendShutdown(): Promise<void> {
+    const http = await import('node:http');
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = (message?: string): void => {
+        if (settled) return;
+        settled = true;
+        if (message) this.logger.warn(message);
+        resolve();
+      };
+      const req = http.request(
+        {
+          hostname: '127.0.0.1',
+          port: BACKEND_PORT,
+          path: '/api/v1/system/prepare-shutdown',
+          method: 'POST',
+          headers: {
+            'X-ReceiptBI-Desktop-Control': this.desktopControlToken,
+          },
+        },
+        (response) => {
+          response.resume();
+          response.once('end', () => {
+            const status = response.statusCode ?? 0;
+            if (status >= 200 && status < 300) {
+              this.logger.info('Backend acknowledged the safe shutdown request');
+              finish();
+            } else {
+              finish(`Backend safe shutdown request returned HTTP ${status}`);
+            }
+          });
+          response.once('error', (error) => {
+            finish(`Backend safe shutdown response failed: ${error.message}`);
+          });
+        }
+      );
+      req.once('error', (error) => {
+        finish(`Backend safe shutdown request failed: ${error.message}`);
+      });
+      req.setTimeout(2200, () => {
+        req.destroy(new Error('Safe shutdown request timed out'));
+      });
+      req.end();
+    });
+  }
 
-    this.logger.info('All services stopped');
+  private async stopOwnedProcess(owned: OwnedProcess): Promise<void> {
+    if (owned.exited) return;
+
+    try {
+      if (owned.kind === 'utility') {
+        (owned.child as UtilityProcess).kill();
+      } else {
+        (owned.child as ChildProcess).kill('SIGTERM');
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to stop owned ${owned.name} process gracefully`, error);
+    }
+
+    if (await this.waitForExit(owned, 3000)) return;
+
+    const pid = owned.child.pid;
+    this.logger.warn(`Force-killing owned ${owned.name} process${pid ? ` ${pid}` : ''}`);
+    try {
+      if (owned.kind === 'utility') {
+        if (pid) process.kill(pid, 'SIGKILL');
+        else (owned.child as UtilityProcess).kill();
+      } else {
+        (owned.child as ChildProcess).kill('SIGKILL');
+      }
+    } catch {
+      // It may have exited between the timeout and the force-kill.
+    }
+    await this.waitForExit(owned, 2000);
+  }
+
+  private waitForExit(owned: OwnedProcess, timeoutMs: number): Promise<boolean> {
+    if (owned.exited) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(false), timeoutMs);
+      owned.exitPromise.then(() => {
+        clearTimeout(timer);
+        resolve(true);
+      });
+    });
   }
 
   getStatus(): { backend: ServiceStatus; frontend: ServiceStatus } {
     return {
       backend: {
         name: 'Backend (Python API)',
-        running: this.backendProcess !== null && this.backendProcess.killed === false,
-        pid: this.backendProcess?.pid,
+        running: Boolean(this.backendProcess && !this.backendProcess.exited && this.backendReady),
+        pid: this.backendProcess?.child.pid,
         url: `http://127.0.0.1:${BACKEND_PORT}`,
+        error: this.backendError,
       },
       frontend: {
         name: 'Frontend (Next.js)',
-        running: this.frontendProcess !== null,
-        pid: (this.frontendProcess as ChildProcess)?.pid,
+        running: Boolean(this.frontendProcess && !this.frontendProcess.exited && this.frontendReady),
+        pid: this.frontendProcess?.child.pid,
         url: `http://127.0.0.1:${FRONTEND_PORT}`,
+        error: this.frontendError,
       },
     };
+  }
+
+  isReady(): boolean {
+    const status = this.getStatus();
+    return status.backend.running && status.frontend.running;
   }
 
   getFrontendUrl(): string {

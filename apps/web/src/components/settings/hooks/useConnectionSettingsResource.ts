@@ -3,9 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api/client";
-import { downloadJsonFile } from "@/lib/settings/http";
 import {
-  buildConnectionExportName,
   type ConnectionFormData,
   type ConnectionTestResult,
 } from "@/lib/settings/connections";
@@ -69,16 +67,6 @@ export function useConnectionSettingsResource() {
     },
   });
 
-  const exportConnection = async (connection: ConfiguredConnection) => {
-    try {
-      const response = await api.get(`/api/v1/config/connections/${connection.id}/export`);
-      downloadJsonFile(buildConnectionExportName(connection.name), response.data.data);
-    } catch (error) {
-      console.error("Export failed:", error);
-      alert("Export failed");
-    }
-  };
-
   return {
     connections: connections || [],
     isLoading,
@@ -90,7 +78,6 @@ export function useConnectionSettingsResource() {
       updateMutation.mutateAsync({ id, data }),
     deleteConnection: (id: string) => deleteMutation.mutate(id),
     testConnection: (id: string) => testMutation.mutate(id),
-    exportConnection,
     isSubmitting: addMutation.isPending || updateMutation.isPending,
   };
 }

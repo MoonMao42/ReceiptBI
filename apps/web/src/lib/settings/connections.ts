@@ -1,4 +1,17 @@
-import type { ConfiguredConnection } from "@/lib/types/api";
+import type {
+  ConfiguredConnection,
+  ConnectionExtraOptions,
+  ConnectionSSLMode,
+  ConnectionSummary,
+} from "@/lib/types/api";
+
+export interface ConnectionExtraOptionsForm {
+  sslmode: ConnectionSSLMode;
+  sslrootcert: string;
+  sslcert: string;
+  sslkey: string;
+  schema: string;
+}
 
 export interface ConnectionFormData {
   name: string;
@@ -8,6 +21,7 @@ export interface ConnectionFormData {
   database: string;
   username: string;
   password: string;
+  extra_options: ConnectionExtraOptionsForm;
   is_default: boolean;
 }
 
@@ -31,20 +45,59 @@ export const defaultConnectionFormData: ConnectionFormData = {
   database: "",
   username: "",
   password: "",
+  extra_options: {
+    sslmode: "prefer",
+    sslrootcert: "",
+    sslcert: "",
+    sslkey: "",
+    schema: "",
+  },
   is_default: false,
 };
+
+function buildExtraOptionsForm(
+  options: ConnectionExtraOptions | undefined
+): ConnectionExtraOptionsForm {
+  return {
+    sslmode: options?.sslmode ?? "prefer",
+    sslrootcert: options?.sslrootcert ?? "",
+    sslcert: options?.sslcert ?? "",
+    sslkey: options?.sslkey ?? "",
+    schema: options?.schema ?? "",
+  };
+}
+
+export function getConnectionDatabase(
+  connection: Pick<ConnectionSummary, "database" | "database_name">
+): string {
+  return connection.database ?? connection.database_name ?? "";
+}
+
+export function formatConnectionTarget(connection: ConfiguredConnection): string {
+  const database = getConnectionDatabase(connection);
+  if (connection.driver === "sqlite") {
+    return database;
+  }
+
+  const host = connection.host?.trim() ?? "";
+  const port = connection.port == null ? "" : `:${connection.port}`;
+  const endpoint = host ? `${connection.driver}://${host}${port}` : connection.driver;
+  return database ? `${endpoint}/${database}` : endpoint;
+}
 
 export function buildConnectionFormData(
   connection: ConfiguredConnection
 ): ConnectionFormData {
+  const driverInfo = CONNECTION_DRIVERS.find((item) => item.value === connection.driver);
   return {
     name: connection.name,
     driver: connection.driver,
-    host: connection.host,
-    port: connection.port,
-    database: connection.database_name || "",
-    username: connection.username,
+    host: connection.host ?? "",
+    port: connection.port ?? driverInfo?.defaultPort ?? 0,
+    database: getConnectionDatabase(connection),
+    username: connection.username ?? "",
     password: "",
+    extra_options: buildExtraOptionsForm(connection.extra_options),
     is_default: connection.is_default,
   };
 }
@@ -54,13 +107,17 @@ export function applyDriverDefaults(
   driver: string
 ): ConnectionFormData {
   const driverInfo = CONNECTION_DRIVERS.find((item) => item.value === driver);
+  const extraOptions =
+    driver === "sqlite"
+      ? { ...defaultConnectionFormData.extra_options }
+      : {
+          ...formData.extra_options,
+          schema: driver === "postgresql" ? formData.extra_options.schema : "",
+        };
   return {
     ...formData,
     driver,
     port: driverInfo?.defaultPort ?? 3306,
+    extra_options: extraOptions,
   };
-}
-
-export function buildConnectionExportName(name: string, now = new Date()): string {
-  return `querygpt-config-${name}-${now.toISOString().split("T")[0]}.json`;
 }

@@ -1,11 +1,15 @@
 import type {
+  AnalysisReport,
   AgentTraceEntry,
+  CorrectionApplication,
   DataRow,
   ExecutionContextSummary,
   Visualization,
 } from "@/lib/types/api";
 
 export interface ChatMessage {
+  id?: string;
+  streamId?: string;
   role: "user" | "assistant" | "system";
   content: string;
   isLoading?: boolean;
@@ -25,6 +29,20 @@ export interface ChatMessage {
   errorMessage?: string;
   errorCode?: string;
   errorCategory?: string;
+  failedStage?: string;
   canRetry?: boolean;
   originalQuery?: string;
+  report?: AnalysisReport;
+  analysisState?: string;
+  analysisRunId?: string;
+  projectId?: string;
+  resumable?: boolean;
+  toolHistory?: Array<Record<string, unknown>>;
+  semanticEngine?: string;
+  correctionApplication?: CorrectionApplication;
+  confirmationResolved?: string;
+  semanticValidationSelection?: Array<{
+    entry_id: string;
+    expected_active_revision_id: string;
+  }>;
 }

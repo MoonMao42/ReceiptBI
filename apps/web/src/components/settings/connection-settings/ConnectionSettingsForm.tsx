@@ -1,12 +1,12 @@
 "use client";
 
-import type { FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Loader2 } from "lucide-react";
 import {
   CONNECTION_DRIVERS,
   type ConnectionFormData,
 } from "@/lib/settings/connections";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 
 interface ConnectionSettingsFormProps {
   editingId: string | null;
@@ -29,16 +29,62 @@ export function ConnectionSettingsForm({
 }: ConnectionSettingsFormProps) {
   const t = useTranslations("connectionSettings");
   const tc = useTranslations("common");
+  const isChinese = useLocale() === "zh";
+  const advancedCopy = isChinese
+    ? {
+        title: "连接安全与范围",
+        tls: "加密方式",
+        schema: "Schema",
+        ca: "CA 证书路径",
+        cert: "客户端证书路径",
+        key: "客户端私钥路径",
+        modes: {
+          prefer: "自动（推荐）",
+          require: "强制加密",
+          "verify-ca": "验证 CA",
+          "verify-full": "验证 CA 与主机",
+          disable: "关闭",
+        },
+      }
+    : {
+        title: "Connection security and scope",
+        tls: "Encryption",
+        schema: "Schema",
+        ca: "CA certificate path",
+        cert: "Client certificate path",
+        key: "Client key path",
+        modes: {
+          prefer: "Automatic (recommended)",
+          require: "Require encryption",
+          "verify-ca": "Verify CA",
+          "verify-full": "Verify CA and host",
+          disable: "Off",
+        },
+      };
+  const hasAdvancedOptions =
+    formData.extra_options.sslmode !== "prefer" ||
+    Boolean(
+      formData.extra_options.schema ||
+        formData.extra_options.sslrootcert ||
+        formData.extra_options.sslcert ||
+        formData.extra_options.sslkey
+    );
+  const [advancedOpen, setAdvancedOpen] = useState(hasAdvancedOptions);
+
+  useEffect(() => {
+    if (hasAdvancedOptions) setAdvancedOpen(true);
+  }, [editingId, hasAdvancedOptions]);
+
   return (
     <form
       onSubmit={onSubmit}
       data-testid="connection-form"
-      className="mb-6 p-4 bg-secondary rounded-lg border border-border"
+      className="mb-7 border-y border-border bg-card px-4 py-5 sm:px-5"
     >
       <h3 className="text-sm font-medium text-foreground mb-4">
         {editingId ? t("editConnection") : t("addConnection")}
       </h3>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid gap-5 md:grid-cols-2">
         <div>
           <label className="block text-sm font-medium text-foreground mb-1">{t("connectionName")}</label>
           <input
@@ -46,7 +92,7 @@ export function ConnectionSettingsForm({
             value={formData.name}
             onChange={(event) => onChange({ ...formData, name: event.target.value })}
             data-testid="connection-name-input"
-            className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring focus:border-transparent"
+            className="w-full border border-border bg-background px-3 py-2.5 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
             placeholder={t("connectionNamePlaceholder")}
             required
           />
@@ -57,7 +103,7 @@ export function ConnectionSettingsForm({
             value={formData.driver}
             onChange={(event) => onDriverChange(event.target.value)}
             data-testid="connection-driver-select"
-            className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring focus:border-transparent"
+            className="w-full border border-border bg-background px-3 py-2.5 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
           >
             {CONNECTION_DRIVERS.map((driver) => (
               <option key={driver.value} value={driver.value}>
@@ -75,7 +121,7 @@ export function ConnectionSettingsForm({
                 value={formData.host}
                 onChange={(event) => onChange({ ...formData, host: event.target.value })}
                 data-testid="connection-host-input"
-                className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring focus:border-transparent"
+                className="w-full border border-border bg-background px-3 py-2.5 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
                 placeholder="localhost"
                 required
               />
@@ -89,13 +135,13 @@ export function ConnectionSettingsForm({
                   onChange({ ...formData, port: parseInt(event.target.value, 10) })
                 }
                 data-testid="connection-port-input"
-                className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring focus:border-transparent"
+                className="w-full border border-border bg-background px-3 py-2.5 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
                 required
               />
             </div>
           </>
         )}
-        <div className={formData.driver === "sqlite" ? "col-span-2" : ""}>
+        <div className={formData.driver === "sqlite" ? "md:col-span-2" : ""}>
           <label className="block text-sm font-medium text-foreground mb-1">
             {formData.driver === "sqlite" ? t("databaseFilePath") : t("databaseName")}
           </label>
@@ -104,7 +150,7 @@ export function ConnectionSettingsForm({
             value={formData.database}
             onChange={(event) => onChange({ ...formData, database: event.target.value })}
             data-testid="connection-database-input"
-            className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring focus:border-transparent"
+            className="w-full border border-border bg-background px-3 py-2.5 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
             placeholder={formData.driver === "sqlite" ? "/path/to/database.db" : "mydb"}
             required
           />
@@ -118,7 +164,7 @@ export function ConnectionSettingsForm({
                 value={formData.username}
                 onChange={(event) => onChange({ ...formData, username: event.target.value })}
                 data-testid="connection-username-input"
-                className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring focus:border-transparent"
+                className="w-full border border-border bg-background px-3 py-2.5 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
                 placeholder="root"
                 required
               />
@@ -135,13 +181,147 @@ export function ConnectionSettingsForm({
                 value={formData.password}
                 onChange={(event) => onChange({ ...formData, password: event.target.value })}
                 data-testid="connection-password-input"
-                className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring focus:border-transparent"
+                className="w-full border border-border bg-background px-3 py-2.5 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
                 placeholder={editingId ? t("passwordPlaceholder") : "••••••••"}
               />
             </div>
           </>
         )}
-        <div className="col-span-2">
+        {formData.driver !== "sqlite" && (
+          <details
+            className="md:col-span-2 border-y border-border py-3"
+            open={advancedOpen}
+            onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+            data-testid="connection-security-options"
+          >
+            <summary className="cursor-pointer select-none text-sm font-medium text-foreground">
+              {advancedCopy.title}
+            </summary>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  {advancedCopy.tls}
+                </label>
+                <select
+                  value={formData.extra_options.sslmode}
+                  onChange={(event) => {
+                    const sslmode =
+                      event.target.value as typeof formData.extra_options.sslmode;
+                    onChange({
+                      ...formData,
+                      extra_options: {
+                        ...formData.extra_options,
+                        sslmode,
+                        ...(sslmode === "disable"
+                          ? { sslrootcert: "", sslcert: "", sslkey: "" }
+                          : {}),
+                      },
+                    });
+                  }}
+                  data-testid="connection-sslmode-select"
+                  className="w-full border border-border bg-background px-3 py-2.5 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                >
+                  {Object.entries(advancedCopy.modes).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {formData.driver === "postgresql" && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-foreground">
+                    {advancedCopy.schema}
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.extra_options.schema}
+                    onChange={(event) =>
+                      onChange({
+                        ...formData,
+                        extra_options: {
+                          ...formData.extra_options,
+                          schema: event.target.value,
+                        },
+                      })
+                    }
+                    data-testid="connection-schema-input"
+                    className="w-full border border-border bg-background px-3 py-2.5 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                    placeholder="public"
+                  />
+                </div>
+              )}
+              {formData.extra_options.sslmode !== "disable" && (
+                <>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-foreground">
+                      {advancedCopy.ca}
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.extra_options.sslrootcert}
+                      onChange={(event) =>
+                        onChange({
+                          ...formData,
+                          extra_options: {
+                            ...formData.extra_options,
+                            sslrootcert: event.target.value,
+                          },
+                        })
+                      }
+                      data-testid="connection-ca-path-input"
+                      className="w-full border border-border bg-background px-3 py-2.5 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                      placeholder="/path/to/ca.pem"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-foreground">
+                      {advancedCopy.cert}
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.extra_options.sslcert}
+                      onChange={(event) =>
+                        onChange({
+                          ...formData,
+                          extra_options: {
+                            ...formData.extra_options,
+                            sslcert: event.target.value,
+                          },
+                        })
+                      }
+                      data-testid="connection-client-cert-input"
+                      className="w-full border border-border bg-background px-3 py-2.5 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                      placeholder="/path/to/client.pem"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-foreground">
+                      {advancedCopy.key}
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.extra_options.sslkey}
+                      onChange={(event) =>
+                        onChange({
+                          ...formData,
+                          extra_options: {
+                            ...formData.extra_options,
+                            sslkey: event.target.value,
+                          },
+                        })
+                      }
+                      data-testid="connection-client-key-input"
+                      className="w-full border border-border bg-background px-3 py-2.5 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                      placeholder="/path/to/client.key"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          </details>
+        )}
+        <div className="md:col-span-2">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -158,7 +338,7 @@ export function ConnectionSettingsForm({
         <button
           type="button"
           onClick={onReset}
-          className="px-4 py-2 text-muted-foreground hover:bg-muted rounded-lg transition-colors text-sm"
+          className="px-4 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted"
         >
           {tc("cancel")}
         </button>
@@ -166,7 +346,7 @@ export function ConnectionSettingsForm({
           type="submit"
           disabled={isSubmitting}
           data-testid="connection-submit-button"
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm"
+          className="flex items-center gap-2 bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
         >
           {isSubmitting && <Loader2 size={16} className="animate-spin" />}
           {editingId ? t("update") : tc("save")}

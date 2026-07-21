@@ -134,7 +134,7 @@ service_listener_owner() {
   fi
 
   if [ -n "$(resolve_project_process "$listener_pid" "$service")" ]; then
-    echo "querygpt"
+    echo "receiptbi"
   else
     echo "external"
   fi

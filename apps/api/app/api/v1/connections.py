@@ -1,5 +1,6 @@
 """数据库连接管理 API"""
 
+import asyncio
 from typing import Any
 from uuid import UUID
 
@@ -11,9 +12,13 @@ from app.core import encryptor
 from app.db import get_db
 from app.db.tables import Connection
 from app.models import APIResponse, ConnectionCreate, ConnectionResponse, ConnectionTest
-from app.services.database import DatabaseConfig, create_database_manager
+from app.services.database import ConnectionTestResult, DatabaseConfig, create_database_manager
 
 router = APIRouter(prefix="/connections", tags=["connections"])
+
+
+def _stored_extra_options(conn_in: ConnectionCreate) -> dict[str, Any]:
+    return conn_in.extra_options.model_dump(exclude_defaults=True, exclude_none=True)
 
 
 async def _get_connection_or_404(db: AsyncSession, connection_id: UUID) -> Connection:
@@ -60,7 +65,7 @@ async def create_connection(
         username=conn_in.username,
         password_encrypted=password_encrypted,
         database_name=conn_in.database,
-        extra_options=conn_in.extra_options or {},
+        extra_options=_stored_extra_options(conn_in),
         is_default=conn_in.is_default,
     )
     db.add(connection)
@@ -88,9 +93,19 @@ async def test_connection(
         user=connection.username or "",
         password=password or "",
         database=connection.database_name or "",
+        extra_options=connection.extra_options or {},
     )
     db_manager = create_database_manager(db_config)
-    test_result = db_manager.test_connection()
+    try:
+        test_result = await asyncio.wait_for(
+            asyncio.to_thread(db_manager.test_connection),
+            timeout=15,
+        )
+    except TimeoutError:
+        test_result = ConnectionTestResult(
+            connected=False,
+            message="连接失败: 测试超时",
+        )
 
     return APIResponse.ok(
         data=ConnectionTest(
@@ -121,7 +136,7 @@ async def update_connection(
     connection.username = conn_in.username
     connection.database_name = conn_in.database
     connection.is_default = conn_in.is_default
-    connection.extra_options = conn_in.extra_options or {}
+    connection.extra_options = _stored_extra_options(conn_in)
     if conn_in.password:
         connection.password_encrypted = encryptor.encrypt(conn_in.password)
 

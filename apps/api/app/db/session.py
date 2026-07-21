@@ -3,8 +3,14 @@
 from collections.abc import AsyncGenerator
 
 import structlog
+from sqlalchemy import event
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.core.config import settings
 
@@ -20,6 +26,29 @@ if not _db_url.startswith("sqlite"):
     _engine_kwargs["max_overflow"] = 20
 
 engine = create_async_engine(_db_url, **_engine_kwargs)
+
+
+def _set_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+    """Enable SQLite FK enforcement for every pooled DB-API connection."""
+
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA foreign_keys=ON")
+    finally:
+        cursor.close()
+
+
+def configure_sqlite_foreign_keys(async_engine: AsyncEngine, database_url: str) -> None:
+    """Apply SQLite's per-connection FK switch without affecting other databases."""
+
+    if not database_url.startswith(("sqlite://", "sqlite+aiosqlite://")):
+        return
+    sync_engine = async_engine.sync_engine
+    if not event.contains(sync_engine, "connect", _set_sqlite_foreign_keys):
+        event.listen(sync_engine, "connect", _set_sqlite_foreign_keys)
+
+
+configure_sqlite_foreign_keys(engine, _db_url)
 
 # 创建异步会话工厂
 AsyncSessionLocal = async_sessionmaker(

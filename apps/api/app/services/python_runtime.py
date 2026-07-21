@@ -1,4 +1,4 @@
-"""Sandboxed Python execution helpers for QueryGPT."""
+"""Sandboxed Python execution helpers for ReceiptBI."""
 
 import ast
 import asyncio
@@ -8,6 +8,7 @@ import os
 import sys
 import traceback
 from importlib.util import find_spec
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -156,7 +157,8 @@ class PythonExecutionRuntime:
         *,
         available_python_libraries: list[str] | None = None,
         analytics_installed: bool = False,
-        font_path: str,
+        font_path: str | None = None,
+        extra_paths: list[str] | None = None,
     ):
         self.available_python_libraries = available_python_libraries or [
             "pandas",
@@ -164,7 +166,10 @@ class PythonExecutionRuntime:
             "matplotlib",
         ]
         self.analytics_installed = analytics_installed
-        self.font_path = font_path
+        self.font_path = font_path or str(
+            Path(__file__).resolve().parent.parent / "assets" / "fonts" / "NotoSansSC-Regular.ttf"
+        )
+        self.extra_paths = extra_paths or []
         self._ipython = None
         self._sql_data: dict[str, Any] = {}
 
@@ -181,6 +186,9 @@ class PythonExecutionRuntime:
             from IPython.core.interactiveshell import InteractiveShell
 
             self._ipython = InteractiveShell()
+            for extra_path in reversed(self.extra_paths):
+                if extra_path and extra_path not in sys.path:
+                    sys.path.insert(0, extra_path)
             font_loaded = os.path.exists(self.font_path)
             if font_loaded:
                 logger.info("Loading bundled font", path=self.font_path)
@@ -224,8 +232,12 @@ plt.rcParams['font.size'] = 12
         import pandas as pd
 
         df = pd.DataFrame(data)
-        self.get_ipython().push({name: df})
         self._sql_data[name] = df
+        # Keep the concise result-name variable for backwards compatibility and
+        # also expose a stable map. Models naturally reach for ``dfs[name]`` when
+        # several retained results are available; making that contract real is
+        # safer than relying on prompt wording alone.
+        self.get_ipython().push({name: df, "dfs": dict(self._sql_data)})
         logger.info("Injected SQL data into Python runtime", name=name, rows=len(data))
 
     def validate_dependencies(self, code: str) -> tuple[bool, str | None]:

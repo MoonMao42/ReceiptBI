@@ -3,12 +3,12 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db import get_db
-from app.db.tables import Conversation, Message
+from app.db.tables import AnalysisRun, ArtifactRecord, Conversation, Message
 from app.models import APIResponse, ConversationResponse, ConversationSummary, PaginatedResponse
 
 router = APIRouter()
@@ -20,6 +20,7 @@ async def list_conversations(
     offset: int = Query(default=0, ge=0),
     favorites: bool = Query(default=False),
     q: str | None = Query(default=None, max_length=100),
+    project_id: UUID | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
     """获取对话列表（只返回有消息的对话）"""
@@ -37,6 +38,15 @@ async def list_conversations(
         query = query.where(Conversation.is_favorite)
     if q:
         query = query.where(Conversation.title.ilike(f"%{q}%"))
+    if project_id is not None:
+        query = query.where(
+            select(AnalysisRun.id)
+            .where(
+                AnalysisRun.conversation_id == Conversation.id,
+                AnalysisRun.project_id == project_id,
+            )
+            .exists()
+        )
 
     total = await db.scalar(select(func.count()).select_from(query.subquery())) or 0
     result = await db.execute(
@@ -59,6 +69,8 @@ async def list_conversations(
             context_rounds=conversation.extra_data.get("context_rounds")
             if conversation.extra_data
             else None,
+            project_id=project_id
+            or (conversation.extra_data.get("project_id") if conversation.extra_data else None),
             is_favorite=conversation.is_favorite,
             message_count=msg_count,
             status=conversation.status,
@@ -99,10 +111,16 @@ async def delete_conversation(
     conversation_id: UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    """删除对话"""
+    """删除对话及其全部调查运行和产物。"""
     conversation = await db.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="对话不存在")
+
+    run_ids = select(AnalysisRun.id).where(AnalysisRun.conversation_id == conversation_id)
+    await db.execute(
+        delete(ArtifactRecord).where(ArtifactRecord.analysis_run_id.in_(run_ids))
+    )
+    await db.execute(delete(AnalysisRun).where(AnalysisRun.conversation_id == conversation_id))
     await db.delete(conversation)
     await db.commit()
     return APIResponse.ok(message="对话已删除")

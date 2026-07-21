@@ -2,7 +2,7 @@
 
 import { useRef } from "react";
 import { useTranslations } from "next-intl";
-import { Brain, ChevronDown } from "lucide-react";
+import { ChevronDown, Sparkles } from "lucide-react";
 import type { ModelSummary } from "@/lib/types/api";
 import { cn } from "@/lib/utils";
 import { StatusChip } from "./StatusChip";
@@ -31,14 +31,14 @@ export function ModelDropdown({
       <button
         onClick={onToggle}
         data-testid="chat-model-select"
-        className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground"
+        className="flex items-center gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground hover:bg-muted/50"
       >
-        <Brain size={14} className="text-muted-foreground" />
+        <Sparkles size={14} className="text-muted-foreground" />
         <span className="max-w-[180px] truncate">{selectedModel?.name || t("selectModel")}</span>
         <ChevronDown size={14} className="text-muted-foreground" />
       </button>
       {isOpen && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-80 rounded-xl border border-border bg-background py-1 shadow-lg">
+        <div className="absolute left-0 top-full z-50 mt-1 w-80 rounded-lg border border-border bg-background py-1 shadow-md">
           {models?.length ? (
             models.map((model) => (
               <button

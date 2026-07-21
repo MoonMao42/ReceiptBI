@@ -6,6 +6,9 @@
  * 1. TypeScript 编译 Electron 主进程
  * 2. 构建 Python 后端 (PyInstaller)
  * 3. 构建 Next.js 前端
+ *
+ * 本脚本也是所有本地 build:electron:* 命令的资源准备入口，避免
+ * electron-builder 直接复用 apps/desktop/next 中的历史产物。
  */
 
 import { execSync } from 'node:child_process';
@@ -25,7 +28,7 @@ function run(cmd: string, cwd?: string) {
 }
 
 async function main() {
-  console.log('=== QueryGPT Desktop Build ===\n');
+  console.log('=== ReceiptBI Desktop Build ===\n');
 
   // 1. TypeScript 编译
   console.log('[1/3] Building Electron main process...');
@@ -40,10 +43,9 @@ async function main() {
   run('npx tsx scripts/build-next.ts');
 
   console.log('\n=== Build Complete ===');
-  console.log('Next steps:');
-  console.log('  macOS:  npm run build:electron:mac');
-  console.log('  Windows: npm run build:electron:win');
-  console.log('  Both:    npm run build:electron');
+  console.log('Desktop resources are ready.');
+  console.log('Use build:electron:* directly for normal local packaging; those commands');
+  console.log('always rerun this resource build before electron-builder.');
 }
 
 main().catch((err) => {

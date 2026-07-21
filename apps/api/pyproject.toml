@@ -1,7 +1,7 @@
 [project]
-name = "querygpt-api"
-version = "2.0.0"
-description = "QueryGPT API Server"
+name = "receiptbi-api"
+version = "1.0.0"
+description = "ReceiptBI local-first analyst API"
 requires-python = ">=3.11"
 
 dependencies = [
@@ -20,13 +20,21 @@ dependencies = [
     "pydantic-settings>=2.2.0",
 
     # AI & LLM
-    "gptme>=0.30.0",
-    "litellm>=1.40.0",
+    "pydantic-ai-slim[openai,anthropic]>=1.0,<2.0",
+    "wren-core-py>=0.7,<0.8",
 
     # Data Processing & Analysis
     "pandas>=2.2.0",
     "numpy>=1.26.0",
     "matplotlib>=3.8.0",
+    "seaborn>=0.13.0",
+    "duckdb>=1.1.0",
+    "polars>=1.0.0",
+    "plotly>=5.24.0",
+    "openpyxl>=3.1.0",
+    "xlrd>=2.0.1",
+    "pyarrow>=17.0.0",
+    "ipython>=8.25.0",
 
     # Database Drivers
     "pymysql>=1.1.0",
@@ -36,6 +44,8 @@ dependencies = [
     "httpx>=0.27.0",
     "structlog>=24.1.0",
     "cryptography>=44.0.0",
+    "python-multipart>=0.0.9",
+    "pip>=24.0",
 
     # Rate limiting
     "slowapi>=0.1.9",
@@ -59,7 +69,7 @@ dev = [
 ]
 
 [project.scripts]
-querygpt-api = "app.main:run"
+receiptbi-api = "app.main:run"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]

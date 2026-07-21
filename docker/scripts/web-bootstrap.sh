@@ -2,8 +2,8 @@
 set -eu
 
 APP_DIR="/workspace/apps/web"
-CACHE_DIR="/opt/querygpt/web-node_modules"
-IMAGE_HASH_FILE="/opt/querygpt/package-lock.sha256"
+CACHE_DIR="/opt/receiptbi/web-node_modules"
+IMAGE_HASH_FILE="/opt/receiptbi/package-lock.sha256"
 TARGET_HASH_FILE="$APP_DIR/node_modules/.package-lock.sha256"
 
 package_lock_hash() {

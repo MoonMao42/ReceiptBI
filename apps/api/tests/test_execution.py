@@ -5,15 +5,13 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import (
-    RelationshipContext,
-    SemanticContext,
-    SSEEvent,
-    SSEEventType,
-    SystemCapabilities,
-)
+from app.core import encryptor
+from app.db.tables import Model
+from app.models import SSEEvent, SSEEventType
 from app.services.execution import ExecutionService
+from app.services.model_runtime import ModelCredentialError, ModelSelectionError
 
 
 class TestExecutionService:
@@ -43,79 +41,57 @@ class TestExecutionService:
         assert service.connection_id is None
         assert service.language == "zh"
 
-    def test_build_system_prompt_zh(self, mock_db):
-        """Test Chinese system prompt generation"""
-        service = ExecutionService(db=mock_db, language="zh")
-        prompt = service._build_system_prompt(None)
+    @pytest.mark.asyncio
+    async def test_project_without_explicit_connection_does_not_use_default(self, mock_db):
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = []
+        mock_db.execute.return_value = result
+        service = ExecutionService(
+            db=mock_db,
+            project_id=uuid4(),
+            settings_data={"default_connection_id": str(uuid4())},
+        )
 
-        assert "QueryGPT" in prompt
-        assert "自然语言" in prompt or "数据分析" in prompt
-        assert "[thinking:" in prompt
-        assert "```sql" in prompt
-        assert "```python" in prompt
+        connection = await service._get_connection_record()
 
-    def test_build_system_prompt_en(self, mock_db):
-        """Test English system prompt generation"""
-        service = ExecutionService(db=mock_db, language="en")
-        prompt = service._build_system_prompt(None)
+        assert connection is None
+        mock_db.execute.assert_not_awaited()
 
-        assert "QueryGPT" in prompt
-        assert "[thinking:" in prompt
-        assert "```sql" in prompt
+    @pytest.mark.asyncio
+    async def test_project_with_explicit_connection_uses_explicit_connection(self, mock_db):
+        explicit_connection_id = uuid4()
+        explicit_connection = SimpleNamespace(id=explicit_connection_id)
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = explicit_connection
+        mock_db.execute.return_value = result
+        service = ExecutionService(
+            db=mock_db,
+            project_id=uuid4(),
+            connection_id=explicit_connection_id,
+            settings_data={"default_connection_id": str(uuid4())},
+        )
 
-    def test_build_system_prompt_with_db_config(self, mock_db):
-        """Test system prompt with database config"""
-        service = ExecutionService(db=mock_db, language="zh")
+        connection = await service._get_connection_record()
 
-        db_config = {
-            "driver": "mysql",
-            "host": "localhost",
-            "port": 3306,
-            "database": "testdb",
-        }
+        assert connection is explicit_connection
+        mock_db.execute.assert_awaited_once()
 
-        prompt = service._build_system_prompt(db_config)
+    @pytest.mark.asyncio
+    async def test_non_project_chat_uses_default_connection(self, mock_db):
+        default_connection_id = uuid4()
+        default_connection = SimpleNamespace(id=default_connection_id)
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = default_connection
+        mock_db.execute.return_value = result
+        service = ExecutionService(
+            db=mock_db,
+            settings_data={"default_connection_id": str(default_connection_id)},
+        )
 
-        assert "mysql" in prompt
-        assert "localhost" in prompt
-        assert "3306" in prompt
-        assert "testdb" in prompt
+        connection = await service._get_connection_record()
 
-    def test_build_system_prompt_with_semantic_context(self, mock_db):
-        """Test system prompt with semantic terms"""
-        service = ExecutionService(db=mock_db, language="zh")
-
-        # Create mock semantic context
-        semantic_context = MagicMock(spec=SemanticContext)
-        semantic_context.terms = [MagicMock()]
-        semantic_context.to_prompt.return_value = "月活用户 = COUNT(DISTINCT user_id)"
-
-        prompt = service._build_system_prompt(None, semantic_context=semantic_context)
-
-        assert "月活用户" in prompt
-
-    def test_build_system_prompt_with_relationship_context(self, mock_db):
-        """Test system prompt with table relationships"""
-        service = ExecutionService(db=mock_db, language="zh")
-
-        # Create mock relationship context
-        relationship_context = MagicMock(spec=RelationshipContext)
-        relationship_context.relationships = [MagicMock()]
-        relationship_context.to_prompt.return_value = "users.id -> orders.user_id"
-
-        prompt = service._build_system_prompt(None, relationship_context=relationship_context)
-
-        assert "users.id" in prompt
-
-    def test_build_system_prompt_python_instructions(self, mock_db):
-        """Test that Python instructions are in prompt"""
-        service = ExecutionService(db=mock_db, language="zh")
-        prompt = service._build_system_prompt(None)
-
-        # Check Python-related instructions
-        assert "python" in prompt.lower()
-        assert "matplotlib" in prompt.lower() or "plt" in prompt.lower()
-        assert "df" in prompt  # DataFrame reference
+        assert connection is default_connection
+        mock_db.execute.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_get_runtime_snapshot_with_provider_mapping(self, mock_db):
@@ -183,16 +159,6 @@ class TestExecutionService:
         assert snapshot["connection_name"] is None
         assert snapshot["context_rounds"] == 3
 
-    def test_build_system_prompt_without_python(self, mock_db):
-        service = ExecutionService(
-            db=mock_db,
-            language="zh",
-            settings_data={"python_enabled": False},
-        )
-        prompt = service._build_system_prompt(None)
-        assert "Python 分析已关闭" in prompt
-        assert "不要生成 ```python 代码块" in prompt
-
     @pytest.mark.asyncio
     async def test_execute_stream_loads_execution_inputs_with_keyword_args(self, mock_db):
         conversation_id = uuid4()
@@ -200,18 +166,13 @@ class TestExecutionService:
         history_mock = AsyncMock(return_value=[])
         service._get_model_config = AsyncMock(return_value={"model": "gpt-4o"})
         service._get_connection_config = AsyncMock(return_value=None)
-        service._get_semantic_context = AsyncMock(return_value=SemanticContext(terms=[]))
-        service._get_relationship_context = AsyncMock(
-            return_value=RelationshipContext(relationships=[])
-        )
-        service._get_default_prompt = AsyncMock(return_value=None)
         service._get_conversation_history = history_mock
-        service._capabilities = MagicMock(
-            return_value=SystemCapabilities(available_python_libraries=["pandas"])
-        )
-        service._build_system_prompt = MagicMock(return_value="system prompt")
+        health_mock = AsyncMock()
+        service.resolver.record_model_health = health_mock
 
         class FakeEngine:
+            model_request_succeeded = True
+
             async def execute(self, **_: object):
                 yield SSEEvent.result("分析完成")
 
@@ -232,110 +193,106 @@ class TestExecutionService:
         )
         assert len(events) == 1
         assert events[0].type == SSEEventType.RESULT
+        health_mock.assert_awaited_once_with(healthy=True, commit=False)
 
+    @pytest.mark.asyncio
+    async def test_explicit_missing_model_fails_closed_without_environment_fallback(
+        self,
+        db_session: AsyncSession,
+    ):
+        service = ExecutionService(db_session, model_name=str(uuid4()))
 
-class TestSemanticContext:
-    """Test SemanticContext model"""
+        with pytest.raises(ModelSelectionError, match="不存在或已停用"):
+            await service.get_runtime_snapshot()
 
-    def test_empty_context(self):
-        """Test empty semantic context"""
-        context = SemanticContext(terms=[])
-        assert len(context.terms) == 0
-
-    def test_to_prompt_zh(self):
-        """Test Chinese prompt generation"""
-        from datetime import datetime
-
-        from app.models import SemanticTermResponse
-
-        term = SemanticTermResponse(
-            id=uuid4(),
-            term="月活用户",
-            expression="COUNT(DISTINCT user_id)",
-            term_type="metric",
-            description="月度活跃用户数",
-            is_active=True,
-            created_at=datetime.now(),
+    @pytest.mark.asyncio
+    async def test_unreadable_explicit_model_persists_auth_health(
+        self,
+        db_session: AsyncSession,
+    ):
+        model = Model(
+            name="Broken credential",
+            provider="openai",
+            model_id="gpt-4o-mini",
+            api_key_encrypted="not-a-fernet-token",
         )
-        context = SemanticContext(terms=[term])
-        prompt = context.to_prompt("zh")
+        db_session.add(model)
+        await db_session.commit()
+        service = ExecutionService(db_session, model_name=str(model.id))
 
-        assert "月活用户" in prompt
-        assert "COUNT(DISTINCT user_id)" in prompt
+        with pytest.raises(ModelCredentialError):
+            await service.get_runtime_snapshot()
 
-    def test_to_prompt_en(self):
-        """Test English prompt generation"""
-        from datetime import datetime
+        await db_session.refresh(model)
+        assert model.health_status == "unhealthy"
+        assert model.last_error_category == "auth"
+        assert model.last_checked_at is not None
 
-        from app.models import SemanticTermResponse
-
-        term = SemanticTermResponse(
-            id=uuid4(),
-            term="MAU",
-            expression="COUNT(DISTINCT user_id)",
-            term_type="metric",
-            description="Monthly Active Users",
-            is_active=True,
-            created_at=datetime.now(),
+    @pytest.mark.asyncio
+    async def test_runtime_auth_failure_persists_fine_category(
+        self,
+        db_session: AsyncSession,
+    ):
+        model = Model(
+            name="Expiring gateway",
+            provider="openai",
+            model_id="gpt-4o-mini",
+            api_key_encrypted=encryptor.encrypt("saved-key"),
         )
-        context = SemanticContext(terms=[term])
-        prompt = context.to_prompt("en")
+        db_session.add(model)
+        await db_session.commit()
+        service = ExecutionService(db_session, model_name=str(model.id))
+        service._get_conversation_history = AsyncMock(return_value=[])
 
-        assert "MAU" in prompt
+        class AuthFailureEngine:
+            async def execute(self, **_: object):
+                if False:
+                    yield SSEEvent.result("unreachable")
+                raise RuntimeError("Error code: 401 - token status unavailable")
 
+        service._build_engine = MagicMock(return_value=AuthFailureEngine())
+        events = [
+            event
+            async for event in service.execute_stream(
+                query="show revenue",
+                conversation_id=uuid4(),
+            )
+        ]
 
-class TestRelationshipContext:
-    """Test RelationshipContext model"""
+        assert len(events) == 1
+        assert events[0].data["code"] == "MODEL_AUTH_ERROR"
+        assert events[0].data["error_category"] == "auth"
+        await db_session.refresh(model)
+        assert model.health_status == "unhealthy"
+        assert model.last_error_category == "auth"
 
-    def test_empty_context(self):
-        """Test empty relationship context"""
-        context = RelationshipContext(relationships=[])
-        assert len(context.relationships) == 0
+    @pytest.mark.asyncio
+    async def test_runtime_failure_keeps_product_message_and_advanced_diagnostic(self, mock_db):
+        service = ExecutionService(db=mock_db, language="zh")
+        service._get_model_config = AsyncMock(return_value={"model": "gpt-4o"})
+        service._get_connection_config = AsyncMock(return_value=None)
+        service._get_conversation_history = AsyncMock(return_value=[])
 
-    def test_to_prompt_zh(self):
-        """Test Chinese prompt generation"""
-        from datetime import datetime
+        class BrokenEngine:
+            async def execute(self, **_: object):
+                if False:
+                    yield SSEEvent.result("unreachable")
+                raise RuntimeError("dictionary changed size during iteration")
 
-        from app.models import TableRelationshipResponse
+        service._build_engine = MagicMock(return_value=BrokenEngine())
 
-        rel = TableRelationshipResponse(
-            id=uuid4(),
-            connection_id=uuid4(),
-            source_table="users",
-            source_column="id",
-            target_table="orders",
-            target_column="user_id",
-            relationship_type="1:N",
-            join_type="LEFT",
-            is_active=True,
-            created_at=datetime.now(),
+        events = [
+            event
+            async for event in service.execute_stream(
+                query="分析退款异常",
+                conversation_id=uuid4(),
+            )
+        ]
+
+        assert len(events) == 1
+        assert events[0].type == SSEEventType.ERROR
+        assert events[0].data["message"] == "分析执行时遇到内部错误，请重新调查。"
+        assert events[0].data["failed_stage"] == "execution"
+        assert events[0].data["diagnostics"][0]["message"] == (
+            "RuntimeError: dictionary changed size during iteration"
         )
-        context = RelationshipContext(relationships=[rel])
-        prompt = context.to_prompt("zh")
-
-        assert "users" in prompt
-        assert "orders" in prompt
-
-    def test_to_prompt_en(self):
-        """Test English prompt generation"""
-        from datetime import datetime
-
-        from app.models import TableRelationshipResponse
-
-        rel = TableRelationshipResponse(
-            id=uuid4(),
-            connection_id=uuid4(),
-            source_table="products",
-            source_column="id",
-            target_table="order_items",
-            target_column="product_id",
-            relationship_type="1:N",
-            join_type="INNER",
-            is_active=True,
-            created_at=datetime.now(),
-        )
-        context = RelationshipContext(relationships=[rel])
-        prompt = context.to_prompt("en")
-
-        assert "products" in prompt
-        assert "order_items" in prompt

@@ -1,5 +1,6 @@
 """Context resolution helpers for the execution service."""
 
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -8,14 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import encryptor
 from app.core.config import settings
-from app.db.tables import Connection, Message, Model, Prompt, SemanticTerm, TableRelationship
-from app.models import (
-    RelationshipContext,
-    SemanticContext,
-    SemanticTermResponse,
-    TableRelationshipResponse,
+from app.db.tables import Connection, Message, Model
+from app.services.conversation_context import compact_assistant_message_context
+from app.services.model_runtime import (
+    ModelCredentialError,
+    ModelRuntimeConfigurationError,
+    ModelSelectionError,
+    resolve_model_runtime,
 )
-from app.services.model_runtime import resolve_model_runtime
 
 
 class ExecutionContextResolver:
@@ -28,6 +29,7 @@ class ExecutionContextResolver:
         language: str = "zh",
         context_rounds: int = 5,
         settings_data: dict[str, Any] | None = None,
+        allow_default_connection_fallback: bool = True,
     ):
         self.db = db
         self.model_name = model_name
@@ -35,6 +37,7 @@ class ExecutionContextResolver:
         self.language = language
         self.context_rounds = max(context_rounds, 1)
         self.settings_data = settings_data or {}
+        self.allow_default_connection_fallback = allow_default_connection_fallback
         self._resolved_model_record: Model | None = None
         self._resolved_connection_record: Connection | None = None
         self._resolved_model_config: dict[str, Any] | None = None
@@ -59,12 +62,16 @@ class ExecutionContextResolver:
                 )
             except ValueError:
                 result = await self.db.execute(
-                    select(Model).where(
+                    select(Model)
+                    .where(
                         Model.model_id == self.model_name,
                         Model.is_active.is_(True),
                     )
+                    .order_by(Model.updated_at.desc(), Model.created_at.desc())
                 )
-            model = result.scalar_one_or_none()
+            model = result.scalars().first()
+            if model is None:
+                raise ModelSelectionError("选择的分析服务不存在或已停用")
         else:
             settings_data = self.workspace_settings()
             default_model_id = settings_data.get("default_model_id")
@@ -82,34 +89,58 @@ class ExecutionContextResolver:
 
             if model is None:
                 result = await self.db.execute(
-                    select(Model).where(
+                    select(Model)
+                    .where(
                         Model.is_default,
                         Model.is_active.is_(True),
                     )
+                    .order_by(Model.updated_at.desc(), Model.created_at.desc())
                 )
-                model = result.scalar_one_or_none()
+                # is_default is retained as a compatibility fallback for older
+                # workspaces. AppSettings.default_model_id remains canonical.
+                model = result.scalars().first()
 
         self._resolved_model_record = model
         return model
+
+    async def record_model_health(
+        self,
+        *,
+        healthy: bool,
+        error_category: str | None = None,
+        response_time_ms: int | None = None,
+        commit: bool = True,
+    ) -> None:
+        """Persist evidence for the selected stored model, never an env fallback."""
+
+        model = self._resolved_model_record
+        if model is None:
+            return
+        model.health_status = "healthy" if healthy else "unhealthy"
+        model.last_checked_at = datetime.now(UTC)
+        model.last_error_category = None if healthy else (error_category or "unknown")
+        model.last_response_time_ms = response_time_ms if healthy else None
+        if commit:
+            await self.db.commit()
 
     async def get_model_config(self) -> dict[str, Any]:
         if self._resolved_model_config is not None:
             return self._resolved_model_config
 
         model = await self.get_model_record()
-        api_key = None
-        if model and model.api_key_encrypted:
-            try:
-                api_key = encryptor.decrypt(model.api_key_encrypted)
-            except Exception:
-                api_key = None
-
-        resolved, extra_options = resolve_model_runtime(
-            model,
-            fallback_model=settings.DEFAULT_MODEL,
-            fallback_api_key=api_key or settings.OPENAI_API_KEY,
-            fallback_base_url=settings.OPENAI_BASE_URL,
-        )
+        try:
+            resolved, extra_options = resolve_model_runtime(
+                model,
+                fallback_model=settings.DEFAULT_MODEL,
+                fallback_api_key=settings.OPENAI_API_KEY if model is None else None,
+                fallback_base_url=settings.OPENAI_BASE_URL if model is None else None,
+            )
+        except ModelCredentialError:
+            await self.record_model_health(healthy=False, error_category="auth")
+            raise
+        except ModelRuntimeConfigurationError:
+            await self.record_model_health(healthy=False, error_category="model_endpoint")
+            raise
 
         self._resolved_model_config = {
             "provider": resolved.litellm_provider,
@@ -139,7 +170,7 @@ class ExecutionContextResolver:
                 select(Connection).where(Connection.id == self.connection_id)
             )
             connection = result.scalar_one_or_none()
-        else:
+        elif self.allow_default_connection_fallback:
             settings_data = self.workspace_settings()
             default_connection_id = settings_data.get("default_connection_id")
             if default_connection_id:
@@ -180,70 +211,38 @@ class ExecutionContextResolver:
             "user": connection.username,
             "password": password,
             "database": connection.database_name,
+            "extra_options": connection.extra_options or {},
         }
         return self._resolved_connection_config
-
-    async def get_semantic_context(self) -> SemanticContext:
-        connection = await self.get_connection_record()
-        resolved_connection_id = connection.id if connection else None
-        query = select(SemanticTerm).where(SemanticTerm.is_active.is_(True))
-
-        if resolved_connection_id:
-            query = query.where(
-                (SemanticTerm.connection_id.is_(None))
-                | (SemanticTerm.connection_id == resolved_connection_id)
-            )
-        else:
-            query = query.where(SemanticTerm.connection_id.is_(None))
-
-        result = await self.db.execute(query.order_by(SemanticTerm.term))
-        terms = result.scalars().all()
-        return SemanticContext(terms=[SemanticTermResponse.model_validate(t) for t in terms])
-
-    async def get_relationship_context(self, max_relationships: int = 15) -> RelationshipContext:
-        connection = await self.get_connection_record()
-        if not connection:
-            return RelationshipContext(relationships=[])
-
-        result = await self.db.execute(
-            select(TableRelationship)
-            .where(
-                TableRelationship.connection_id == connection.id,
-                TableRelationship.is_active.is_(True),
-            )
-            .limit(max_relationships)
-        )
-        relationships = result.scalars().all()
-        return RelationshipContext(
-            relationships=[TableRelationshipResponse.model_validate(r) for r in relationships]
-        )
-
-    async def get_default_prompt(self) -> str | None:
-        result = await self.db.execute(
-            select(Prompt).where(
-                Prompt.is_default.is_(True),
-                Prompt.is_active.is_(True),
-            )
-        )
-        prompt = result.scalar_one_or_none()
-        return prompt.content if prompt else None
 
     async def get_conversation_history(
         self,
         conversation_id: UUID,
         limit: int = 10,
         exclude_message_id: UUID | None = None,
-    ) -> list[dict[str, str]]:
-        query = select(Message).where(Message.conversation_id == conversation_id)
+    ) -> list[dict[str, Any]]:
+        query = select(Message).where(
+            Message.conversation_id == conversation_id,
+            Message.role.in_(("user", "assistant")),
+            Message.content != "",
+        )
         if exclude_message_id:
             query = query.where(Message.id != exclude_message_id)
         result = await self.db.execute(query.order_by(Message.created_at.desc()).limit(limit))
         messages = result.scalars().all()
 
-        history: list[dict[str, str]] = []
+        history: list[dict[str, Any]] = []
         for msg in reversed(messages):
             if msg.role in ("user", "assistant") and msg.content:
-                history.append({"role": msg.role, "content": msg.content})
+                item: dict[str, Any] = {"role": msg.role, "content": msg.content}
+                if msg.role == "assistant":
+                    extra_data = msg.extra_data or {}
+                    item.update(compact_assistant_message_context(extra_data))
+                    report = extra_data.get("report") or {}
+                    confirmation = report.get("confirmation")
+                    if confirmation:
+                        item["confirmation"] = confirmation
+                history.append(item)
         return history
 
     async def get_runtime_snapshot(self) -> dict[str, Any]:

@@ -2,8 +2,6 @@
 
 from typing import TypedDict
 
-from app.services.model_runtime import categorize_model_error
-
 
 class DiagnosticEntry(TypedDict, total=False):
     attempt: int
@@ -49,21 +47,6 @@ def build_diagnostic_entry(
         "sql": truncate_text(sql),
         "python": truncate_text(python),
     }
-
-
-def categorize_generation_failure(message: str) -> tuple[str, str, bool]:
-    category = categorize_model_error(message)
-    code_map = {
-        "auth": "MODEL_AUTH_ERROR",
-        "timeout": "MODEL_TIMEOUT",
-        "connection": "MODEL_CONNECTION_ERROR",
-        "model_not_found": "MODEL_NOT_FOUND",
-        "rate_limited": "MODEL_RATE_LIMITED",
-        "provider_format": "PROVIDER_FORMAT_ERROR",
-        "unknown": "MODEL_EXECUTION_ERROR",
-    }
-    recoverable = category in {"timeout", "rate_limited"}
-    return code_map.get(category, "MODEL_EXECUTION_ERROR"), category, recoverable
 
 
 def categorize_sql_error(message: str) -> tuple[str, str, bool]:
@@ -114,29 +97,3 @@ def categorize_sql_error(message: str) -> tuple[str, str, bool]:
     ):
         return "SQL_SAFETY_ERROR", "safety", False
     return "SQL_EXECUTION_ERROR", "sql", True
-
-
-def categorize_python_error(message: str) -> tuple[str, str, bool]:
-    normalized = message.lower()
-    if "检测到不安全的操作" in message:
-        return "PYTHON_SECURITY_ERROR", "safety", False
-    if "语法错误" in message or "syntaxerror" in normalized:
-        return "PYTHON_SYNTAX_ERROR", "python", True
-    if "timed out" in normalized or "timeout" in normalized:
-        return "PYTHON_TIMEOUT", "python", True
-    if any(
-        token in normalized
-        for token in (
-            "nameerror",
-            "attributeerror",
-            "typeerror",
-            "valueerror",
-            "keyerror",
-            "indexerror",
-            "modulenotfounderror",
-            "runtimeerror",
-            "执行错误",
-        )
-    ):
-        return "PYTHON_RUNTIME_ERROR", "python", True
-    return "PYTHON_EXECUTION_ERROR", "python", True

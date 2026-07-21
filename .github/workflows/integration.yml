@@ -24,27 +24,27 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: querygpt
-          POSTGRES_PASSWORD: querygpt
-          POSTGRES_DB: querygpt_test
+          POSTGRES_USER: receiptbi
+          POSTGRES_PASSWORD: receiptbi
+          POSTGRES_DB: receiptbi_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U querygpt -d querygpt_test"
+          --health-cmd "pg_isready -U receiptbi -d receiptbi_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_DATABASE: querygpt_test
-          MYSQL_USER: querygpt
-          MYSQL_PASSWORD: querygpt
+          MYSQL_DATABASE: receiptbi_test
+          MYSQL_USER: receiptbi
+          MYSQL_PASSWORD: receiptbi
           MYSQL_ROOT_PASSWORD: root
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uquerygpt -pquerygpt"
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -ureceiptbi -preceiptbi"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=20
@@ -86,17 +86,17 @@ jobs:
       - name: Run integration tests
         working-directory: apps/api
         env:
-          QUERYGPT_TEST_PG_HOST: 127.0.0.1
-          QUERYGPT_TEST_PG_PORT: "5432"
-          QUERYGPT_TEST_PG_USER: querygpt
-          QUERYGPT_TEST_PG_PASSWORD: querygpt
-          QUERYGPT_TEST_PG_DATABASE: querygpt_test
-          QUERYGPT_TEST_MYSQL_HOST: 127.0.0.1
-          QUERYGPT_TEST_MYSQL_PORT: "3306"
-          QUERYGPT_TEST_MYSQL_USER: querygpt
-          QUERYGPT_TEST_MYSQL_PASSWORD: querygpt
-          QUERYGPT_TEST_MYSQL_DATABASE: querygpt_test
-          QUERYGPT_TEST_MODEL_BASE_URL: http://127.0.0.1:4010/v1
+          RECEIPTBI_TEST_PG_HOST: 127.0.0.1
+          RECEIPTBI_TEST_PG_PORT: "5432"
+          RECEIPTBI_TEST_PG_USER: receiptbi
+          RECEIPTBI_TEST_PG_PASSWORD: receiptbi
+          RECEIPTBI_TEST_PG_DATABASE: receiptbi_test
+          RECEIPTBI_TEST_MYSQL_HOST: 127.0.0.1
+          RECEIPTBI_TEST_MYSQL_PORT: "3306"
+          RECEIPTBI_TEST_MYSQL_USER: receiptbi
+          RECEIPTBI_TEST_MYSQL_PASSWORD: receiptbi
+          RECEIPTBI_TEST_MYSQL_DATABASE: receiptbi_test
+          RECEIPTBI_TEST_MODEL_BASE_URL: http://127.0.0.1:4010/v1
           ENCRYPTION_KEY: dGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dGVz
         run: pytest tests/test_config_integration.py -v
 
@@ -200,7 +200,7 @@ jobs:
       - name: Write CI env files
         run: |
           cat > apps/api/.env <<'EOF'
-          DATABASE_URL=sqlite+aiosqlite:///./data/querygpt.db
+          DATABASE_URL=sqlite+aiosqlite:///./data/receiptbi.db
           ENCRYPTION_KEY=dGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dGVz
           EOF
           cat > apps/web/.env.local <<'EOF'
@@ -209,16 +209,16 @@ jobs:
           EOF
 
       - name: Setup workspace
-        run: QUERYGPT_NO_BROWSER=1 ./start.sh setup
+        run: RECEIPTBI_NO_BROWSER=1 ./start.sh setup
 
       - name: Doctor
-        run: QUERYGPT_NO_BROWSER=1 ./start.sh doctor
+        run: RECEIPTBI_NO_BROWSER=1 ./start.sh doctor
 
       - name: Start backend
-        run: QUERYGPT_NO_BROWSER=1 ./start.sh backend
+        run: RECEIPTBI_NO_BROWSER=1 ./start.sh backend
 
       - name: Start frontend
-        run: QUERYGPT_NO_BROWSER=1 ./start.sh frontend
+        run: RECEIPTBI_NO_BROWSER=1 ./start.sh frontend
 
       - name: Wait for services
         run: |

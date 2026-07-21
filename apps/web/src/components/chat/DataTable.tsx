@@ -158,19 +158,30 @@ export function DataTable({ data, title, maxRows = 100 }: DataTableProps) {
                   rowIndex % 2 === 0 ? "bg-background" : "bg-secondary/30"
                 )}
               >
-                {columns.map((col) => (
-                  <td
-                    key={col}
-                    className="px-4 py-2.5 text-muted-foreground whitespace-nowrap max-w-xs truncate"
-                    title={String(row[col] ?? "")}
-                  >
-                    {row[col] === null || row[col] === undefined ? (
-                      <span className="text-muted-foreground/50 italic">NULL</span>
-                    ) : (
-                      String(row[col])
-                    )}
-                  </td>
-                ))}
+                {columns.map((col) => {
+                  const value = row[col];
+                  const isNumber = typeof value === "number";
+                  const negative = isNumber && value < 0;
+                  return (
+                    <td
+                      key={col}
+                      className={cn(
+                        "px-4 py-2.5 whitespace-nowrap max-w-xs truncate",
+                        isNumber && "tabular-nums",
+                        negative
+                          ? "font-medium text-destructive"
+                          : "text-muted-foreground"
+                      )}
+                      title={String(value ?? "")}
+                    >
+                      {value === null || value === undefined ? (
+                        <span className="text-muted-foreground/50 italic">NULL</span>
+                      ) : (
+                        String(value)
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

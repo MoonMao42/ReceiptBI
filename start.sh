@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# QueryGPT 单工作区启动脚本
+# ReceiptBI 本地工作区启动脚本
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,9 +12,9 @@ PYTHON_CORE_FINGERPRINT="$API_DIR/.venv/.core.fingerprint"
 PYTHON_ANALYTICS_FINGERPRINT="$API_DIR/.venv/.analytics.fingerprint"
 PYTHON_DEV_FINGERPRINT="$API_DIR/.venv/.dev.fingerprint"
 NODE_FINGERPRINT="$WEB_DIR/node_modules/.fingerprint"
-BACKEND_HOST="${QUERYGPT_BACKEND_HOST:-127.0.0.1}"
-BACKEND_RELOAD="${QUERYGPT_BACKEND_RELOAD:-0}"
-NO_BROWSER="${QUERYGPT_NO_BROWSER:-0}"
+BACKEND_HOST="${RECEIPTBI_BACKEND_HOST:-127.0.0.1}"
+BACKEND_RELOAD="${RECEIPTBI_BACKEND_RELOAD:-0}"
+NO_BROWSER="${RECEIPTBI_NO_BROWSER:-0}"
 
 mkdir -p "$LOG_DIR"
 cd "$SCRIPT_DIR"

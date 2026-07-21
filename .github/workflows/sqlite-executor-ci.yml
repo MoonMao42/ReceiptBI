@@ -1,0 +1,63 @@
+name: Rust SQLite executor
+
+on:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "crates/sqlite-executor-core/**"
+      - "crates/sqlite-executor-sidecar/**"
+      - "apps/desktop/scripts/build-pyinstaller.ts"
+      - ".github/workflows/sqlite-executor-ci.yml"
+  push:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "crates/sqlite-executor-core/**"
+      - "crates/sqlite-executor-sidecar/**"
+      - "apps/desktop/scripts/build-pyinstaller.ts"
+      - ".github/workflows/sqlite-executor-ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: sqlite-executor-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust · ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS arm64
+            os: macos-15
+            rust_target: aarch64-apple-darwin
+          - label: macOS Intel
+            os: macos-15-intel
+            rust_target: x86_64-apple-darwin
+          - label: Windows x64
+            os: windows-2022
+            rust_target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+          targets: ${{ matrix.rust_target }}
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Lint executor workspace
+        run: cargo clippy --workspace --all-targets --locked --target ${{ matrix.rust_target }} -- -D warnings
+      - name: Run executor tests
+        run: cargo test --workspace --locked --target ${{ matrix.rust_target }}
+      - name: Build sidecar
+        run: cargo build --release --locked --target ${{ matrix.rust_target }} -p receiptbi-sqlite-executor-sidecar

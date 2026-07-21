@@ -1,7 +1,8 @@
 import type { IpcMain } from 'electron';
-import { shell } from 'electron';
+import { app, shell } from 'electron';
 import path from 'node:path';
 import os from 'node:os';
+import type { DesktopAppInfo } from './app-info.js';
 import type { ProcessManager } from './process-manager.js';
 import type { Logger } from './logger.js';
 
@@ -12,6 +13,12 @@ export function registerIpcHandlers(
 ): void {
   ipcMain.handle('get-service-status', () => processManager.getStatus());
   ipcMain.handle('get-user-data-dir', () => processManager.getUserDataDir());
+  ipcMain.handle('get-app-info', (): DesktopAppInfo => ({
+    version: app.getVersion(),
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+  }));
+  ipcMain.on('quit-app', () => app.quit());
 
   ipcMain.handle('open-external', async (_event, url: string) => {
     logger.info(`Opening external URL: ${url}`);

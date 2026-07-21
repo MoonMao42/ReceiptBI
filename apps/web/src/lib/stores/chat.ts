@@ -2,39 +2,234 @@
 
 import { create } from "zustand";
 import { api, createSecureEventStream } from "@/lib/api/client";
-import type { Conversation, SSEEventData } from "@/lib/types/api";
+import type {
+  BusinessConfirmationResponse,
+  Conversation,
+  SSEEventData,
+} from "@/lib/types/api";
 import {
   applyClientError,
   applyStreamErrorEvent,
   applyStreamEvent,
   buildPendingAssistantMessage,
+  finalizeStreamMessage,
+  getInvestigationErrorRecovery,
   mapApiMessage,
   markStoppedMessage,
 } from "@/lib/stores/chat-helpers";
 import type { ChatMessage } from "@/lib/types/chat";
+
+export interface AnalysisSettlement {
+  id: string;
+  streamId: string;
+  projectId: string | null;
+  outcome: "completed" | "failed" | "stopped";
+}
+
+export interface SemanticValidationSelection {
+  entry_id: string;
+  expected_active_revision_id: string;
+}
+
+export const CONVERSATION_CONTINUITY_STORAGE_KEY =
+  "receiptbi-current-conversations";
+
+type ConversationContinuityStorage = Pick<
+  Storage,
+  "getItem" | "setItem" | "removeItem"
+>;
+
+interface StoredConversationContinuity {
+  version: 1;
+  conversations: Record<string, string>;
+}
+
+export function normalizeConversationId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(normalized) &&
+    !["__proto__", "constructor", "prototype"].includes(normalized)
+    ? normalized
+    : null;
+}
+
+function continuityStorage(
+  storage?: ConversationContinuityStorage
+): ConversationContinuityStorage | null {
+  if (storage) return storage;
+  if (typeof window === "undefined") return null;
+  return window.localStorage;
+}
+
+function readConversationContinuity(
+  storage?: ConversationContinuityStorage
+): StoredConversationContinuity {
+  const target = continuityStorage(storage);
+  if (!target) return { version: 1, conversations: {} };
+  try {
+    const raw = target.getItem(CONVERSATION_CONTINUITY_STORAGE_KEY);
+    if (!raw) return { version: 1, conversations: {} };
+    const parsed = JSON.parse(raw) as Partial<StoredConversationContinuity>;
+    if (
+      parsed.version !== 1 ||
+      !parsed.conversations ||
+      typeof parsed.conversations !== "object" ||
+      Array.isArray(parsed.conversations)
+    ) {
+      return { version: 1, conversations: {} };
+    }
+    const conversations = Object.fromEntries(
+      Object.entries(parsed.conversations).flatMap(([projectId, conversationId]) => {
+        const safeProjectId = normalizeConversationId(projectId);
+        const safeConversationId = normalizeConversationId(conversationId);
+        return safeProjectId && safeConversationId
+          ? [[safeProjectId, safeConversationId]]
+          : [];
+      })
+    );
+    return { version: 1, conversations };
+  } catch {
+    return { version: 1, conversations: {} };
+  }
+}
+
+export function storedConversationIdForProject(
+  projectId: string,
+  storage?: ConversationContinuityStorage
+): string | null {
+  const safeProjectId = normalizeConversationId(projectId);
+  if (!safeProjectId) return null;
+  return readConversationContinuity(storage).conversations[safeProjectId] || null;
+}
+
+export function rememberConversationForProject(
+  projectId: string,
+  conversationId: string,
+  storage?: ConversationContinuityStorage
+): void {
+  const safeProjectId = normalizeConversationId(projectId);
+  const safeConversationId = normalizeConversationId(conversationId);
+  const target = continuityStorage(storage);
+  if (!safeProjectId || !safeConversationId || !target) return;
+  const continuity = readConversationContinuity(target);
+  if (continuity.conversations[safeProjectId] === safeConversationId) return;
+  continuity.conversations[safeProjectId] = safeConversationId;
+  try {
+    target.setItem(CONVERSATION_CONTINUITY_STORAGE_KEY, JSON.stringify(continuity));
+  } catch {
+    // Continuity is a convenience. Blocked storage must not block an investigation.
+  }
+}
+
+export function forgetConversationForProject(
+  projectId: string,
+  storage?: ConversationContinuityStorage
+): void {
+  const safeProjectId = normalizeConversationId(projectId);
+  const target = continuityStorage(storage);
+  if (!safeProjectId || !target) return;
+  const continuity = readConversationContinuity(target);
+  if (!Object.prototype.hasOwnProperty.call(continuity.conversations, safeProjectId)) {
+    return;
+  }
+  delete continuity.conversations[safeProjectId];
+  try {
+    if (Object.keys(continuity.conversations).length) {
+      target.setItem(CONVERSATION_CONTINUITY_STORAGE_KEY, JSON.stringify(continuity));
+    } else {
+      target.removeItem(CONVERSATION_CONTINUITY_STORAGE_KEY);
+    }
+  } catch {
+    // A failed cleanup is safer than preventing the user from starting over.
+  }
+}
 
 interface ChatState {
   messages: ChatMessage[];
   currentConversationId: string | null;
   currentConversationMeta: Conversation | null;
   isLoading: boolean;
+  isConversationLoading: boolean;
+  conversationLoadError: string | null;
   abortController: AbortController | null;
+  activeStreamId: string | null;
   lastConnectionId: string | null;
   lastModelId: string | null;
   lastContextRounds: number | null;
+  lastProjectId: string | null;
+  lastLanguage: string | null;
+  pendingAnalysisSettlements: AnalysisSettlement[];
   sendMessage: (
     query: string,
     connectionId?: string | null,
     modelId?: string | null,
     contextRounds?: number | null,
+    language?: string,
+    projectId?: string | null,
+    resumeRunId?: string | null,
+    originalQueryOverride?: string | null,
+    conversationIdOverride?: string | null,
+    correctionId?: string | null,
+    semanticValidationSelection?: readonly SemanticValidationSelection[] | null
+  ) => Promise<void>;
+  resumePreparedRun: (
+    prepared: {
+      query: string;
+      projectId: string;
+      runId: string;
+      conversationId: string;
+    },
+    modelId?: string | null,
+    contextRounds?: number | null,
+    language?: string
+  ) => Promise<void>;
+  confirmBusinessDefinition: (
+    analysisRunId: string,
+    key: string,
+    selectedOption: string,
     language?: string
   ) => Promise<void>;
   stopGeneration: () => void;
-  setCurrentConversation: (id: string) => void;
-  clearConversation: () => void;
-  loadConversation: (id: string) => Promise<void>;
-  retryMessage: (messageIndex: number) => Promise<void>;
-  rerunMessage: (messageIndex: number) => Promise<void>;
+  setCurrentConversation: (id: string, expectedProjectId?: string | null) => void;
+  clearConversation: (options?: {
+    forget?: boolean;
+    projectId?: string | null;
+  }) => void;
+  loadConversation: (id: string, expectedProjectId?: string | null) => Promise<void>;
+  retryMessage: (messageIndex: number, language?: string) => Promise<void>;
+  retryMessageWithModel: (
+    messageIndex: number,
+    modelId: string,
+    language?: string
+  ) => Promise<void>;
+  rerunMessage: (messageIndex: number, language?: string) => Promise<void>;
+  acknowledgeAnalysisSettlement: (id: string) => void;
+}
+
+function settleActiveStream(
+  state: ChatState,
+  streamId: string,
+  messages: ChatMessage[],
+  projectId: string | null,
+  outcome: AnalysisSettlement["outcome"]
+): Partial<ChatState> {
+  if (state.activeStreamId !== streamId) return { messages };
+  const messageProjectId = messages.find((message) => message.streamId === streamId)?.projectId;
+  return {
+    messages,
+    isLoading: false,
+    abortController: null,
+    activeStreamId: null,
+    pendingAnalysisSettlements: [
+      ...state.pendingAnalysisSettlements,
+      {
+        id: streamId,
+        streamId,
+        projectId: messageProjectId || projectId || state.lastProjectId,
+        outcome,
+      },
+    ],
+  };
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -42,42 +237,76 @@ export const useChatStore = create<ChatState>((set, get) => ({
   currentConversationId: null,
   currentConversationMeta: null,
   isLoading: false,
+  isConversationLoading: false,
+  conversationLoadError: null,
   abortController: null,
+  activeStreamId: null,
   lastConnectionId: null,
   lastModelId: null,
   lastContextRounds: null,
+  lastProjectId: null,
+  lastLanguage: null,
+  pendingAnalysisSettlements: [],
 
   sendMessage: async (
     query: string,
     connectionId?: string | null,
     modelId?: string | null,
     contextRounds?: number | null,
-    language?: string
+    language?: string,
+    projectId?: string | null,
+    resumeRunId?: string | null,
+    originalQueryOverride?: string | null,
+    conversationIdOverride?: string | null,
+    correctionId?: string | null,
+    semanticValidationSelection?: readonly SemanticValidationSelection[] | null
   ) => {
-    if (connectionId) set({ lastConnectionId: connectionId });
+    if (get().isLoading || get().activeStreamId) {
+      throw new Error("已有一项调查正在进行，请完成或停止后再开始新的调查");
+    }
+
+    if (connectionId !== undefined) set({ lastConnectionId: connectionId });
     if (modelId) set({ lastModelId: modelId });
     if (typeof contextRounds === "number") set({ lastContextRounds: contextRounds });
+    if (projectId) set({ lastProjectId: projectId });
+    if (language) set({ lastLanguage: language });
 
-    const { currentConversationId } = get();
+    const currentConversationId = conversationIdOverride ?? get().currentConversationId;
+    if (conversationIdOverride) {
+      set({ currentConversationId: conversationIdOverride });
+    }
     const pendingContext = {
       connection_id: connectionId || undefined,
       model_id: modelId || undefined,
       context_rounds: contextRounds || undefined,
+      project_id: projectId || undefined,
     };
+
+    const streamId = `stream-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const originalQuery = originalQueryOverride || query;
+    const preservedValidationSelection = semanticValidationSelection?.map((item) => ({
+      entry_id: item.entry_id,
+      expected_active_revision_id: item.expected_active_revision_id,
+    }));
 
     set((state) => ({
       messages: [
         ...state.messages,
         { role: "user", content: query },
-        buildPendingAssistantMessage(pendingContext),
+        {
+          ...buildPendingAssistantMessage(pendingContext, streamId, resumeRunId),
+          originalQuery,
+          semanticValidationSelection: preservedValidationSelection,
+        },
       ],
       isLoading: true,
+      activeStreamId: streamId,
     }));
 
     try {
       const params: Record<string, string> = {
         query,
-        language: language || "en",
+        language: language || get().lastLanguage || "zh",
       };
 
       if (currentConversationId) params.conversation_id = currentConversationId;
@@ -85,6 +314,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (modelId) params.model = modelId;
       if (typeof contextRounds === "number") {
         params.context_rounds = String(contextRounds);
+      }
+      if (projectId) params.project_id = projectId;
+      if (resumeRunId) params.resume_run_id = resumeRunId;
+      if (correctionId) params.correction_id = correctionId;
+      if (preservedValidationSelection?.length) {
+        Object.assign(params, {
+          semantic_validation_selection: preservedValidationSelection,
+        });
       }
 
       const controller = new AbortController();
@@ -98,93 +335,322 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const payload = event;
 
         const conversationId = getConversationId(payload);
-        if (conversationId) {
+        if (conversationId && get().activeStreamId === streamId) {
           set({ currentConversationId: conversationId });
+          const conversationProjectId = projectId || get().lastProjectId;
+          if (conversationProjectId) {
+            rememberConversationForProject(conversationProjectId, conversationId);
+          }
         }
 
         if (payload.type === "error") {
-          set((state) => ({
-            messages: applyStreamErrorEvent(state.messages, payload, query),
-            isLoading: false,
-            abortController: null,
-          }));
+          set((state) => {
+            const messages = applyStreamErrorEvent(
+              state.messages,
+              payload,
+              originalQuery,
+              streamId
+            );
+            return settleActiveStream(
+              state,
+              streamId,
+              messages,
+              projectId || null,
+              payload.data.code === "CANCELLED" ? "stopped" : "failed"
+            );
+          });
           return;
         }
 
         if (payload.type === "done") {
-          set({ isLoading: false, abortController: null });
+          set((state) =>
+            settleActiveStream(
+              state,
+              streamId,
+              finalizeStreamMessage(state.messages, streamId),
+              projectId || null,
+              "completed"
+            )
+          );
           return;
         }
 
         set((state) => ({
-          messages: applyStreamEvent(state.messages, payload),
+          messages: applyStreamEvent(state.messages, payload, streamId),
         }));
       }
 
-      set({ isLoading: false, abortController: null });
+      throw new Error("分析连接意外中断，未收到完成状态，请重试。");
     } catch (error: unknown) {
       if (error instanceof DOMException && error.name === "AbortError") {
+        set((state) =>
+          settleActiveStream(
+            state,
+            streamId,
+            finalizeStreamMessage(state.messages, streamId),
+            projectId || null,
+            "stopped"
+          )
+        );
         return;
       }
 
-      set((state) => ({
-        messages: applyClientError(state.messages, query, error),
-        isLoading: false,
-        abortController: null,
-      }));
+      set((state) =>
+        settleActiveStream(
+          state,
+          streamId,
+          applyClientError(state.messages, originalQuery, error, streamId),
+          projectId || null,
+          "failed"
+        )
+      );
     }
+  },
+
+  resumePreparedRun: async (prepared, modelId, contextRounds, language) => {
+    if (get().isLoading || get().activeStreamId) {
+      throw new Error("已有一项调查正在进行，请完成或停止后再检查变化");
+    }
+    set({
+      messages: [],
+      currentConversationId: prepared.conversationId,
+      currentConversationMeta: null,
+      lastProjectId: prepared.projectId,
+    });
+    rememberConversationForProject(prepared.projectId, prepared.conversationId);
+    await get().sendMessage(
+      prepared.query,
+      null,
+      modelId,
+      contextRounds,
+      language,
+      prepared.projectId,
+      prepared.runId,
+      prepared.query,
+      prepared.conversationId
+    );
+  },
+
+  confirmBusinessDefinition: async (
+    analysisRunId: string,
+    key: string,
+    selectedOption: string,
+    language?: string
+  ) => {
+    const origin = get();
+    const originConversationId = origin.currentConversationId;
+    const originProjectId =
+      origin.messages.find((message) => message.analysisRunId === analysisRunId)?.projectId ||
+      origin.lastProjectId;
+    const response = await api.post("/api/v1/chat/confirm", {
+      analysis_run_id: analysisRunId,
+      key,
+      selected_option: selectedOption,
+    });
+    const confirmation = response.data.data as BusinessConfirmationResponse;
+    const live = get();
+    if (
+      !originConversationId ||
+      live.currentConversationId !== originConversationId ||
+      (originProjectId && live.lastProjectId && live.lastProjectId !== originProjectId)
+    ) {
+      throw new Error("确认已经保存；你已切换到其他调查，请回到原调查后继续");
+    }
+    const state = get();
+    const originalQuery = state.messages.find(
+      (message) => message.analysisRunId === analysisRunId
+    )?.originalQuery;
+    set((current) => ({
+      messages: current.messages.map((message) =>
+        message.analysisRunId === analysisRunId
+          ? { ...message, confirmationResolved: selectedOption }
+          : message
+      ),
+    }));
+
+    if (state.currentConversationId !== confirmation.conversation_id) {
+      set({ currentConversationId: confirmation.conversation_id });
+    }
+    rememberConversationForProject(
+      confirmation.project_id,
+      confirmation.conversation_id
+    );
+    await get().sendMessage(
+      selectedOption,
+      state.lastConnectionId,
+      state.lastModelId,
+      state.lastContextRounds,
+      language,
+      confirmation.project_id,
+      confirmation.resume_run_id,
+      originalQuery
+    );
   },
 
   stopGeneration: () => {
-    const { abortController, currentConversationId } = get();
+    const { abortController, currentConversationId, activeStreamId } = get();
 
-    if (abortController) abortController.abort();
     if (currentConversationId) {
-      api.post("/api/v1/chat/stop", { conversation_id: currentConversationId });
+      void api.post("/api/v1/chat/stop", { conversation_id: currentConversationId });
+      if (abortController) {
+        window.setTimeout(() => abortController.abort(), 3_000);
+      }
+    } else if (abortController) {
+      abortController.abort();
     }
 
-    set((state) => ({
-      messages: markStoppedMessage(state.messages),
+    if (!activeStreamId) return;
+    set((state) =>
+      settleActiveStream(
+        state,
+        activeStreamId,
+        markStoppedMessage(state.messages, activeStreamId),
+        state.lastProjectId,
+        "stopped"
+      )
+    );
+  },
+
+  setCurrentConversation: (id: string, expectedProjectId?: string | null) => {
+    const safeConversationId = normalizeConversationId(id);
+    if (!safeConversationId) {
+      set({ conversationLoadError: "这份调查记录的标识无效，已停止恢复。" });
+      return;
+    }
+    const { abortController, currentConversationId, isLoading, activeStreamId } = get();
+    if (isLoading || activeStreamId) {
+      return;
+    }
+    if (abortController) {
+      if (currentConversationId) {
+        void api.post("/api/v1/chat/stop", { conversation_id: currentConversationId });
+      }
+      abortController.abort();
+    }
+    set({
+      currentConversationId: safeConversationId,
+      currentConversationMeta: null,
+      messages: [],
       isLoading: false,
+      isConversationLoading: true,
+      conversationLoadError: null,
       abortController: null,
-    }));
+      activeStreamId: null,
+      ...(expectedProjectId ? { lastProjectId: expectedProjectId } : {}),
+    });
+    void get().loadConversation(safeConversationId, expectedProjectId);
   },
 
-  setCurrentConversation: (id: string) => {
-    set({ currentConversationId: id });
-    void get().loadConversation(id);
-  },
-
-  clearConversation: () => {
+  clearConversation: (options) => {
+    const {
+      abortController,
+      currentConversationId,
+      currentConversationMeta,
+      lastProjectId,
+    } = get();
+    if (abortController) {
+      if (currentConversationId) {
+        void api.post("/api/v1/chat/stop", { conversation_id: currentConversationId });
+      }
+      abortController.abort();
+    }
     set({
       messages: [],
       currentConversationId: null,
       currentConversationMeta: null,
+      isLoading: false,
+      isConversationLoading: false,
+      conversationLoadError: null,
+      abortController: null,
+      activeStreamId: null,
     });
+    if (options?.forget !== false) {
+      const projectId =
+        options?.projectId || currentConversationMeta?.project_id || lastProjectId;
+      if (projectId) forgetConversationForProject(projectId);
+    }
   },
 
-  loadConversation: async (id: string) => {
+  loadConversation: async (id: string, expectedProjectId?: string | null) => {
+    if (get().currentConversationId !== id) return;
+    set({ isConversationLoading: true, conversationLoadError: null });
     try {
-      const response = await api.get(`/api/v1/conversations/${id}`);
+      const response = await api.get(`/api/v1/conversations/${encodeURIComponent(id)}`);
       const conversation = response.data.data as Conversation;
+      if (get().currentConversationId !== id) return;
+      if (
+        normalizeConversationId(conversation.id) !== normalizeConversationId(id) ||
+        (expectedProjectId &&
+          conversation.project_id &&
+          conversation.project_id !== expectedProjectId)
+      ) {
+        if (
+          expectedProjectId &&
+          storedConversationIdForProject(expectedProjectId) === id
+        ) {
+          forgetConversationForProject(expectedProjectId);
+        }
+        set({
+          messages: [],
+          currentConversationId: null,
+          currentConversationMeta: null,
+          isConversationLoading: false,
+          conversationLoadError: "这份调查记录不属于当前项目，已停止恢复。",
+        });
+        return;
+      }
+      const confirmationSelections = new Map(
+        conversation.messages
+          .filter(
+            (message) =>
+              message.metadata?.kind === "business_confirmation" &&
+              message.metadata.analysis_run_id &&
+              message.metadata.selected_option
+          )
+          .map((message) => [
+            message.metadata!.analysis_run_id!,
+            message.metadata!.selected_option!,
+          ])
+      );
+      const restoredMessages = conversation.messages.map(mapApiMessage).map((message) => ({
+        ...message,
+        confirmationResolved: message.analysisRunId
+          ? confirmationSelections.get(message.analysisRunId)
+          : undefined,
+      }));
 
       set({
-        messages: conversation.messages.map(mapApiMessage),
+        messages: restoredMessages,
         currentConversationId: id,
         currentConversationMeta: conversation,
         lastModelId: conversation.model_id || null,
         lastConnectionId: conversation.connection_id || null,
         lastContextRounds: conversation.context_rounds || null,
+        lastProjectId: conversation.project_id || expectedProjectId || null,
+        isConversationLoading: false,
+        conversationLoadError: null,
       });
+      const conversationProjectId = conversation.project_id || expectedProjectId;
+      if (conversationProjectId) {
+        rememberConversationForProject(conversationProjectId, id);
+      }
     } catch (error) {
       console.error("Failed to load conversation", error);
+      if (get().currentConversationId !== id) return;
+      set({
+        isConversationLoading: false,
+        conversationLoadError: "这份调查记录暂时无法打开，请稍后重试。",
+      });
     }
   },
 
-  retryMessage: async (messageIndex: number) => {
+  retryMessage: async (messageIndex: number, language?: string) => {
     const { messages } = get();
     const errorMsg = messages[messageIndex];
-    if (!errorMsg?.canRetry || !errorMsg.originalQuery) {
+    const canContinueAfterData =
+      errorMsg?.report?.status === "needs_data" &&
+      Boolean(errorMsg.analysisRunId && errorMsg.resumable);
+    if ((!errorMsg?.canRetry && !canContinueAfterData) || !errorMsg.originalQuery) {
       console.error("Cannot retry this message");
       return;
     }
@@ -201,11 +667,69 @@ export const useChatStore = create<ChatState>((set, get) => ({
       errorMsg.originalQuery,
       executionContext?.connection_id || get().lastConnectionId,
       executionContext?.model_id || get().lastModelId,
-      executionContext?.context_rounds || get().lastContextRounds
+      executionContext?.context_rounds || get().lastContextRounds,
+      language || get().lastLanguage || undefined,
+      errorMsg.projectId || get().lastProjectId,
+      errorMsg.resumable ? errorMsg.analysisRunId : undefined,
+      null,
+      null,
+      null,
+      errorMsg.semanticValidationSelection
     );
   },
 
-  rerunMessage: async (messageIndex: number) => {
+  retryMessageWithModel: async (
+    messageIndex: number,
+    modelId: string,
+    language?: string
+  ) => {
+    const { messages } = get();
+    const errorMsg = messages[messageIndex];
+    const recovery = getInvestigationErrorRecovery(
+      errorMsg?.errorCode,
+      errorMsg?.errorCategory
+    );
+    if (
+      recovery !== "change_analysis_service" ||
+      !errorMsg?.originalQuery ||
+      !modelId
+    ) {
+      console.error("Cannot change analysis service for this message");
+      return;
+    }
+
+    const executionContext = errorMsg.executionContext;
+    const connectionId = executionContext?.connection_id || get().lastConnectionId;
+    const contextRounds = executionContext?.context_rounds || get().lastContextRounds;
+    const projectId = errorMsg.projectId || get().lastProjectId;
+    // A conversation is execution provenance and keeps its original model.
+    // An explicit service change therefore starts a new investigation while
+    // carrying the user's original question and project context forward.
+    set({
+      messages: [],
+      currentConversationId: null,
+      currentConversationMeta: null,
+      isConversationLoading: false,
+      conversationLoadError: null,
+    });
+    if (projectId) forgetConversationForProject(projectId);
+
+    await get().sendMessage(
+      errorMsg.originalQuery,
+      connectionId,
+      modelId,
+      contextRounds,
+      language || get().lastLanguage || undefined,
+      projectId,
+      null,
+      null,
+      null,
+      null,
+      errorMsg.semanticValidationSelection
+    );
+  },
+
+  rerunMessage: async (messageIndex: number, language?: string) => {
     const { messages, lastConnectionId, lastModelId, lastContextRounds } = get();
     const message = messages[messageIndex];
     const previousUserMessage = messages[messageIndex - 1];
@@ -222,8 +746,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
       query,
       message.executionContext?.connection_id || lastConnectionId,
       message.executionContext?.model_id || lastModelId,
-      message.executionContext?.context_rounds || lastContextRounds
+      message.executionContext?.context_rounds || lastContextRounds,
+      language || get().lastLanguage || undefined,
+      message.projectId || get().lastProjectId,
+      null,
+      null,
+      null,
+      null,
+      message.hasError ? message.semanticValidationSelection : undefined
     );
+  },
+
+  acknowledgeAnalysisSettlement: (id: string) => {
+    set((state) => ({
+      pendingAnalysisSettlements: state.pendingAnalysisSettlements.filter(
+        (settlement) => settlement.id !== id
+      ),
+    }));
   },
 }));
 
@@ -232,7 +771,7 @@ function getConversationId(payload: SSEEventData): string | null {
     "conversation_id" in payload.data &&
     typeof payload.data.conversation_id === "string"
   ) {
-    return payload.data.conversation_id;
+    return normalizeConversationId(payload.data.conversation_id);
   }
   return null;
 }

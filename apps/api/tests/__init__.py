@@ -1,1 +1,1 @@
-"""QueryGPT API Tests"""
+"""ReceiptBI API tests."""

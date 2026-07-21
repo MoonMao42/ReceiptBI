@@ -1,14 +1,14 @@
 [project]
-name = "querygpt-v2"
-version = "2.0.0"
-description = "Natural language database query assistant"
+name = "receiptbi"
+version = "1.0.0"
+description = "ReceiptBI local-first personal data analysis workspace"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
-    {name = "QueryGPT Team"}
+    {name = "ReceiptBI Team"}
 ]
-keywords = ["ai", "database", "sql", "llm", "natural-language"]
+keywords = ["ai", "analytics", "business-intelligence", "local-first", "llm"]
 
 [tool.uv]
 dev-dependencies = [

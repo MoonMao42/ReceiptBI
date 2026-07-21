@@ -1,0 +1,31 @@
+{
+  "contract": "trusted-query-expected@1",
+  "canonicalization": "sorted-json@1",
+  "hashes": {
+    "manifestRevision": "sha256:b78f2cc3e7954873e567d398b94e6a6ddb7fb941a184114ef8968ea19def59ac",
+    "policyRevision": "sha256:f42738478003b96c7a484bfe5bca8dca70aa43ec288eb76d011335035a258881",
+    "semanticQueryHash": "sha256:59f9fb51a50a5a09d4d59b0e5aa14c8688f55a515b6d216e71cd7c64d36805f4",
+    "planHash": "sha256:9749bcec7e462fe3cb6bc181a36267fea7a5c38040d09588b5e490d926444b89",
+    "sourceRevision": "sha256:51648b2be4ecc163a2c0a5981f927b346c85f158ef3842e004511f98d7b0ade1"
+  },
+  "compiledOutputSchema": [
+    {
+      "name": "row_count",
+      "logicalType": "integer",
+      "nullable": false
+    }
+  ],
+  "publicOutputColumns": [
+    {
+      "id": "row_count",
+      "label": "记录数",
+      "semanticMember": "fixture_rows.row_count",
+      "logicalType": "integer",
+      "nullable": false,
+      "unit": {
+        "kind": "count"
+      }
+    }
+  ],
+  "fixtureRowCount": "3"
+}

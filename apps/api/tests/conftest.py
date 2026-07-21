@@ -2,7 +2,6 @@
 
 import asyncio
 from collections.abc import AsyncGenerator, Generator
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,7 +11,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db import get_db
-from app.db import metadata as metadata_db
 from app.db.tables import Base
 from app.main import app, limiter
 
@@ -23,17 +21,6 @@ TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 def reset_rate_limiter() -> Generator[None, None, None]:
     limiter._storage.reset()
     yield
-
-
-@pytest.fixture(autouse=True)
-def isolate_metadata_db(tmp_path: Path) -> Generator[None, None, None]:
-    original_path = metadata_db.METADATA_DB_PATH
-    metadata_db.METADATA_DB_PATH = tmp_path / "metadata.db"
-    metadata_db.init_metadata_db()
-    try:
-        yield
-    finally:
-        metadata_db.METADATA_DB_PATH = original_path
 
 
 @pytest.fixture(scope="session")

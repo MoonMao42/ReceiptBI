@@ -1,7 +1,7 @@
 show_status_banner() {
   echo
   echo "=========================================="
-  echo "  QueryGPT 启动完成"
+  echo "  ReceiptBI 启动完成"
   echo "=========================================="
   echo "  前端:  http://localhost:3000"
   echo "  后端:  http://localhost:8000"
@@ -54,8 +54,8 @@ print_service_status() {
   fi
 
   case "$listener_owner" in
-    querygpt)
-      echo "  监听端口: $port -> PID ${listener_pid:-unknown} (querygpt)"
+    receiptbi)
+      echo "  监听端口: $port -> PID ${listener_pid:-unknown} (receiptbi)"
       ;;
     external)
       echo "  监听端口: $port -> PID ${listener_pid:-unknown} (external)"
@@ -111,7 +111,7 @@ PY
 
 show_help() {
   cat <<HELP
-QueryGPT 单工作区启动脚本
+ReceiptBI 本地工作区启动脚本
 
 用法:
   ./start.sh                 快启动，按依赖指纹跳过重复安装
@@ -130,8 +130,8 @@ QueryGPT 单工作区启动脚本
   ./start.sh db              启动 PostgreSQL 容器（可选）
 
 环境变量:
-  QUERYGPT_BACKEND_HOST=0.0.0.0
-  QUERYGPT_BACKEND_RELOAD=1
-  QUERYGPT_NO_BROWSER=1
+  RECEIPTBI_BACKEND_HOST=0.0.0.0
+  RECEIPTBI_BACKEND_RELOAD=1
+  RECEIPTBI_NO_BROWSER=1
 HELP
 }

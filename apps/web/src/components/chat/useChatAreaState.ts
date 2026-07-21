@@ -1,113 +1,160 @@
 import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import type { AppSettings, ConnectionSummary, ModelSummary } from "@/lib/types/api";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api/client";
+import type { AppSettings, ModelSummary } from "@/lib/types/api";
+import { getAnalysisServicePresentation } from "./AnalysisServiceSelector";
 
-const STORAGE_KEY_CONNECTION = "querygpt-selected-connection";
-const STORAGE_KEY_MODEL = "querygpt-selected-model";
+export interface ChatAreaModelSelectionOptions {
+  /** The model recorded by an existing conversation or analysis run. */
+  lockedModelId?: string | null;
+  /** Prevents a running or existing investigation from silently changing model. */
+  selectionLocked?: boolean;
+}
 
 export function useChatAreaState(
-  connections: ConnectionSummary[] | undefined,
   models: ModelSummary[] | undefined,
   appSettings: AppSettings | undefined,
-  isLoading: boolean
+  isLoading: boolean,
+  options: ChatAreaModelSelectionOptions = {}
 ) {
   const queryClient = useQueryClient();
-  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
-  const [isInitialized, setIsInitialized] = useState(false);
-  const [showConnectionDropdown, setShowConnectionDropdown] = useState(false);
-  const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [modelSelectionError, setModelSelectionError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const prevIsLoadingRef = useRef(false);
+  const pendingDefaultModelRef = useRef<string | null>(null);
 
-  // Initialize from localStorage
-  useEffect(() => {
-    const savedConnection = localStorage.getItem(STORAGE_KEY_CONNECTION);
-    const savedModel = localStorage.getItem(STORAGE_KEY_MODEL);
-    if (savedConnection) setSelectedConnectionId(savedConnection);
-    if (savedModel) setSelectedModelId(savedModel);
-    setIsInitialized(true);
-  }, []);
-
-  // Refresh conversations when loading completes
+  // Refresh investigation indexes when loading completes.
   useEffect(() => {
     if (prevIsLoadingRef.current && !isLoading) {
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["analysis-runs"] });
+      queryClient.invalidateQueries({ queryKey: ["standing-analyses"] });
+      queryClient.invalidateQueries({ queryKey: ["artifacts"] });
     }
     prevIsLoadingRef.current = isLoading;
   }, [isLoading, queryClient]);
 
-  // Auto-select connection if needed
+  const updateDefaultModel = useMutation<
+    AppSettings,
+    unknown,
+    string,
+    { previousSettings?: AppSettings; previousModelId: string | null }
+  >({
+    mutationFn: async (modelId) => {
+      if (!appSettings) throw new Error("分析服务设置尚未加载");
+      const response = await api.put("/api/v1/settings", {
+        ...appSettings,
+        default_model_id: modelId,
+      });
+      return response.data.data as AppSettings;
+    },
+    onMutate: async (modelId) => {
+      setModelSelectionError(null);
+      pendingDefaultModelRef.current = modelId;
+      await queryClient.cancelQueries({ queryKey: ["app-settings"] });
+      const previousSettings = queryClient.getQueryData<AppSettings>(["app-settings"]);
+      const previousModelId = selectedModelId;
+      setSelectedModelId(modelId);
+      if (appSettings) {
+        queryClient.setQueryData<AppSettings>(["app-settings"], {
+          ...appSettings,
+          default_model_id: modelId,
+        });
+      }
+      return { previousSettings, previousModelId };
+    },
+    onSuccess: (settings) => {
+      queryClient.setQueryData(["app-settings"], settings);
+      setSelectedModelId(settings.default_model_id || null);
+    },
+    onError: (_error, _modelId, context) => {
+      pendingDefaultModelRef.current = null;
+      if (context?.previousSettings) {
+        queryClient.setQueryData(["app-settings"], context.previousSettings);
+      }
+      setSelectedModelId(context?.previousModelId || null);
+      setModelSelectionError("未能保存分析服务，请重试。");
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["app-settings"] });
+    },
+  });
+
+  // The backend default is the only durable choice for a new investigation.
+  // Existing investigations use their recorded model and never consult browser storage.
   useEffect(() => {
-    if (!isInitialized || !connections?.length) return;
-    const savedExists = selectedConnectionId && connections.some((item) => item.id === selectedConnectionId);
-    if (!savedExists) {
-      const preferredId = appSettings?.default_connection_id;
-      const nextId =
-        connections.find((item) => item.id === preferredId)?.id ||
-        connections.find((item) => item.is_default)?.id ||
-        connections[0].id;
-      handleSelectConnection(nextId);
+    const activeModels = (models || []).filter((model) => model.is_active !== false);
+    if (!activeModels.length) {
+      setSelectedModelId(null);
+      return;
     }
-  }, [appSettings?.default_connection_id, connections, isInitialized, selectedConnectionId]);
 
-  // Auto-select model if needed
-  useEffect(() => {
-    if (!isInitialized || !models?.length) return;
-    const savedExists = selectedModelId && models.some((item) => item.id === selectedModelId);
-    if (!savedExists) {
-      const preferredId = appSettings?.default_model_id;
-      const nextId =
-        models.find((item) => item.id === preferredId)?.id ||
-        models.find((item) => item.is_default)?.id ||
-        models[0].id;
-      handleSelectModel(nextId);
+    if (options.selectionLocked) {
+      const lockedModel = activeModels.find((model) => model.id === options.lockedModelId);
+      if (lockedModel) setSelectedModelId(lockedModel.id);
+      return;
     }
-  }, [appSettings?.default_model_id, isInitialized, models, selectedModelId]);
 
-  // Close dropdowns on click outside
-  useEffect(() => {
-    const handleClickOutside = () => {
-      setShowConnectionDropdown(false);
-      setShowModelDropdown(false);
-    };
+    if (updateDefaultModel.isPending) return;
+    const pendingDefaultModelId = pendingDefaultModelRef.current;
+    if (pendingDefaultModelId) {
+      const pendingModel = activeModels.find(
+        (model) => model.id === pendingDefaultModelId
+      );
+      if (pendingModel) {
+        setSelectedModelId(pendingModel.id);
+        if (appSettings?.default_model_id === pendingDefaultModelId) {
+          pendingDefaultModelRef.current = null;
+        }
+        return;
+      }
+      pendingDefaultModelRef.current = null;
+    }
+    const preferredId = appSettings?.default_model_id;
+    const nextId =
+      activeModels.find((model) => model.id === preferredId)?.id ||
+      activeModels.find((model) => model.is_default)?.id ||
+      null;
+    setSelectedModelId(nextId);
+  }, [
+    appSettings?.default_model_id,
+    models,
+    options.lockedModelId,
+    options.selectionLocked,
+    updateDefaultModel.isPending,
+  ]);
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const handleSelectConnection = (id: string) => {
-    setSelectedConnectionId(id);
-    localStorage.setItem(STORAGE_KEY_CONNECTION, id);
+  const selectModel = (modelId: string) => {
+    if (options.selectionLocked || updateDefaultModel.isPending) return;
+    const model = models?.find(
+      (candidate) => candidate.id === modelId && candidate.is_active !== false
+    );
+    if (!model || !getAnalysisServicePresentation(model).selectable) return;
+    updateDefaultModel.mutate(modelId);
   };
 
-  const handleSelectModel = (id: string) => {
-    setSelectedModelId(id);
-    localStorage.setItem(STORAGE_KEY_MODEL, id);
-  };
-
-  const selectedConnection = connections?.find((item) => item.id === selectedConnectionId);
   const selectedModel = models?.find((item) => item.id === selectedModelId);
-  const readyToQuery = Boolean(selectedConnection && selectedModel);
+  const selectedModelPresentation = selectedModel
+    ? getAnalysisServicePresentation(selectedModel)
+    : null;
   const modelReady = Boolean(
     selectedModel &&
-      (selectedModel.api_key_configured || selectedModel.extra_options?.api_key_optional)
+      selectedModel.is_active !== false &&
+      selectedModelPresentation?.selectable
   );
 
   return {
-    selectedConnectionId,
     selectedModelId,
-    showConnectionDropdown,
-    showModelDropdown,
     input,
-    selectedConnection,
     selectedModel,
-    readyToQuery,
+    selectedModelPresentation,
     modelReady,
-    handleSelectConnection,
-    handleSelectModel,
-    setShowConnectionDropdown,
-    setShowModelDropdown,
     setInput,
+    selectModel,
+    modelSelectionLocked: Boolean(options.selectionLocked),
+    modelSelectionSaving: updateDefaultModel.isPending,
+    modelSelectionError,
+    clearModelSelectionError: () => setModelSelectionError(null),
   };
 }

@@ -10,7 +10,9 @@ build/
 
 # Node
 node_modules/
+.pnpm-store/
 .next/
+.next-dev/
 out/
 playwright-report/
 test-results/
@@ -40,13 +42,15 @@ data/
 *.log
 logs/
 mock-llm.log
+.backend.pid
+.frontend.pid
 
 # Cache
 .cache/
 *.cache
 
 # Build
+target/
 *.egg
 *.whl
-QueryGPT-*.dmg
-.planning/
+ReceiptBI-*.dmg

@@ -1,0 +1,16 @@
+[package]
+name = "receiptbi-sqlite-executor-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+rusqlite = { version = "=0.40.1", default-features = false, features = ["bundled", "hooks", "limits"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true

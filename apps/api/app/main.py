@@ -1,7 +1,8 @@
 """
-QueryGPT API 主应用
+ReceiptBI API 主应用
 """
 
+import os
 import traceback
 import uuid
 from asyncio import TimeoutError as AsyncioTimeoutError
@@ -21,10 +22,16 @@ from sqlalchemy.exc import OperationalError, ProgrammingError, SQLAlchemyError
 
 from app.api.v1 import api_router
 from app.core.config import settings
-from app.core.demo_db import ensure_demo_connection, fix_demo_db_path, init_demo_database
+from app.core.security import encryptor
 from app.db import AsyncSessionLocal, engine
-from app.db.base import Base
+from app.services.analysis_checkpoint import recover_interrupted_analysis_runs
+from app.services.credential_migration import rotate_legacy_desktop_credentials
 from app.services.engine_diagnostics import categorize_sql_error
+from app.services.legacy_ts_model_import import (
+    import_legacy_ts_model,
+    prepare_legacy_model_snapshot,
+)
+from app.services.migration_bootstrap import migrate_local_sqlite_to_head
 
 # 配置日志
 structlog.configure(
@@ -58,9 +65,10 @@ limiter = Limiter(
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """应用生命周期管理"""
+    app.state.legacy_model_migration = "not_requested"
     # 启动时 - 记录启动信息
     logger.info(
-        "Starting QueryGPT API",
+        "Starting ReceiptBI API",
         version=settings.APP_VERSION,
         environment=settings.ENVIRONMENT,
         debug_mode=settings.DEBUG,
@@ -90,20 +98,104 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
         raise
 
-    # 创建数据库表（开发环境）
-    if settings.is_development:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database tables created")
+    # Desktop production starts from a bundled or user-owned local database.
+    # Upgrade it before opening any application session. Migration failures are
+    # fatal: create_all must never make a partial historical schema look healthy.
+    desktop_runtime = bool(settings.RECEIPTBI_INSTANCE_TOKEN)
+    database_url = str(settings.DATABASE_URL)
+    if database_url.startswith(("sqlite://", "sqlite+aiosqlite://")):
+        migrated_to = await migrate_local_sqlite_to_head(engine, database_url)
+        logger.info("Local database migrated", revision=migrated_to)
+    elif desktop_runtime:
+        raise RuntimeError("ReceiptBI desktop requires a local SQLite metadata database")
 
-    # 确保 demo.db 存在（构建时已预生成，这里只是 fallback）
-    demo_db_path = init_demo_database()
+    legacy_source_input = settings.RECEIPTBI_LEGACY_MODEL_SOURCE
+    legacy_snapshot_input = settings.RECEIPTBI_LEGACY_MODEL_SNAPSHOT
+    legacy_root_input = settings.RECEIPTBI_LEGACY_MODEL_ROOT
+    legacy_key_input = settings.RECEIPTBI_LEGACY_MODEL_ENCRYPTION_KEY
+    legacy_source_present = legacy_source_input is not None
+    legacy_snapshot_present = legacy_snapshot_input is not None
+    legacy_root_present = legacy_root_input is not None
+    legacy_inputs_present = any(
+        (
+            legacy_source_present,
+            legacy_snapshot_present,
+            legacy_root_present,
+            legacy_key_input is not None,
+        )
+    )
+    legacy_snapshot = None
+    legacy_key: str | None = None
+    legacy_result = None
+    migrated_credentials = 0
+    unreadable_credentials = 0
+    recovered_runs = 0
+    try:
+        if (
+            legacy_snapshot_present != legacy_root_present
+            or (legacy_source_present and not legacy_snapshot_present)
+            or (legacy_key_input is not None and not legacy_snapshot_present)
+            or (legacy_inputs_present and not desktop_runtime)
+        ):
+            raise RuntimeError("Legacy model migration inputs are incomplete")
+        if legacy_snapshot_present:
+            assert legacy_snapshot_input is not None
+            assert legacy_root_input is not None
+            legacy_snapshot = prepare_legacy_model_snapshot(
+                source_path=legacy_source_input,
+                snapshot_path=legacy_snapshot_input,
+                allowed_root=legacy_root_input,
+            )
+            legacy_key = (
+                legacy_key_input.get_secret_value()
+                if legacy_key_input is not None
+                else None
+            )
 
-    # 修正预打包数据库中的占位符路径，并确保 demo 连接存在
-    async with AsyncSessionLocal() as session:
-        await fix_demo_db_path(session, demo_db_path)
-        await ensure_demo_connection(session, demo_db_path)
-        await session.commit()
+        async with AsyncSessionLocal() as session:
+            if legacy_snapshot is not None:
+                legacy_result = await import_legacy_ts_model(
+                    session,
+                    source_path=legacy_snapshot,
+                    legacy_encryption_key=legacy_key,
+                    current_encryptor=encryptor,
+                )
+            if desktop_runtime:
+                migrated_credentials, unreadable_credentials = (
+                    await rotate_legacy_desktop_credentials(session)
+                )
+            recovered_runs = await recover_interrupted_analysis_runs(session)
+            await session.commit()
+    finally:
+        for variable in (
+            "RECEIPTBI_LEGACY_MODEL_SOURCE",
+            "RECEIPTBI_LEGACY_MODEL_SNAPSHOT",
+            "RECEIPTBI_LEGACY_MODEL_ROOT",
+            "RECEIPTBI_LEGACY_MODEL_ENCRYPTION_KEY",
+        ):
+            os.environ.pop(variable, None)
+        settings.RECEIPTBI_LEGACY_MODEL_SOURCE = None
+        settings.RECEIPTBI_LEGACY_MODEL_SNAPSHOT = None
+        settings.RECEIPTBI_LEGACY_MODEL_ROOT = None
+        settings.RECEIPTBI_LEGACY_MODEL_ENCRYPTION_KEY = None
+        legacy_key = None
+        legacy_key_input = None
+
+    if legacy_result is not None:
+        app.state.legacy_model_migration = legacy_result.status
+        logger.info("Legacy model migration acknowledged", status=legacy_result.status)
+    if migrated_credentials:
+        logger.info(
+            "Migrated legacy desktop credentials",
+            count=migrated_credentials,
+        )
+    if unreadable_credentials:
+        logger.warning(
+            "Some stored credentials use an unknown encryption key",
+            count=unreadable_credentials,
+        )
+    if recovered_runs:
+        logger.info("Recovered interrupted analysis runs", count=recovered_runs)
 
     logger.info(
         "Application startup complete",
@@ -114,7 +206,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
     # 关闭时
-    logger.info("Shutting down QueryGPT API")
+    logger.info("Shutting down ReceiptBI API")
     await engine.dispose()
 
 
@@ -122,7 +214,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="Natural language database query assistant",
+    description="ReceiptBI local-first personal data analysis workspace",
     docs_url="/api/docs" if settings.is_development else None,
     redoc_url="/api/redoc" if settings.is_development else None,
     openapi_url="/api/openapi.json" if settings.is_development else None,
@@ -271,10 +363,24 @@ app.include_router(api_router, prefix="/api/v1")
 @app.get("/health")
 async def health_check() -> dict[str, Any]:
     """健康检查"""
+    migration_status = getattr(
+        app.state,
+        "legacy_model_migration",
+        "not_requested",
+    )
     return {
         "status": "healthy",
         "version": settings.APP_VERSION,
         "environment": settings.ENVIRONMENT,
+        "instance_token": settings.RECEIPTBI_INSTANCE_TOKEN,
+        "legacy_model_migration": (
+            {
+                "status": migration_status,
+                "instance_token": settings.RECEIPTBI_INSTANCE_TOKEN,
+            }
+            if migration_status != "not_requested"
+            else None
+        ),
     }
 
 
@@ -291,7 +397,11 @@ async def root() -> dict[str, Any]:
 
 def run() -> None:
     """运行服务器"""
+    import multiprocessing
+
     import uvicorn
+
+    multiprocessing.freeze_support()
 
     uvicorn.run(
         "app.main:app",

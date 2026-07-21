@@ -3,10 +3,12 @@
 使用 Pydantic Settings 管理环境变量和配置
 """
 
+import os
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
-from pydantic import computed_field, field_validator
+from pydantic import Field, SecretStr, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,8 +23,8 @@ class Settings(BaseSettings):
     )
 
     # ===== 应用配置 =====
-    APP_NAME: str = "QueryGPT"
-    APP_VERSION: str = "2.0.0"
+    APP_NAME: str = "ReceiptBI"
+    APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
     ENVIRONMENT: Literal["development", "staging", "production"] = "development"
 
@@ -30,9 +32,31 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     WORKERS: int = 1
+    RECEIPTBI_INSTANCE_TOKEN: str | None = None
+    # Private capability passed only by the Electron main process. Unlike the
+    # instance token used by /health for process identity, this value is never
+    # exposed to the renderer or returned by an API response.
+    RECEIPTBI_DESKTOP_CONTROL_TOKEN: str | None = None
+    # Ephemeral, Electron-owned inputs for the one-time TypeScript model import.
+    # They are accepted only for a desktop instance and are never returned by an API.
+    RECEIPTBI_LEGACY_MODEL_SOURCE: Path | None = None
+    RECEIPTBI_LEGACY_MODEL_SNAPSHOT: Path | None = None
+    RECEIPTBI_LEGACY_MODEL_ROOT: Path | None = None
+    RECEIPTBI_LEGACY_MODEL_ENCRYPTION_KEY: SecretStr | None = None
 
     # ===== 数据库配置 =====
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/querygpt"
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/receiptbi"
+    WORKSPACE_ROOT: Path = Path("./data/projects")
+    # The visual editor currently materializes a full table while preparing a
+    # preview. These caps are a safety stop, not a streaming large-file promise.
+    VISUAL_CLEANING_MAX_SOURCE_BYTES: int = Field(
+        default=256 * 1024 * 1024,
+        ge=1,
+    )
+    VISUAL_CLEANING_MAX_XLSX_EXPANDED_BYTES: int = Field(
+        default=512 * 1024 * 1024,
+        ge=1,
+    )
 
     @field_validator("DATABASE_URL")
     @classmethod
@@ -70,10 +94,6 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
     OPENAI_BASE_URL: str | None = None
     ANTHROPIC_API_KEY: str | None = None
-
-    # ===== gptme 配置 =====
-    GPTME_MODEL: str = "gpt-4o"
-    GPTME_TIMEOUT: int = 300  # 5 分钟超时
 
     # ===== 速率限制 =====
     RATE_LIMIT_REQUESTS: int = 60
@@ -128,7 +148,9 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     """获取配置单例"""
-    return Settings()
+
+    env_file = os.environ.get("RECEIPTBI_ENV_FILE") or ".env"
+    return Settings(_env_file=env_file)
 
 
 # 导出配置实例

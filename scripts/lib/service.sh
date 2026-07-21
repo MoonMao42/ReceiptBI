@@ -9,32 +9,32 @@ start_database() {
     return 0
   fi
 
-  if docker ps --format '{{.Names}}' | grep -q '^querygpt-db$'; then
+  if docker ps --format '{{.Names}}' | grep -q '^receiptbi-db$'; then
     success "PostgreSQL 容器已运行"
     return 0
   fi
 
-  if docker ps -a --format '{{.Names}}' | grep -q '^querygpt-db$'; then
+  if docker ps -a --format '{{.Names}}' | grep -q '^receiptbi-db$'; then
     info "启动已有 PostgreSQL 容器..."
-    docker start querygpt-db >/dev/null
+    docker start receiptbi-db >/dev/null
     success "PostgreSQL 容器已启动"
     return 0
   fi
 
   info "创建 PostgreSQL 容器..."
   docker run -d \
-    --name querygpt-db \
+    --name receiptbi-db \
     -e POSTGRES_USER=postgres \
     -e POSTGRES_PASSWORD=postgres \
-    -e POSTGRES_DB=querygpt \
+    -e POSTGRES_DB=receiptbi \
     -p 5432:5432 \
-    -v querygpt-pgdata:/var/lib/postgresql/data \
+    -v receiptbi-pgdata:/var/lib/postgresql/data \
     postgres:16-alpine >/dev/null
   success "PostgreSQL 容器已创建"
 }
 
 switch_to_sqlite() {
-  local sqlite_url="sqlite+aiosqlite:///./data/querygpt.db"
+  local sqlite_url="sqlite+aiosqlite:///./data/receiptbi.db"
   mkdir -p "$API_DIR/data"
   if [ -f "$API_DIR/.env" ]; then
     if grep -q '^DATABASE_URL=' "$API_DIR/.env"; then

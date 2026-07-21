@@ -1,22 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   applyDriverDefaults,
-  buildConnectionExportName,
   buildConnectionFormData,
   defaultConnectionFormData,
+  formatConnectionTarget,
 } from "@/lib/settings/connections";
+import type { ConfiguredConnection } from "@/lib/types/api";
 import {
   buildModelFormData,
   buildModelPayload,
   parseJsonMap,
 } from "@/lib/settings/models";
-import {
-  buildLayoutSnapshot,
-  buildRelationshipEdges,
-  buildSchemaNodes,
-  deriveHiddenTables,
-  filterVisibleTables,
-} from "@/lib/settings/schema";
 
 describe("settings helpers", () => {
   it("parses JSON map and normalizes values to strings", () => {
@@ -64,8 +58,21 @@ describe("settings helpers", () => {
   });
 
   it("applies driver defaults and builds connection form data", () => {
-    const sqliteForm = applyDriverDefaults(defaultConnectionFormData, "sqlite");
+    const sqliteForm = applyDriverDefaults(
+      {
+        ...defaultConnectionFormData,
+        extra_options: {
+          sslmode: "verify-full",
+          sslrootcert: "/certs/root.pem",
+          sslcert: "/certs/client.pem",
+          sslkey: "/certs/client.key",
+          schema: "finance",
+        },
+      },
+      "sqlite"
+    );
     expect(sqliteForm.port).toBe(0);
+    expect(sqliteForm.extra_options).toEqual(defaultConnectionFormData.extra_options);
 
     const formData = buildConnectionFormData({
       id: "c1",
@@ -73,89 +80,45 @@ describe("settings helpers", () => {
       driver: "postgresql",
       host: "db.internal",
       port: 5432,
-      database_name: "analytics",
+      database: "analytics",
       username: "readonly",
+      extra_options: {
+        sslmode: "verify-full",
+        sslrootcert: "/certs/root.pem",
+        schema: "finance",
+      },
       is_default: true,
       created_at: "",
     });
 
     expect(formData.database).toBe("analytics");
     expect(formData.password).toBe("");
-  });
-
-  it("builds export file names with a stable date suffix", () => {
-    const filename = buildConnectionExportName("analytics", new Date("2026-03-07T10:00:00Z"));
-    expect(filename).toBe("querygpt-config-analytics-2026-03-07.json");
-  });
-
-  it("derives visible tables, nodes and relationships from schema state", () => {
-    const tables = [
-      { name: "users", columns: [] },
-      { name: "orders", columns: [] },
-    ];
-    const hiddenTables = deriveHiddenTables(
-      {
-        id: "layout-1",
-        connection_id: "conn-1",
-        name: "Default",
-        is_default: true,
-        layout_data: { users: { x: 12, y: 34 } },
-        visible_tables: ["users"],
-        zoom: 1,
-        viewport_x: 0,
-        viewport_y: 0,
-      },
-      tables.map((table) => table.name)
-    );
-
-    const visibleTables = filterVisibleTables(tables, hiddenTables, "");
-    const nodes = buildSchemaNodes(visibleTables, {
-      id: "layout-1",
-      connection_id: "conn-1",
-      name: "Default",
-      is_default: true,
-      layout_data: { users: { x: 12, y: 34 } },
-      visible_tables: ["users"],
-      zoom: 1,
-      viewport_x: 0,
-      viewport_y: 0,
+    expect(formData.extra_options).toMatchObject({
+      sslmode: "verify-full",
+      sslrootcert: "/certs/root.pem",
+      schema: "finance",
     });
-    const edges = buildRelationshipEdges(visibleTables, [
-      {
-        id: "rel-1",
-        connection_id: "conn-1",
-        source_table: "users",
-        source_column: "id",
-        target_table: "orders",
-        target_column: "user_id",
-        relationship_type: "1:N",
-        join_type: "LEFT",
-        is_active: true,
-      },
-    ]);
-
-    expect(hiddenTables.has("orders")).toBe(true);
-    expect(visibleTables).toHaveLength(1);
-    expect(nodes[0]?.position).toEqual({ x: 12, y: 34 });
-    expect(edges).toHaveLength(0);
   });
 
-  it("builds a serializable layout snapshot", () => {
-    const snapshot = buildLayoutSnapshot(
-      [
-        {
-          id: "users",
-          position: { x: 10, y: 20 },
-          data: {},
-        } as never,
-      ],
-      { x: 1, y: 2, zoom: 1.5 },
-      [{ name: "users", columns: [] }],
-      new Set()
-    );
+  it("normalizes the live SQLite response shape for editing and display", () => {
+    const connection = {
+      id: "c2",
+      name: "Local receipts",
+      driver: "sqlite",
+      host: null,
+      port: null,
+      username: null,
+      database: "/data/receipts.sqlite",
+      is_default: false,
+      created_at: "2026-07-19T00:00:00Z",
+    } satisfies ConfiguredConnection;
 
-    expect(snapshot.signature).toContain("users");
-    expect(snapshot.payload.layout_data?.users).toEqual({ x: 10, y: 20 });
-    expect(snapshot.payload.zoom).toBe(1.5);
+    expect(buildConnectionFormData(connection)).toMatchObject({
+      host: "",
+      port: 0,
+      username: "",
+      database: "/data/receipts.sqlite",
+    });
+    expect(formatConnectionTarget(connection)).toBe("/data/receipts.sqlite");
   });
 });

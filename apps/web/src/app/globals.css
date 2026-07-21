@@ -3,172 +3,62 @@
 @tailwind utilities;
 
 @layer base {
-  /* 默认变量 */
+  /* 默认变量：直角设计语言 */
   :root {
-    --radius: 0.5rem;
+    --radius: 0px;
   }
 
-  /* 晨曦 - 默认浅色主题 */
+  /* 晨曦 - 默认浅色主题（瓷白 + 墨绿，对齐 DESIGN.md） */
   :root,
   html.theme-dawn {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --background: 60 14% 98%;
+    --foreground: 160 35% 14%;
+    --card: 60 14% 98%;
+    --card-foreground: 160 35% 14%;
+    --popover: 60 14% 98%;
+    --popover-foreground: 160 35% 14%;
+    --primary: 158 42% 26%;
+    --primary-foreground: 60 14% 98%;
+    --secondary: 150 12% 94%;
+    --secondary-foreground: 160 35% 14%;
+    --muted: 150 10% 92%;
+    --muted-foreground: 160 12% 42%;
+    --accent: 150 15% 90%;
+    --accent-foreground: 160 35% 14%;
+    --destructive: 0 55% 48%;
+    --destructive-foreground: 60 14% 98%;
+    --success: 158 50% 28%;
+    --warning: 27 82% 31%;
+    --border: 150 12% 88%;
+    --input: 150 12% 88%;
+    --ring: 158 42% 26%;
   }
 
   /* 深夜 - 深色主题 */
   html.theme-midnight {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --background: 160 20% 8%;
+    --foreground: 150 15% 92%;
+    --card: 160 18% 10%;
+    --card-foreground: 150 15% 92%;
+    --popover: 160 18% 10%;
+    --popover-foreground: 150 15% 92%;
+    --primary: 158 38% 42%;
+    --primary-foreground: 160 20% 8%;
+    --secondary: 160 15% 14%;
+    --secondary-foreground: 150 15% 92%;
+    --muted: 160 12% 16%;
+    --muted-foreground: 150 10% 58%;
+    --accent: 160 15% 18%;
+    --accent-foreground: 150 15% 92%;
+    --destructive: 0 55% 42%;
+    --destructive-foreground: 150 15% 92%;
+    --success: 155 38% 55%;
+    --warning: 40 88% 62%;
+    --border: 160 12% 20%;
+    --input: 160 12% 20%;
+    --ring: 158 38% 42%;
   }
 
-  /* 莫奈 - 印象派蓝绿色调 */
-  html.theme-monet {
-    --background: 195 30% 96%;
-    --foreground: 200 50% 15%;
-    --card: 195 25% 98%;
-    --card-foreground: 200 50% 15%;
-    --popover: 195 25% 98%;
-    --popover-foreground: 200 50% 15%;
-    --primary: 195 70% 45%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 170 30% 90%;
-    --secondary-foreground: 200 50% 15%;
-    --muted: 180 20% 92%;
-    --muted-foreground: 200 25% 45%;
-    --accent: 160 40% 85%;
-    --accent-foreground: 200 50% 15%;
-    --destructive: 0 70% 55%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 195 25% 88%;
-    --input: 195 25% 88%;
-    --ring: 195 70% 45%;
-  }
-
-  /* 梵高 - 星夜深蓝金黄 */
-  html.theme-vangogh {
-    --background: 220 40% 12%;
-    --foreground: 45 90% 85%;
-    --card: 220 35% 15%;
-    --card-foreground: 45 90% 85%;
-    --popover: 220 35% 15%;
-    --popover-foreground: 45 90% 85%;
-    --primary: 45 90% 55%;
-    --primary-foreground: 220 40% 12%;
-    --secondary: 220 30% 22%;
-    --secondary-foreground: 45 80% 80%;
-    --muted: 220 25% 20%;
-    --muted-foreground: 45 40% 60%;
-    --accent: 35 80% 50%;
-    --accent-foreground: 220 40% 12%;
-    --destructive: 0 70% 50%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 220 30% 25%;
-    --input: 220 30% 25%;
-    --ring: 45 90% 55%;
-  }
-
-  /* 樱花 - 日式粉色 */
-  html.theme-sakura {
-    --background: 350 30% 97%;
-    --foreground: 340 30% 20%;
-    --card: 350 25% 99%;
-    --card-foreground: 340 30% 20%;
-    --popover: 350 25% 99%;
-    --popover-foreground: 340 30% 20%;
-    --primary: 340 70% 65%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 350 30% 92%;
-    --secondary-foreground: 340 30% 20%;
-    --muted: 350 20% 94%;
-    --muted-foreground: 340 20% 45%;
-    --accent: 330 50% 88%;
-    --accent-foreground: 340 30% 20%;
-    --destructive: 0 70% 55%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 350 25% 90%;
-    --input: 350 25% 90%;
-    --ring: 340 70% 65%;
-  }
-
-  /* 森林 - 自然绿色 */
-  html.theme-forest {
-    --background: 150 20% 96%;
-    --foreground: 150 40% 15%;
-    --card: 150 15% 98%;
-    --card-foreground: 150 40% 15%;
-    --popover: 150 15% 98%;
-    --popover-foreground: 150 40% 15%;
-    --primary: 150 50% 40%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 140 25% 90%;
-    --secondary-foreground: 150 40% 15%;
-    --muted: 145 18% 92%;
-    --muted-foreground: 150 20% 45%;
-    --accent: 130 35% 85%;
-    --accent-foreground: 150 40% 15%;
-    --destructive: 0 70% 55%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 150 20% 88%;
-    --input: 150 20% 88%;
-    --ring: 150 50% 40%;
-  }
-
-  /* 极光 - 北欧深色 */
-  html.theme-aurora {
-    --background: 230 25% 10%;
-    --foreground: 180 60% 90%;
-    --card: 230 22% 13%;
-    --card-foreground: 180 60% 90%;
-    --popover: 230 22% 13%;
-    --popover-foreground: 180 60% 90%;
-    --primary: 160 70% 50%;
-    --primary-foreground: 230 25% 10%;
-    --secondary: 230 20% 18%;
-    --secondary-foreground: 180 50% 85%;
-    --muted: 230 18% 16%;
-    --muted-foreground: 180 30% 60%;
-    --accent: 280 60% 60%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 70% 50%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 230 20% 20%;
-    --input: 230 20% 20%;
-    --ring: 160 70% 50%;
-  }
 }
 
 @layer base {
@@ -194,12 +84,10 @@
 
   ::-webkit-scrollbar-track {
     background: hsl(var(--muted));
-    border-radius: 4px;
   }
 
   ::-webkit-scrollbar-thumb {
     background: hsl(var(--primary) / 0.3);
-    border-radius: 4px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
@@ -210,5 +98,145 @@
   * {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--primary) / 0.3) hsl(var(--muted));
+  }
+}
+
+.report-print-view {
+  --background: 60 14% 98%;
+  --foreground: 160 35% 14%;
+  --card: 60 14% 98%;
+  --card-foreground: 160 35% 14%;
+  --popover: 60 14% 98%;
+  --popover-foreground: 160 35% 14%;
+  --primary: 158 42% 26%;
+  --primary-foreground: 60 14% 98%;
+  --muted: 150 10% 92%;
+  --muted-foreground: 160 12% 42%;
+  --border: 150 12% 84%;
+  position: fixed;
+  left: -100000px;
+  top: 0;
+  width: 1120px;
+  visibility: hidden;
+  pointer-events: none;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+.report-print-page {
+  min-height: 720px;
+  padding: 32px;
+  background: hsl(var(--background));
+}
+
+.report-print-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32px;
+  margin-bottom: 24px;
+  padding-top: 14px;
+  padding-bottom: 20px;
+  border-top: 3px double hsl(var(--foreground) / 0.5);
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.report-print-header h1 {
+  margin-top: 6px;
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+}
+
+.report-print-header p:not(.report-print-kicker) {
+  margin-top: 8px;
+  max-width: 720px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: hsl(var(--muted-foreground));
+}
+
+.report-print-kicker,
+.report-print-header > span {
+  font-family: "IBM Plex Mono", "JetBrains Mono", "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: hsl(var(--primary));
+}
+
+.report-print-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-auto-rows: 60px;
+  gap: 12px;
+}
+
+.report-print-block {
+  min-height: 0;
+  grid-column: var(--report-column);
+  grid-row: var(--report-row);
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+
+  html,
+  body {
+    background: white !important;
+  }
+
+  .report-screen-view {
+    display: none !important;
+  }
+
+  .report-print-view {
+    position: static;
+    left: auto;
+    width: auto;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .report-print-page {
+    min-height: 0;
+    padding: 0;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .report-print-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .report-print-block {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .report-print-view button {
+    display: none !important;
+  }
+
+  .report-print-view .recharts-responsive-container {
+    min-height: 180px !important;
+  }
+
+  .report-print-view .overflow-auto {
+    overflow: visible !important;
+  }
+
+  .report-print-view article,
+  .report-print-view table,
+  .report-print-view img {
+    box-shadow: none !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 }

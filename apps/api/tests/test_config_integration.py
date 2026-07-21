@@ -66,21 +66,21 @@ async def test_sqlite_connection_healthcheck(client: AsyncClient, tmp_path: Path
 @pytest.mark.asyncio
 async def test_postgresql_connection_healthcheck(client: AsyncClient):
     env = require_env(
-        "QUERYGPT_TEST_PG_HOST",
-        "QUERYGPT_TEST_PG_PORT",
-        "QUERYGPT_TEST_PG_USER",
-        "QUERYGPT_TEST_PG_PASSWORD",
-        "QUERYGPT_TEST_PG_DATABASE",
+        "RECEIPTBI_TEST_PG_HOST",
+        "RECEIPTBI_TEST_PG_PORT",
+        "RECEIPTBI_TEST_PG_USER",
+        "RECEIPTBI_TEST_PG_PASSWORD",
+        "RECEIPTBI_TEST_PG_DATABASE",
     )
 
     import psycopg2
 
     with psycopg2.connect(
-        host=env["QUERYGPT_TEST_PG_HOST"],
-        port=int(env["QUERYGPT_TEST_PG_PORT"]),
-        user=env["QUERYGPT_TEST_PG_USER"],
-        password=env["QUERYGPT_TEST_PG_PASSWORD"],
-        dbname=env["QUERYGPT_TEST_PG_DATABASE"],
+        host=env["RECEIPTBI_TEST_PG_HOST"],
+        port=int(env["RECEIPTBI_TEST_PG_PORT"]),
+        user=env["RECEIPTBI_TEST_PG_USER"],
+        password=env["RECEIPTBI_TEST_PG_PASSWORD"],
+        dbname=env["RECEIPTBI_TEST_PG_DATABASE"],
     ) as conn:
         conn.autocommit = True
         with conn.cursor() as cursor:
@@ -94,11 +94,11 @@ async def test_postgresql_connection_healthcheck(client: AsyncClient):
         {
             "name": "Integration PostgreSQL",
             "driver": "postgresql",
-            "host": env["QUERYGPT_TEST_PG_HOST"],
-            "port": int(env["QUERYGPT_TEST_PG_PORT"]),
-            "username": env["QUERYGPT_TEST_PG_USER"],
-            "password": env["QUERYGPT_TEST_PG_PASSWORD"],
-            "database": env["QUERYGPT_TEST_PG_DATABASE"],
+            "host": env["RECEIPTBI_TEST_PG_HOST"],
+            "port": int(env["RECEIPTBI_TEST_PG_PORT"]),
+            "username": env["RECEIPTBI_TEST_PG_USER"],
+            "password": env["RECEIPTBI_TEST_PG_PASSWORD"],
+            "database": env["RECEIPTBI_TEST_PG_DATABASE"],
         },
     )
 
@@ -113,21 +113,21 @@ async def test_postgresql_connection_healthcheck(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_mysql_connection_healthcheck(client: AsyncClient):
     env = require_env(
-        "QUERYGPT_TEST_MYSQL_HOST",
-        "QUERYGPT_TEST_MYSQL_PORT",
-        "QUERYGPT_TEST_MYSQL_USER",
-        "QUERYGPT_TEST_MYSQL_PASSWORD",
-        "QUERYGPT_TEST_MYSQL_DATABASE",
+        "RECEIPTBI_TEST_MYSQL_HOST",
+        "RECEIPTBI_TEST_MYSQL_PORT",
+        "RECEIPTBI_TEST_MYSQL_USER",
+        "RECEIPTBI_TEST_MYSQL_PASSWORD",
+        "RECEIPTBI_TEST_MYSQL_DATABASE",
     )
 
     import pymysql
 
     conn = pymysql.connect(
-        host=env["QUERYGPT_TEST_MYSQL_HOST"],
-        port=int(env["QUERYGPT_TEST_MYSQL_PORT"]),
-        user=env["QUERYGPT_TEST_MYSQL_USER"],
-        password=env["QUERYGPT_TEST_MYSQL_PASSWORD"],
-        database=env["QUERYGPT_TEST_MYSQL_DATABASE"],
+        host=env["RECEIPTBI_TEST_MYSQL_HOST"],
+        port=int(env["RECEIPTBI_TEST_MYSQL_PORT"]),
+        user=env["RECEIPTBI_TEST_MYSQL_USER"],
+        password=env["RECEIPTBI_TEST_MYSQL_PASSWORD"],
+        database=env["RECEIPTBI_TEST_MYSQL_DATABASE"],
         autocommit=True,
     )
     try:
@@ -144,11 +144,11 @@ async def test_mysql_connection_healthcheck(client: AsyncClient):
         {
             "name": "Integration MySQL",
             "driver": "mysql",
-            "host": env["QUERYGPT_TEST_MYSQL_HOST"],
-            "port": int(env["QUERYGPT_TEST_MYSQL_PORT"]),
-            "username": env["QUERYGPT_TEST_MYSQL_USER"],
-            "password": env["QUERYGPT_TEST_MYSQL_PASSWORD"],
-            "database": env["QUERYGPT_TEST_MYSQL_DATABASE"],
+            "host": env["RECEIPTBI_TEST_MYSQL_HOST"],
+            "port": int(env["RECEIPTBI_TEST_MYSQL_PORT"]),
+            "username": env["RECEIPTBI_TEST_MYSQL_USER"],
+            "password": env["RECEIPTBI_TEST_MYSQL_PASSWORD"],
+            "database": env["RECEIPTBI_TEST_MYSQL_DATABASE"],
         },
     )
 
@@ -162,15 +162,15 @@ async def test_mysql_connection_healthcheck(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_model_healthcheck_against_mock_gateway(client: AsyncClient):
-    env = require_env("QUERYGPT_TEST_MODEL_BASE_URL")
+    env = require_env("RECEIPTBI_TEST_MODEL_BASE_URL")
 
     model = await create_model(
         client,
         {
             "name": "CI Mock Gateway",
             "provider": "custom",
-            "model_id": "querygpt-ci",
-            "base_url": env["QUERYGPT_TEST_MODEL_BASE_URL"],
+            "model_id": "receiptbi-ci",
+            "base_url": env["RECEIPTBI_TEST_MODEL_BASE_URL"],
             "api_key": "ci-test-key",
             "extra_options": {
                 "api_format": "openai_compatible",
@@ -185,5 +185,5 @@ async def test_model_healthcheck_against_mock_gateway(client: AsyncClient):
     data = response.json()["data"]
     assert data["success"] is True
     assert data["resolved_provider"] == "openai"
-    assert data["resolved_base_url"] == env["QUERYGPT_TEST_MODEL_BASE_URL"]
+    assert data["resolved_base_url"] == env["RECEIPTBI_TEST_MODEL_BASE_URL"]
     assert data["message"] == "连接成功"

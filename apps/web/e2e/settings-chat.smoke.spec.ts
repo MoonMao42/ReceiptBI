@@ -16,7 +16,7 @@ test("settings workflow and chat smoke test", async ({ page }) => {
   await page.getByTestId("connection-driver-select").selectOption("postgresql");
   await page.getByTestId("connection-host-input").fill("db");
   await page.getByTestId("connection-port-input").fill("5432");
-  await page.getByTestId("connection-database-input").fill("querygpt");
+  await page.getByTestId("connection-database-input").fill("receiptbi");
   await page.getByTestId("connection-username-input").fill("postgres");
   await page.getByTestId("connection-password-input").fill("postgres");
   await page.getByTestId("connection-submit-button").click();
@@ -34,7 +34,7 @@ test("settings workflow and chat smoke test", async ({ page }) => {
 
   await page.getByTestId("model-preset-custom").click();
   await page.getByTestId("model-name-input").fill(modelName);
-  await page.getByTestId("model-id-input").fill("querygpt-ci");
+  await page.getByTestId("model-id-input").fill("receiptbi-ci");
   await page.getByTestId("model-base-url-input").fill("http://mock-llm:4010/v1");
   await page.getByTestId("model-api-key-input").fill("ci-test-key");
   await page.getByTestId("model-default-checkbox").check();
@@ -50,9 +50,13 @@ test("settings workflow and chat smoke test", async ({ page }) => {
   });
 
   await page.goto("/");
+  await expect(page.getByTestId("project-work-surface")).toBeVisible();
   await expect(page.getByTestId("chat-input")).toBeVisible();
-  await expect(page.getByTestId("chat-connection-select")).toContainText("Sample Database");
-  await expect(page.getByTestId("chat-model-select")).toContainText(modelName);
+  await expect(page.getByRole("button", { name: /数据来源/ })).toBeVisible();
+  await expect(page.getByTestId("chat-connection-select")).toHaveCount(0);
+  const analysisServiceSelector = page.getByTestId("analysis-service-selector");
+  await expect(analysisServiceSelector).toBeVisible();
+  await expect(analysisServiceSelector).toContainText(modelName);
 
   await page
     .getByTestId("chat-input")
@@ -60,7 +64,7 @@ test("settings workflow and chat smoke test", async ({ page }) => {
   const streamResponse = page.waitForResponse(
     (response) =>
       response.url().includes("/api/v1/chat/stream") &&
-      response.request().method() === "GET" &&
+      response.request().method() === "POST" &&
       response.ok()
   );
   await page.getByTestId("chat-submit").click();

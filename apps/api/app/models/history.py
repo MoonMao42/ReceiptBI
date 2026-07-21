@@ -56,6 +56,7 @@ class MessageMetadata(BaseModel):
     error: str | None = None
     error_code: str | None = None
     error_category: str | None = None
+    failed_stage: str | None = None
     original_query: str | None = None
     execution_context: dict[str, Any] | None = None
     diagnostics: list[dict[str, Any]] | None = None
@@ -80,6 +81,7 @@ def _conversation_snapshot(data: Any) -> dict[str, Any]:
         "connection_name": extra_data.get("connection_name"),
         "provider_summary": extra_data.get("provider_summary"),
         "context_rounds": extra_data.get("context_rounds"),
+        "project_id": extra_data.get("project_id"),
         "is_favorite": data.is_favorite,
         "status": data.status,
         "created_at": data.created_at,
@@ -98,6 +100,7 @@ class ConversationSummary(BaseModel):
     connection_name: str | None = None
     provider_summary: str | None = None
     context_rounds: int | None = None
+    project_id: UUID | None = None
     is_favorite: bool = False
     message_count: int = 0
     status: Literal["active", "completed", "error"] = "active"
@@ -125,6 +128,7 @@ class ConversationResponse(BaseModel):
     connection_name: str | None = None
     provider_summary: str | None = None
     context_rounds: int | None = None
+    project_id: UUID | None = None
     is_favorite: bool = False
     status: Literal["active", "completed", "error"] = "active"
     messages: list[MessageResponse] = []

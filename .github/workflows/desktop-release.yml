@@ -20,12 +20,17 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/desktop-v')
     steps:
       - uses: actions/checkout@v4
+      - name: Validate desktop release version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node apps/desktop/scripts/validate-release-version.mjs --event push --tag "$RELEASE_TAG"
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ github.ref_name }}" \
-            --title "QueryGPT Desktop ${{ github.ref_name }}" \
+            --title "ReceiptBI Desktop ${{ github.ref_name }}" \
             --draft \
             --notes "$(cat <<'NOTES'
           ## Downloads
@@ -40,12 +45,12 @@ jobs:
 
           ### macOS
 
-          1. Download and open the `.dmg`, drag QueryGPT to Applications
+          1. Download and open the `.dmg`, then drag ReceiptBI to Applications
           2. First launch will show "app is damaged" — run this in Terminal:
              ```
-             xattr -cr /Applications/QueryGPT.app
+             xattr -cr /Applications/ReceiptBI.app
              ```
-          3. Open QueryGPT from Applications
+          3. Open ReceiptBI from Applications
 
           > This happens because the app is not code-signed yet.
 
@@ -55,11 +60,11 @@ jobs:
 
           ## Features
 
-          - Natural language to SQL with any OpenAI-compatible model
-          - Database connections: PostgreSQL, MySQL, SQLite
-          - Semantic layer for custom business metrics
-          - Query history and result visualization
-          - i18n support (English / 中文)
+          - Investigate business questions across files and read-only databases
+          - Prepare working copies without overwriting original files
+          - Keep project definitions, corrections, and evidence together
+          - Generate traceable reports, tables, and charts
+          - 当前提供中文桌面界面
           NOTES
           )"
 
@@ -70,11 +75,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             platform: mac
             arch: arm64
             electron_args: --mac --arm64
-          - os: macos-14
+          - os: macos-15-intel
             platform: mac
             arch: x64
             electron_args: --mac --x64
@@ -86,6 +91,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate desktop build and upload version
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+        run: node apps/desktop/scripts/validate-release-version.mjs --event "$EVENT_NAME" --tag "$RELEASE_TAG"
 
       - uses: actions/setup-python@v5
         with:
@@ -101,7 +113,7 @@ jobs:
       - name: Install desktop dependencies
         run: cd apps/desktop && npm ci
 
-      # API venv for `uv pip freeze` in build script
+      # API venv for the build script's requirements fallback
       - name: Setup API venv
         shell: bash
         run: |
@@ -117,6 +129,32 @@ jobs:
         run: cd apps/desktop && npx tsx scripts/build-pyinstaller.ts
         shell: bash
 
+      - name: Verify runner and backend architecture
+        shell: bash
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          python -c 'import os, platform, sys; normalize=lambda value: "arm64" if value.lower() in {"arm64", "aarch64"} else "x64" if value.lower() in {"x86_64", "amd64", "x64"} else value.lower(); actual=normalize(platform.machine()); expected=os.environ["EXPECTED_ARCH"]; print(f"Runner architecture: {actual} (expected {expected})"); sys.exit(0 if actual == expected else 1)'
+
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            backend="apps/desktop/backend/receiptbi-api.exe"
+          else
+            backend="apps/desktop/backend/receiptbi-api"
+          fi
+
+          RECEIPTBI_EXPECTED_ARCH="$EXPECTED_ARCH" "$backend" --self-check
+
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            mach_arch="$EXPECTED_ARCH"
+            [ "$mach_arch" = "x64" ] && mach_arch="x86_64"
+            backend_arches=$(lipo -archs "$backend")
+            echo "Backend Mach-O architectures: $backend_arches"
+            case " $backend_arches " in
+              *" $mach_arch "*) ;;
+              *) echo "Backend does not contain expected architecture: $mach_arch"; exit 1 ;;
+            esac
+          fi
+
       - name: Build frontend
         run: cd apps/desktop && npx tsx scripts/build-next.ts
         shell: bash
@@ -129,6 +167,36 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: cd apps/desktop && npx electron-builder ${{ matrix.electron_args }} --publish never --config electron-builder.yml
         shell: bash
+
+      - name: Verify packaged backend
+        shell: bash
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            bundled_backend=$(find apps/desktop/release -path '*/resources/backend/receiptbi-api.exe' -type f -print -quit)
+          else
+            bundled_backend=$(find apps/desktop/release -path '*/ReceiptBI.app/Contents/Resources/backend/receiptbi-api' -type f -print -quit)
+          fi
+
+          if [ -z "$bundled_backend" ]; then
+            echo "Packaged backend executable was not found"
+            exit 1
+          fi
+
+          echo "Packaged backend: $bundled_backend"
+          RECEIPTBI_EXPECTED_ARCH="$EXPECTED_ARCH" "$bundled_backend" --self-check
+
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            mach_arch="$EXPECTED_ARCH"
+            [ "$mach_arch" = "x64" ] && mach_arch="x86_64"
+            backend_arches=$(lipo -archs "$bundled_backend")
+            echo "Packaged backend Mach-O architectures: $backend_arches"
+            case " $backend_arches " in
+              *" $mach_arch "*) ;;
+              *) echo "Packaged backend does not contain expected architecture: $mach_arch"; exit 1 ;;
+            esac
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -182,6 +250,7 @@ jobs:
               echo "  Deleted existing asset"
             fi
 
+            uploaded=false
             for attempt in 1 2 3; do
               # Use --upload-file which is designed for reliable binary uploads
               response=$(curl -s -w "\n%{http_code}" \
@@ -195,6 +264,7 @@ jobs:
 
               if [ "$http_code" = "201" ] && [ "$uploaded_size" = "$filesize" ]; then
                 echo "  OK (verified: $uploaded_size bytes)"
+                uploaded=true
                 break
               fi
               echo "  Attempt $attempt: HTTP $http_code, uploaded=$uploaded_size expected=$filesize"
@@ -206,4 +276,9 @@ jobs:
                 "https://api.github.com/repos/${{ github.repository }}/releases/assets/$new_asset"
               sleep 10
             done
+
+            if [ "$uploaded" != "true" ]; then
+              echo "Failed to upload $filename after 3 attempts"
+              exit 1
+            fi
           done

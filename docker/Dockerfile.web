@@ -4,13 +4,13 @@ WORKDIR /workspace/apps/web
 
 COPY apps/web/package.json ./package.json
 COPY apps/web/package-lock.json ./package-lock.json
-COPY docker/scripts/web-bootstrap.sh /opt/querygpt/scripts/web-bootstrap.sh
+COPY docker/scripts/web-bootstrap.sh /opt/receiptbi/scripts/web-bootstrap.sh
 
-RUN chmod +x /opt/querygpt/scripts/web-bootstrap.sh \
+RUN chmod +x /opt/receiptbi/scripts/web-bootstrap.sh \
     && npm ci \
-    && mkdir -p /opt/querygpt \
-    && cp -a node_modules /opt/querygpt/web-node_modules \
-    && sha256sum package-lock.json | awk '{print $1}' > /opt/querygpt/package-lock.sha256
+    && mkdir -p /opt/receiptbi \
+    && cp -a node_modules /opt/receiptbi/web-node_modules \
+    && sha256sum package-lock.json | awk '{print $1}' > /opt/receiptbi/package-lock.sha256
 
 EXPOSE 3000
 

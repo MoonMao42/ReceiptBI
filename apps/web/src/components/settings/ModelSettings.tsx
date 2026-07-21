@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCircle, Plus, X, XCircle } from "lucide-react";
+import { CheckCircle, ChevronDown, Plus, X, XCircle } from "lucide-react";
 import { ModelSettingsForm } from "@/components/settings/model-settings/ModelSettingsForm";
 import { ModelSettingsList } from "@/components/settings/model-settings/ModelSettingsList";
 import { useModelSettingsResource } from "@/components/settings/hooks/useModelSettingsResource";
@@ -13,7 +13,7 @@ import {
   type ModelFormData,
 } from "@/lib/settings/models";
 import type { ConfiguredModel } from "@/lib/types/api";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 
 export function ModelSettings() {
   const {
@@ -40,6 +40,25 @@ export function ModelSettings() {
   );
   const displayError = validationError ?? error;
   const t = useTranslations("modelSettings");
+  const isChinese = useLocale() === "zh";
+  const copy = isChinese
+    ? {
+        title: "分析服务",
+        description: "添加一个可用的模型服务，ReceiptBI 会在调查中自动使用默认项。",
+        add: "添加服务",
+        lastCheck: "最近一次连接检查",
+        advancedResult: "高级连接详情",
+        advancedResultHint: "排查兼容服务或网关问题时再查看。",
+      }
+    : {
+        title: "Analysis services",
+        description:
+          "Add a model service. ReceiptBI automatically uses the default one during investigations.",
+        add: "Add service",
+        lastCheck: "Latest connection check",
+        advancedResult: "Advanced connection details",
+        advancedResultHint: "Review only when troubleshooting a compatible service or gateway.",
+      };
 
   const resetForm = () => {
     setShowForm(false);
@@ -96,20 +115,12 @@ export function ModelSettings() {
   };
 
   const handleDelete = (id: string) => {
-    if (confirm(t("confirmDelete"))) {
-      deleteModel(id);
-    }
+    deleteModel(id);
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">{t("title")}</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            {t("description")}
-          </p>
-        </div>
+    <div className="space-y-7">
+      <div className="flex items-center justify-end">
         <button
           onClick={() => {
             if (showForm) {
@@ -119,15 +130,15 @@ export function ModelSettings() {
             setShowForm(true);
           }}
           data-testid="model-add-button"
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm"
+          className="flex items-center gap-2 bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           <Plus size={16} />
-          {t("addModel")}
+          {copy.add}
         </button>
       </div>
 
       {displayError && (
-        <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg flex items-center justify-between">
+        <div className="flex items-center justify-between border-l-2 border-destructive bg-destructive/10 px-4 py-3">
           <span className="text-sm text-destructive">{displayError}</span>
           <button
             onClick={() => {
@@ -155,14 +166,14 @@ export function ModelSettings() {
       )}
 
       {testResult && (
-        <div data-testid="model-test-summary" className="rounded-2xl border border-border bg-background p-4">
+        <div data-testid="model-test-summary" className="border-y border-border bg-card px-4 py-4">
           <div className="flex items-center gap-2 text-sm font-medium text-foreground">
             {testResult.success ? (
-              <CheckCircle size={16} className="text-green-600" />
+              <CheckCircle size={16} className="text-primary" />
             ) : (
               <XCircle size={16} className="text-destructive" />
             )}
-            {t("lastDiagnostic")}
+            {copy.lastCheck}
           </div>
           <div className="mt-3 grid gap-2 text-sm text-muted-foreground md:grid-cols-2">
             <div>
@@ -171,21 +182,41 @@ export function ModelSettings() {
             <div>
               {t("latency") + ":"} <span className="text-foreground">{testResult.response_time_ms || "-"} ms</span>
             </div>
-            <div>
-              {t("resolvedProvider") + ":"} <span className="text-foreground">{testResult.resolved_provider || "-"}</span>
-            </div>
-            <div>
-              {t("apiFormat") + ":"} <span className="text-foreground">{testResult.api_format || "-"}</span>
-            </div>
-            <div className="md:col-span-2">
-              {t("baseUrl") + ":"} <span className="text-foreground">{testResult.resolved_base_url || "-"}</span>
-            </div>
-            {!testResult.success && (
-              <div className="md:col-span-2">
-                {t("errorCategoryLabel") + ":"} <span className="text-foreground">{testResult.error_category || "unknown"}</span>
-              </div>
-            )}
           </div>
+          <details
+            data-testid="model-test-advanced"
+            className="group mt-4 border-t border-border pt-3"
+          >
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-xs text-muted-foreground marker:content-none">
+              <span>
+                <span className="font-semibold text-foreground">{copy.advancedResult}</span>
+                <span className="ml-2 hidden text-muted-foreground sm:inline">
+                  {copy.advancedResultHint}
+                </span>
+              </span>
+              <ChevronDown size={14} className="transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="mt-3 grid gap-2 border-l-2 border-border bg-muted/40 px-3 py-3 text-xs text-muted-foreground md:grid-cols-2">
+              <div>
+                {t("resolvedProvider") + ":"}{" "}
+                <span className="text-foreground">{testResult.resolved_provider || "-"}</span>
+              </div>
+              <div>
+                {t("apiFormat") + ":"}{" "}
+                <span className="text-foreground">{testResult.api_format || "-"}</span>
+              </div>
+              <div className="md:col-span-2">
+                {t("baseUrl") + ":"}{" "}
+                <span className="text-foreground">{testResult.resolved_base_url || "-"}</span>
+              </div>
+              {!testResult.success && (
+                <div className="md:col-span-2">
+                  {t("errorCategoryLabel") + ":"}{" "}
+                  <span className="text-foreground">{testResult.error_category || "unknown"}</span>
+                </div>
+              )}
+            </div>
+          </details>
         </div>
       )}
 

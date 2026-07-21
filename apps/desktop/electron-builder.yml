@@ -1,6 +1,6 @@
-appId: com.querygpt.desktop
-productName: QueryGPT
-copyright: Copyright © 2024 QueryGPT Team
+appId: com.receiptbi.desktop
+productName: ReceiptBI
+copyright: Copyright © 2024-2026 ReceiptBI Team
 
 directories:
   output: release
@@ -14,6 +14,8 @@ extraMetadata:
 
 # 将 backend 和 next 作为额外资源打包（不进入 asar）
 extraResources:
+  - from: resources/icon/icon.png
+    to: icon/icon.png
   - from: backend
     to: backend
     filter:
@@ -25,7 +27,7 @@ extraResources:
 
 # macOS
 mac:
-  category: public.app-category.developer-tools
+  category: public.app-category.business
   target:
     - target: dmg
       arch: [x64, arm64]
@@ -41,8 +43,6 @@ win:
   target:
     - target: nsis
       arch: [x64]
-    - target: portable
-      arch: [x64]
   artifactName: ${productName}-${version}-win-${arch}.${ext}
   icon: resources/icon/icon.ico
 
@@ -57,8 +57,9 @@ nsis:
 # Linux (optional)
 linux:
   target: [AppImage]
-  category: Development
+  category: Office
   artifactName: ${productName}-${version}-linux-${arch}.${ext}
+  icon: resources/icon/icon.png
 
 # ASAR: 只包含 dist-electron
 asar: true

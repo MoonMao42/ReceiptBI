@@ -11,7 +11,7 @@
  */
 
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, copyFileSync, cpSync, rmSync, readlinkSync, symlinkSync, lstatSync } from 'node:fs';
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname, relative } from 'node:path';
 
 const ROOT = resolve(__dirname, '../../..');
@@ -19,6 +19,11 @@ const API_DIR = join(ROOT, 'apps/api');
 const DESKTOP_DIR = join(ROOT, 'apps/desktop');
 const BUILD_DIR = join(DESKTOP_DIR, 'build');
 const BACKEND_OUT = join(DESKTOP_DIR, 'backend');
+const SQLITE_EXECUTOR_WORKSPACE = ROOT;
+const SQLITE_SIDECAR_PACKAGE = 'receiptbi-sqlite-executor-sidecar';
+const SQLITE_SIDECAR_NAME = process.platform === 'win32'
+  ? 'receiptbi-sqlite-executor-sidecar.exe'
+  : 'receiptbi-sqlite-executor-sidecar';
 
 function run(cmd: string, opts?: { cwd?: string; stdio?: 'inherit' | 'pipe' }) {
   console.log(`  $ ${cmd}`);
@@ -75,19 +80,21 @@ async function main() {
 
   // 1. 生成 requirements.txt
   console.log('[1/5] Generating requirements.txt...');
-  const apiVenvPip = join(API_DIR, '.venv', process.platform === 'win32' ? 'Scripts/pip.exe' : 'bin/pip');
-  let requirements: string;
-  if (existsSync(apiVenvPip)) {
-    requirements = execSync(`"${apiVenvPip}" freeze`, { encoding: 'utf-8', cwd: API_DIR });
+  const requirementsPath = join(BUILD_DIR, 'requirements.txt');
+  const hasUvForCompile = (() => {
+    try { execSync('uv --version', { encoding: 'utf-8' }); return true; } catch { return false; }
+  })();
+  if (hasUvForCompile) {
+    run(`uv pip compile pyproject.toml --output-file "${requirementsPath}" --no-annotate --no-header --no-emit-package receiptbi-api -q`, { cwd: API_DIR });
   } else {
-    requirements = execSync('uv pip freeze', { encoding: 'utf-8', cwd: API_DIR });
+    const apiVenvPip = join(API_DIR, '.venv', process.platform === 'win32' ? 'Scripts/pip.exe' : 'bin/pip');
+    const requirements = execSync(`"${apiVenvPip}" freeze`, { encoding: 'utf-8', cwd: API_DIR });
+    const frozenPkgs = requirements.split('\n').filter((line) => {
+      const l = line.trim();
+      return l && !l.startsWith('git+') && !l.startsWith('-e ') && !l.startsWith('#');
+    }).join('\n');
+    writeFileSync(requirementsPath, frozenPkgs);
   }
-  // 过滤掉 git 来源的包（如 querygpt_api），PyInstaller 通过 desktop-entry.py 直接导入 app.main
-  const frozenPkgs = requirements.split('\n').filter((line) => {
-    const l = line.trim();
-    return l && !l.startsWith('git+') && !l.startsWith('-e ') && !l.startsWith('#');
-  }).join('\n');
-  writeFileSync(join(BUILD_DIR, 'requirements.txt'), frozenPkgs);
 
   // 2. 创建 build venv（使用 Python 3.13，PyInstaller 6.19.0 需要）
   console.log('\n[2/5] Creating build venv with Python 3.13...');
@@ -127,10 +134,83 @@ async function main() {
   // 显式安装 aiosqlite（pydantic-settings 动态加载时需要）
   pipInstall('aiosqlite');
 
-  // 2.5. 预生成 demo.db + querygpt.db（构建时生成，运行时直接复制到用户目录）
-  console.log('\nPre-generating databases...');
-  const seedScript = join(DESKTOP_DIR, 'scripts', 'seed-databases.py');
-  run(`${python} "${seedScript}"`);
+  // Generate the exact distribution inventory from the build environment. The
+  // runtime dependency installer uses importlib.metadata to decide which
+  // bundled packages it can reuse, so every runtime distribution needs its
+  // .dist-info metadata in the frozen application (not just packages that call
+  // metadata.version() during import).
+  console.log('Generating bundled distribution inventory...');
+  const inventoryPath = join(BUILD_DIR, 'builtin-distributions.json');
+  const inventoryWriterPath = join(BUILD_DIR, 'write-distribution-inventory.py');
+  writeFileSync(inventoryWriterPath, `
+import json
+import platform
+import sys
+from importlib import metadata
+from pathlib import Path
+
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.utils import canonicalize_name
+
+
+inventory_path = Path(sys.argv[1])
+requirements_path = Path(sys.argv[2])
+required_names = {"aiosqlite": "aiosqlite", "pip": "pip"}
+
+# requirements.txt is compiled before the build venv is created, so it is the
+# authoritative runtime dependency closure. pip is also an application
+# dependency but pip freeze deliberately omits it; aiosqlite is installed as an
+# explicit desktop runtime dependency.
+for line_number, raw_line in enumerate(
+    requirements_path.read_text(encoding="utf-8").splitlines(),
+    start=1,
+):
+    line = raw_line.strip()
+    if not line or line.startswith("#"):
+        continue
+    try:
+        requirement = Requirement(line)
+    except InvalidRequirement as error:
+        raise RuntimeError(
+            f"Invalid compiled requirement on line {line_number}: {line}"
+        ) from error
+    if requirement.marker is None or requirement.marker.evaluate():
+        required_names[str(canonicalize_name(requirement.name))] = requirement.name
+
+distributions = []
+for canonical_name, requested_name in sorted(required_names.items()):
+    distribution = metadata.distribution(requested_name)
+    name = distribution.metadata["Name"]
+    distributions.append({
+        "name": name,
+        "canonical_name": canonical_name,
+        "version": distribution.version,
+    })
+
+payload = {
+    "schema_version": 1,
+    "python_version": platform.python_version(),
+    "distributions": distributions,
+}
+inventory_path.write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2) + "\\n",
+    encoding="utf-8",
+)
+`);
+  run(`"${python}" "${inventoryWriterPath}" "${inventoryPath}" "${requirementsPath}"`);
+
+  const inventory = JSON.parse(readFileSync(inventoryPath, 'utf-8')) as {
+    distributions?: Array<{ name?: string; canonical_name?: string; version?: string }>;
+  };
+  if (!Array.isArray(inventory.distributions) || inventory.distributions.length === 0) {
+    throw new Error('Bundled distribution inventory is empty');
+  }
+  for (const item of inventory.distributions) {
+    if (!item.name || !item.canonical_name || !item.version) {
+      throw new Error(`Invalid bundled distribution inventory entry: ${JSON.stringify(item)}`);
+    }
+  }
+  console.log(`  Recorded ${inventory.distributions.length} runtime distributions`);
 
   // 3. 收集可能动态导入的模块
   console.log('\n[3/5] Collecting dynamic imports...');
@@ -140,15 +220,19 @@ async function main() {
     'uvicorn.protocols.websockets', 'uvicorn.protocols.websockets.auto',
     'uvicorn.lifespan', 'uvicorn.lifespan.on',
     'fastapi', 'fastapi.applications', 'fastapi.routing',
-    'pydantic', 'pydantic_settings', 'pydantic_extra_types.phone_numbers',
+    'pydantic', 'pydantic_settings',
     'sqlalchemy', 'sqlalchemy.ext', 'sqlalchemy.ext.asyncio',
     'aiosqlite', 'sqlalchemy.dialects.sqlite.aiosqlite', 'sqlalchemy.dialects.sqlite',
-    'litellm', 'litellm.main', 'litellm.llms', 'litellm.llms.openai',
+    'pydantic_ai', 'pydantic_ai.models.openai', 'pydantic_ai.models.anthropic',
+    'pydantic_ai.providers.openai', 'pydantic_ai.providers.anthropic',
+    'openai', 'anthropic', 'wren_core',
     'pandas', 'numpy', 'matplotlib', 'matplotlib.backends.backend_agg',
+    'seaborn', 'duckdb', 'polars', 'pyarrow', 'plotly', 'openpyxl', 'xlrd', 'IPython',
+    'pip', 'pip._internal', 'pip._internal.cli.main',
     'slowapi', 'httpx', 'structlog', 'cryptography', 'alembic',
     'sse_starlette', 'asyncpg', 'pymysql', 'psycopg2',
     'charset_normalizer', 'idna', 'certifi', 'urllib3', 'jinja2',
-    'python_multipart', 'python_dotenv', 'email_validator',
+    'python_multipart', 'dotenv', 'email_validator',
     'click', 'anyio', 'sniffio',
     'tiktoken', 'tiktoken_ext', 'tiktoken_ext.openai_public',
   ];
@@ -163,9 +247,14 @@ async function main() {
   const assetsExist = existsSync(assetsSrc);
   const dataSrc = join(API_DIR, 'data');
   const dataExist = existsSync(dataSrc);
+  const alembicSrc = join(API_DIR, 'alembic');
+  const alembicIni = join(API_DIR, 'alembic.ini');
+  if (!existsSync(join(alembicSrc, 'versions')) || !existsSync(alembicIni)) {
+    throw new Error('Alembic migration resources are missing');
+  }
 
-  const specPath = join(BUILD_DIR, 'querygpt-api.spec');
-  const outDir = join(ROOT, 'dist', 'querygpt-api');
+  const specPath = join(BUILD_DIR, 'receiptbi-api.spec');
+  const outDir = join(ROOT, 'dist', 'receiptbi-api');
   const distDir = join(BUILD_DIR, 'dist').replace(/\\/g, '\\\\');
 
   // 生成 runtime hook：强制导入 aiosqlite（hiddenimport 无法保证纯 Python 包被打包）
@@ -175,18 +264,32 @@ async function main() {
 
   const spec = `
 # -*- mode: python ; coding: utf-8 -*-
-import importlib, os
-from PyInstaller.utils.hooks import collect_data_files
+import json, os
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 block_cipher = None
 distpath = '${distDir}'
 
 # 收集需要数据文件的包
 _extra_datas = []
-for _pkg in ['tiktoken_ext', 'litellm', 'certifi', 'charset_normalizer']:
+for _pkg in ['tiktoken_ext', 'certifi', 'charset_normalizer', 'plotly', 'pip']:
     try:
         _extra_datas += collect_data_files(_pkg)
     except Exception:
         pass
+
+# Preserve metadata for every runtime distribution installed from the compiled
+# API requirements. This lets importlib.metadata and pip's resolver see the
+# packages already bundled with the desktop application.
+_inventory_path = '${inventoryPath.replace(/\\/g, '\\\\')}'
+with open(_inventory_path, encoding='utf-8') as _inventory_file:
+    _runtime_distributions = json.load(_inventory_file)['distributions']
+for _distribution in _runtime_distributions:
+    _name = _distribution['name']
+    try:
+        _extra_datas += copy_metadata(_name)
+    except Exception as _error:
+        raise RuntimeError(f'Unable to bundle metadata for {_name}') from _error
+_extra_datas.append((_inventory_path, '.'))
 
 a = Analysis(
     ['${apiMainPy.replace(/\\/g, '\\\\')}'],
@@ -195,8 +298,10 @@ a = Analysis(
     datas=[
 ${assetsExist ? `        ('${assetsSrc.replace(/\\/g, '\\\\')}', 'app\\\\assets'),` : ''}
 ${dataExist ? `        ('${dataSrc.replace(/\\/g, '\\\\')}', 'data'),` : ''}
+        ('${alembicSrc.replace(/\\/g, '\\\\')}', 'alembic'),
+        ('${alembicIni.replace(/\\/g, '\\\\')}', '.'),
     ] + _extra_datas,
-    hiddenimports=[${hiddenImports.map(s => `'${s}'`).join(', ')}],
+    hiddenimports=[${hiddenImports.map(s => `'${s}'`).join(', ')}] + collect_submodules('pip') + collect_submodules('alembic'),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=['${runtimeHookPath.replace(/\\/g, '\\\\')}'],
@@ -214,7 +319,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='querygpt-api',
+    name='receiptbi-api',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -231,7 +336,7 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name='querygpt-api',
+    name='receiptbi-api',
 )
 `;
 
@@ -261,6 +366,23 @@ coll = COLLECT(
   if (existsSync(envExample)) {
     copyFileSync(envExample, join(BACKEND_OUT, '.env.example'));
   }
+
+  // The packaged desktop is the trusted execution environment. Build the
+  // low-coupling Rust sidecar into the same resource directory as the frozen
+  // API; non-desktop development intentionally keeps the Python fallback.
+  console.log('\nBuilding trusted SQLite sidecar...');
+  run(`cargo build --release -p ${SQLITE_SIDECAR_PACKAGE}`, { cwd: SQLITE_EXECUTOR_WORKSPACE });
+  const configuredTargetDir = process.env.CARGO_TARGET_DIR;
+  const rustTargetDir = configuredTargetDir
+    ? resolve(SQLITE_EXECUTOR_WORKSPACE, configuredTargetDir)
+    : join(SQLITE_EXECUTOR_WORKSPACE, 'target');
+  const sqliteSidecarSource = join(rustTargetDir, 'release', SQLITE_SIDECAR_NAME);
+  if (!existsSync(sqliteSidecarSource)) {
+    throw new Error(`Trusted SQLite sidecar was not built: ${sqliteSidecarSource}`);
+  }
+  const sqliteSidecarDestination = join(BACKEND_OUT, SQLITE_SIDECAR_NAME);
+  copyFileSync(sqliteSidecarSource, sqliteSidecarDestination);
+  if (process.platform !== 'win32') chmodSync(sqliteSidecarDestination, 0o755);
 
   console.log(`\n✓ Backend built at: ${BACKEND_OUT}`);
   console.log(`  (Next step: run scripts/build-next.ts to build the frontend)`);

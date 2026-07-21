@@ -1,278 +1,44 @@
-# QueryGPT v2 数据库设计文档
+# ReceiptBI 数据库参考
 
-## 概述
+ReceiptBI 使用一个应用数据库保存本地工作区状态。源码模式默认可使用
+`sqlite+aiosqlite:///./data/receiptbi.db`，Docker 开发模式默认使用
+`postgresql+asyncpg://postgres:postgres@localhost:5432/receiptbi`。桌面版把数据库放在
+`~/.receiptbi-desktop/data/receiptbi.db`，并通过 Alembic 迁移维护结构。
 
-QueryGPT v2 使用 PostgreSQL 作为主数据库，存储用户数据、对话历史、配置等信息。
+完整字段和约束以 [`apps/api/app/db/tables.py`](../../apps/api/app/db/tables.py) 为准。
 
-## 数据库配置
+## 当前表
 
-```python
-# 连接字符串格式
-DATABASE_URL = "postgresql+asyncpg://user:password@localhost:5432/querygpt"
-```
+| 表 | 用途 |
+|---|---|
+| `connections` | 用户配置的只读 SQLite、MySQL 或 PostgreSQL 数据源；凭据加密存储 |
+| `models` | PydanticAI 使用的模型提供商、模型标识与加密 API 凭据 |
+| `conversations` / `messages` | 对话与流式调查历史 |
+| `app_settings` | 单工作区默认模型、默认连接与当前执行偏好 |
+| `projects` | 项目边界与项目级状态 |
+| `project_data_sources` | 项目内文件或数据库来源、工作副本、指纹和画像 |
+| `preflight_reports` | 非破坏性预检、结构和有预算的值画像证据 |
+| `sanitation_recipes` / `sanitation_recipe_revisions` | 数据整理方法及不可变版本历史 |
+| `semantic_entries` / `semantic_entry_revisions` | 项目语义层的候选、确认、锁定知识及不可变版本历史 |
+| `analysis_corrections` | 绑定调查证据的用户纠正 |
+| `analysis_runs` | 调查状态、报告、检查点和错误 |
+| `artifacts` | 表格、图表与其他报告产物及其技术依据 |
 
-## 表结构
+## 已退役结构
 
-### 1. users - 用户表
+旧版全局 `prompts`、`semantic_terms`、`table_relationships` 和独立
+`metadata.db/schema_layouts` 不再属于运行时。升级时，非示例的旧术语和关系会作为待核对的
+项目语义候选迁入 `semantic_entries` 并写入首个 revision；旧提示词只作为 inactive、blocked
+归档候选保留，不会进入 Agent system prompt。自动注入的示例数据库及其未确认派生候选会被清理。
 
-```sql
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) NOT NULL UNIQUE,
-    hashed_password VARCHAR(255) NOT NULL,
-    display_name VARCHAR(100),
-    avatar_url VARCHAR(500),
-    role VARCHAR(20) DEFAULT 'user',  -- user, admin
-    is_active BOOLEAN DEFAULT true,
-    settings JSONB DEFAULT '{}',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+## 关键边界
 
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_is_active ON users(is_active);
-```
+- 项目知识按 `project_id` 隔离；候选不能覆盖 confirmed 或 locked 定义。
+- 文件预检生成工作副本，不改写用户选择的原文件。
+- 数据库执行路径校验只读语句；生产使用时仍应配置服务器侧只读账号。
+- 连接密码和模型 API key 使用本地 `ENCRYPTION_KEY` 加密。数据库、`.env`、
+  `encryption.key` 和桌面数据目录都不应上传或分享。
+- 迁移链遇到未知、混合或损坏结构时应停止，而不是用 `create_all` 隐藏问题。
 
-**字段说明**
-
-| 字段 | 类型 | 描述 |
-|------|------|------|
-| id | UUID | 主键 |
-| email | VARCHAR(255) | 邮箱，唯一 |
-| hashed_password | VARCHAR(255) | bcrypt 哈希密码 |
-| display_name | VARCHAR(100) | 显示名称 |
-| avatar_url | VARCHAR(500) | 头像 URL |
-| role | VARCHAR(20) | 角色：user/admin |
-| is_active | BOOLEAN | 是否激活 |
-| settings | JSONB | 用户设置 |
-
-### 2. connections - 数据库连接表
-
-```sql
-CREATE TABLE connections (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name VARCHAR(100) NOT NULL,
-    driver VARCHAR(20) NOT NULL,  -- mysql, postgresql, sqlite
-    host VARCHAR(255),
-    port INTEGER,
-    username VARCHAR(100),
-    password_encrypted TEXT,  -- AES-256 加密
-    database_name VARCHAR(100),
-    extra_options JSONB DEFAULT '{}',
-    is_default BOOLEAN DEFAULT false,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE INDEX idx_connections_user_id ON connections(user_id);
-CREATE INDEX idx_connections_is_default ON connections(user_id, is_default);
-```
-
-**字段说明**
-
-| 字段 | 类型 | 描述 |
-|------|------|------|
-| driver | VARCHAR(20) | 数据库类型：mysql/postgresql/sqlite |
-| password_encrypted | TEXT | AES-256 加密的密码 |
-| extra_options | JSONB | 额外连接选项（SSL、charset 等） |
-
-### 3. models - 模型配置表
-
-```sql
-CREATE TABLE models (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name VARCHAR(100) NOT NULL,
-    provider VARCHAR(50) NOT NULL,  -- openai, anthropic, ollama, etc.
-    model_id VARCHAR(100) NOT NULL,  -- gpt-4o, claude-3-5-sonnet, etc.
-    base_url VARCHAR(500),
-    api_key_encrypted TEXT,  -- AES-256 加密
-    extra_options JSONB DEFAULT '{}',
-    is_default BOOLEAN DEFAULT false,
-    is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE INDEX idx_models_user_id ON models(user_id);
-CREATE INDEX idx_models_is_default ON models(user_id, is_default);
-```
-
-### 4. conversations - 对话表
-
-```sql
-CREATE TABLE conversations (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    connection_id UUID REFERENCES connections(id) ON DELETE SET NULL,
-    model_id UUID REFERENCES models(id) ON DELETE SET NULL,
-    title VARCHAR(200),
-    status VARCHAR(20) DEFAULT 'active',  -- active, completed, error
-    is_favorite BOOLEAN DEFAULT false,
-    metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE INDEX idx_conversations_user_id ON conversations(user_id);
-CREATE INDEX idx_conversations_created_at ON conversations(user_id, created_at DESC);
-CREATE INDEX idx_conversations_is_favorite ON conversations(user_id, is_favorite);
-CREATE INDEX idx_conversations_title_search ON conversations USING gin(to_tsvector('simple', title));
-```
-
-### 5. messages - 消息表
-
-```sql
-CREATE TABLE messages (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    role VARCHAR(20) NOT NULL,  -- user, assistant, system
-    content TEXT NOT NULL,
-    metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
-CREATE INDEX idx_messages_created_at ON messages(conversation_id, created_at);
-```
-
-**metadata 结构（assistant 消息）**
-
-```json
-{
-  "sql": "SELECT * FROM orders WHERE ...",
-  "execution_time": 0.5,
-  "rows_count": 100,
-  "steps": [
-    {"stage": "analyzing", "message": "分析查询意图"},
-    {"stage": "generating_sql", "message": "生成 SQL"},
-    {"stage": "executing", "message": "执行查询"}
-  ],
-  "visualization": {
-    "type": "bar",
-    "data": { ... }
-  },
-  "error": null
-}
-```
-
-### 6. prompts - Prompt 配置表
-
-```sql
-CREATE TABLE prompts (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,  -- NULL 表示系统默认
-    name VARCHAR(100) NOT NULL,
-    type VARCHAR(50) NOT NULL,  -- system, routing, analysis, qa, etc.
-    content_zh TEXT,
-    content_en TEXT,
-    is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE INDEX idx_prompts_user_id ON prompts(user_id);
-CREATE INDEX idx_prompts_type ON prompts(type);
-CREATE UNIQUE INDEX idx_prompts_user_type ON prompts(user_id, type) WHERE user_id IS NOT NULL;
-```
-
-### 7. refresh_tokens - 刷新令牌表
-
-```sql
-CREATE TABLE refresh_tokens (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token_hash VARCHAR(255) NOT NULL,  -- SHA-256 哈希
-    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    revoked_at TIMESTAMP WITH TIME ZONE
-);
-
-CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
-CREATE INDEX idx_refresh_tokens_token_hash ON refresh_tokens(token_hash);
-CREATE INDEX idx_refresh_tokens_expires_at ON refresh_tokens(expires_at);
-```
-
-### 8. audit_logs - 审计日志表（可选）
-
-```sql
-CREATE TABLE audit_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
-    action VARCHAR(50) NOT NULL,  -- login, query, config_change, etc.
-    resource_type VARCHAR(50),
-    resource_id UUID,
-    details JSONB DEFAULT '{}',
-    ip_address INET,
-    user_agent TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE INDEX idx_audit_logs_user_id ON audit_logs(user_id);
-CREATE INDEX idx_audit_logs_action ON audit_logs(action);
-CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at);
-```
-
-## 迁移脚本
-
-使用 Alembic 管理数据库迁移：
-
-```bash
-# 创建迁移
-alembic revision --autogenerate -m "initial tables"
-
-# 执行迁移
-alembic upgrade head
-
-# 回滚
-alembic downgrade -1
-```
-
-## 数据加密
-
-### API Key / Password 加密
-
-使用 AES-256-GCM 加密敏感数据：
-
-```python
-from cryptography.fernet import Fernet
-
-# 生成密钥（存储在环境变量）
-ENCRYPTION_KEY = Fernet.generate_key()
-
-def encrypt(plaintext: str) -> str:
-    f = Fernet(ENCRYPTION_KEY)
-    return f.encrypt(plaintext.encode()).decode()
-
-def decrypt(ciphertext: str) -> str:
-    f = Fernet(ENCRYPTION_KEY)
-    return f.decrypt(ciphertext.encode()).decode()
-```
-
-## 索引策略
-
-| 表 | 索引 | 用途 |
-|---|------|------|
-| users | email | 登录查询 |
-| conversations | (user_id, created_at DESC) | 历史列表 |
-| conversations | title (GIN) | 全文搜索 |
-| messages | (conversation_id, created_at) | 消息列表 |
-
-## 数据保留策略
-
-| 数据类型 | 保留期限 | 清理方式 |
-|---------|---------|---------|
-| 对话历史 | 永久（用户可删除） | 用户手动删除 |
-| 审计日志 | 90 天 | 定时任务清理 |
-| 刷新令牌 | 过期后 7 天 | 定时任务清理 |
-
-## 备份策略
-
-```bash
-# 每日备份
-pg_dump -Fc querygpt > backup_$(date +%Y%m%d).dump
-
-# 恢复
-pg_restore -d querygpt backup_20240101.dump
-```
+更多运行边界见 [`../DATA_AND_PRIVACY.md`](../DATA_AND_PRIVACY.md) 和
+[`../STATUS.md`](../STATUS.md)。

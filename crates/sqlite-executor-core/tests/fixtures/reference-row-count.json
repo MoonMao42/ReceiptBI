@@ -1,0 +1,301 @@
+{
+  "contract": "trusted-query-fixture@1",
+  "canonicalization": "sorted-json@1",
+  "sourceOpenResult": {
+    "contract": "data-source-open@1",
+    "state": "ready",
+    "source": {
+      "id": "ca92eca8-7335-4c57-a220-131c68656a6c",
+      "kind": "sqlite",
+      "name": "fixture.sqlite",
+      "sizeBytes": 8192,
+      "schema": {
+        "tables": [
+          {
+            "name": "数据 表",
+            "kind": "table",
+            "columns": [
+              {
+                "name": "id",
+                "declaredType": "INTEGER",
+                "nullable": false,
+                "primaryKeyPosition": 1,
+                "hidden": false
+              }
+            ]
+          }
+        ],
+        "truncated": false
+      },
+      "reference": {
+        "state": "available",
+        "label": "验证本地记录数",
+        "query": {
+          "version": "semantic-query@1",
+          "kind": "aggregate",
+          "semanticModel": {
+            "id": "local_fixture",
+            "revision": "sha256:b78f2cc3e7954873e567d398b94e6a6ddb7fb941a184114ef8968ea19def59ac"
+          },
+          "scope": "fixture_overview",
+          "measures": [
+            {
+              "member": "fixture_rows.row_count"
+            }
+          ],
+          "dimensions": [],
+          "limit": 1
+        },
+        "referenceHash": "sha256:59f9fb51a50a5a09d4d59b0e5aa14c8688f55a515b6d216e71cd7c64d36805f4"
+      }
+    }
+  },
+  "publicRunRequest": {
+    "contract": "query-run-request@1",
+    "runId": "0f279023-6f8b-4461-a2dd-592ca690d1df",
+    "sourceId": "ca92eca8-7335-4c57-a220-131c68656a6c",
+    "origin": "automatic",
+    "query": {
+      "version": "semantic-query@1",
+      "kind": "aggregate",
+      "semanticModel": {
+        "id": "local_fixture",
+        "revision": "sha256:b78f2cc3e7954873e567d398b94e6a6ddb7fb941a184114ef8968ea19def59ac"
+      },
+      "scope": "fixture_overview",
+      "measures": [
+        {
+          "member": "fixture_rows.row_count"
+        }
+      ],
+      "dimensions": [],
+      "limit": 1
+    }
+  },
+  "compileEnvelope": {
+    "version": "compile-envelope@1",
+    "dialect": "sqlite",
+    "manifest": {
+      "version": "semantic-manifest@1",
+      "model": {
+        "id": "local_fixture",
+        "revision": "sha256:b78f2cc3e7954873e567d398b94e6a6ddb7fb941a184114ef8968ea19def59ac",
+        "displayName": "本地数据"
+      },
+      "source": {
+        "id": "ca92eca8-7335-4c57-a220-131c68656a6c",
+        "kind": "sqlite",
+        "relations": [
+          {
+            "id": "fixture_rows",
+            "kind": "table",
+            "physicalName": "数据 表"
+          }
+        ]
+      },
+      "members": [
+        {
+          "id": "fixture_rows.row_count",
+          "relation": "fixture_rows",
+          "displayName": "记录数",
+          "kind": "measure",
+          "logicalType": "integer",
+          "nullable": false,
+          "aggregation": "count",
+          "additivity": "additive",
+          "expression": {
+            "kind": "row-count"
+          }
+        }
+      ],
+      "relationships": [],
+      "scopes": [
+        {
+          "id": "fixture_overview",
+          "displayName": "数据概览",
+          "rootRelation": "fixture_rows",
+          "members": [
+            "fixture_rows.row_count"
+          ]
+        }
+      ],
+      "calendar": {
+        "timezone": "UTC",
+        "weekStartsOn": "monday",
+        "nullSemantics": "preserve"
+      }
+    },
+    "policy": {
+      "version": "host-policy@1",
+      "revision": "sha256:f42738478003b96c7a484bfe5bca8dca70aa43ec288eb76d011335035a258881",
+      "semanticModel": {
+        "id": "local_fixture",
+        "revision": "sha256:b78f2cc3e7954873e567d398b94e6a6ddb7fb941a184114ef8968ea19def59ac"
+      },
+      "allowedScopes": [
+        "fixture_overview"
+      ],
+      "allowedMembers": [
+        "fixture_rows.row_count"
+      ],
+      "allowedRelations": [
+        "fixture_rows"
+      ],
+      "rowFilters": [],
+      "compileBudget": {
+        "maxInputBytes": 1048576,
+        "maxDepth": 32,
+        "maxAstNodes": 1024,
+        "maxParameters": 16,
+        "maxOutputColumns": 16,
+        "maxRelationClosure": 8,
+        "maxSqlBytes": 4096
+      },
+      "maxPlanBudget": {
+        "maxSteps": 64,
+        "maxFullScans": 1,
+        "maxTempBtrees": 0
+      },
+      "maxResultLimits": {
+        "maxRows": 1,
+        "maxBytes": 4096,
+        "timeoutMs": 5000
+      }
+    },
+    "query": {
+      "version": "semantic-query@1",
+      "kind": "aggregate",
+      "semanticModel": {
+        "id": "local_fixture",
+        "revision": "sha256:b78f2cc3e7954873e567d398b94e6a6ddb7fb941a184114ef8968ea19def59ac"
+      },
+      "scope": "fixture_overview",
+      "measures": [
+        {
+          "member": "fixture_rows.row_count"
+        }
+      ],
+      "dimensions": [],
+      "limit": 1
+    }
+  },
+  "compiledQuery": {
+    "version": "compiled-query@1",
+    "dialect": "sqlite",
+    "semanticModel": "local_fixture",
+    "scope": "fixture_overview",
+    "sql": "SELECT COUNT(*) AS \"row_count\" FROM \"数据 表\"",
+    "parameters": [],
+    "relationClosure": [
+      "数据 表"
+    ],
+    "expectedColumns": [
+      {
+        "name": "row_count",
+        "logicalType": "integer",
+        "nullable": false
+      }
+    ],
+    "planBudget": {
+      "maxSteps": 64,
+      "maxFullScans": 1,
+      "maxTempBtrees": 0
+    },
+    "limits": {
+      "maxRows": 1,
+      "maxBytes": 4096,
+      "timeoutMs": 5000
+    },
+    "lineage": [
+      {
+        "output": "row_count",
+        "semanticMember": "fixture_rows.row_count",
+        "semanticRelations": [
+          "fixture_rows"
+        ],
+        "operation": "aggregate"
+      }
+    ],
+    "appliedPolicies": [
+      {
+        "policyRevision": "sha256:f42738478003b96c7a484bfe5bca8dca70aa43ec288eb76d011335035a258881",
+        "scope": "fixture_overview",
+        "rowFilterCount": 0
+      }
+    ],
+    "warnings": [],
+    "compilerVersion": "0.1.0",
+    "manifestRevision": "sha256:b78f2cc3e7954873e567d398b94e6a6ddb7fb941a184114ef8968ea19def59ac",
+    "policyRevision": "sha256:f42738478003b96c7a484bfe5bca8dca70aa43ec288eb76d011335035a258881",
+    "semanticQueryHash": "sha256:59f9fb51a50a5a09d4d59b0e5aa14c8688f55a515b6d216e71cd7c64d36805f4",
+    "planHash": "sha256:9749bcec7e462fe3cb6bc181a36267fea7a5c38040d09588b5e490d926444b89"
+  },
+  "publicTerminal": {
+    "contract": "query-run-terminal@1",
+    "runId": "0f279023-6f8b-4461-a2dd-592ca690d1df",
+    "origin": "automatic",
+    "status": "completed",
+    "artifact": {
+      "version": "dataset-artifact@1",
+      "artifactId": "57ef6800-6b52-480e-8787-8131d238b46b",
+      "columns": [
+        {
+          "id": "row_count",
+          "label": "记录数",
+          "semanticMember": "fixture_rows.row_count",
+          "logicalType": "integer",
+          "nullable": false,
+          "unit": {
+            "kind": "count"
+          }
+        }
+      ],
+      "rows": [
+        [
+          {
+            "kind": "integer",
+            "value": "3"
+          }
+        ]
+      ],
+      "requestedLimits": {
+        "maxRows": 1,
+        "maxBytes": 4096,
+        "timeoutMs": 5000
+      },
+      "observed": {
+        "rowCount": 1,
+        "byteCount": 1,
+        "durationMs": 2
+      },
+      "freshness": {
+        "sourceId": "ca92eca8-7335-4c57-a220-131c68656a6c",
+        "sourceRevision": "sha256:51648b2be4ecc163a2c0a5981f927b346c85f158ef3842e004511f98d7b0ade1",
+        "verification": "bounded-metadata-and-sidecars",
+        "checkedBeforeExecution": true,
+        "checkedBeforeCompletion": true,
+        "activeJournal": false
+      },
+      "provenance": {
+        "semanticModel": {
+          "id": "local_fixture",
+          "revision": "sha256:b78f2cc3e7954873e567d398b94e6a6ddb7fb941a184114ef8968ea19def59ac"
+        },
+        "scope": "fixture_overview",
+        "manifestRevision": "sha256:b78f2cc3e7954873e567d398b94e6a6ddb7fb941a184114ef8968ea19def59ac",
+        "policyRevision": "sha256:f42738478003b96c7a484bfe5bca8dca70aa43ec288eb76d011335035a258881",
+        "semanticQueryHash": "sha256:59f9fb51a50a5a09d4d59b0e5aa14c8688f55a515b6d216e71cd7c64d36805f4",
+        "planHash": "sha256:9749bcec7e462fe3cb6bc181a36267fea7a5c38040d09588b5e490d926444b89",
+        "compiler": {
+          "version": "0.1.0",
+          "target": "aarch64-apple-darwin"
+        },
+        "executor": {
+          "version": "0.1.0",
+          "sqliteVersion": "3.53.2",
+          "target": "aarch64-apple-darwin"
+        }
+      }
+    }
+  }
+}

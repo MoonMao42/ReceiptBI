@@ -12,7 +12,7 @@ from typing import Any
 
 HOST = os.environ.get("MOCK_LLM_HOST", "0.0.0.0")
 PORT = int(os.environ.get("MOCK_LLM_PORT", "4010"))
-MODEL_ID = os.environ.get("MOCK_LLM_MODEL_ID", "querygpt-ci")
+MODEL_ID = os.environ.get("MOCK_LLM_MODEL_ID", "receiptbi-ci")
 DEFAULT_CONTENT = os.environ.get(
     "MOCK_LLM_RESPONSE",
     "[thinking:分析需求]\n"
@@ -26,7 +26,7 @@ DEFAULT_CONTENT = os.environ.get(
 def build_chat_response(content: str) -> dict[str, Any]:
     timestamp = int(time.time())
     return {
-        "id": "chatcmpl-querygpt-ci",
+        "id": "chatcmpl-receiptbi-ci",
         "object": "chat.completion",
         "created": timestamp,
         "model": MODEL_ID,
@@ -54,7 +54,7 @@ def build_stream_chunks(content: str) -> list[bytes]:
     step = 18
     for index in range(0, len(content), step):
         chunk = {
-            "id": "chatcmpl-querygpt-ci",
+            "id": "chatcmpl-receiptbi-ci",
             "object": "chat.completion.chunk",
             "created": timestamp,
             "model": MODEL_ID,
@@ -69,7 +69,7 @@ def build_stream_chunks(content: str) -> list[bytes]:
         chunks.append(f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n".encode())
 
     final_chunk = {
-        "id": "chatcmpl-querygpt-ci",
+        "id": "chatcmpl-receiptbi-ci",
         "object": "chat.completion.chunk",
         "created": timestamp,
         "model": MODEL_ID,
@@ -87,7 +87,7 @@ def build_stream_chunks(content: str) -> list[bytes]:
 
 
 class MockGatewayHandler(BaseHTTPRequestHandler):
-    server_version = "QueryGPTMockLLM/1.0"
+    server_version = "ReceiptBIMockLLM/1.0"
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
         return
@@ -122,7 +122,7 @@ class MockGatewayHandler(BaseHTTPRequestHandler):
                         {
                             "id": MODEL_ID,
                             "object": "model",
-                            "owned_by": "querygpt",
+                            "owned_by": "receiptbi",
                         }
                     ],
                 },

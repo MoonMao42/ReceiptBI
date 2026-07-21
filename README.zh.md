@@ -1,57 +1,51 @@
 <div align="center">
 
-<img src="docs/images/logo.svg" width="400" alt="QueryGPT logo">
+<img src="docs/images/receiptbi-icon.png" width="200" alt="ReceiptBI logo">
 
-Text-to-SQL 工具——用自然语言提问，生成只读 SQL，拿到结果、分析和图表。
+与你的数据对话。专为凌乱文件和只读数据库打造的本地优先分析工具。
 
 [English](README.md) | [中文](README.zh.md)
 
 </div>
 
-![](docs/images/chat.png)
+![ReceiptBI](docs/images/chat.png)
 
-## 功能
+## 功能特点
 
-- **自然语言查询** — 描述你的需求，拿到 SQL + 结果
-- **自动分析** — 查询结果自动流入 Python 做进一步分析和出图
-- **语义层** — 定义业务术语（GMV、AOV 等），生成的 SQL 不会有歧义
-- **Schema 关系图** — 拖拽连接表定义 JOIN 关系，自动选择连接路径
+- **对话式分析** — 用自然语言提问，AI 代理会自动为你查询、关联并分析数据
+- **数据清洗与准备** — 提供可视化的文件清洗功能，非破坏性地处理类型和异常值
+- **业务语义层** — 随时间学习并锁定你的业务定义（如 GMV、活跃用户），保持查询准确
+- **可编辑报告** — 将对话分析结果转化为持久可验证的图表、指标和报告页面
 
 ## 工作原理
 
 ```mermaid
 flowchart LR
-    query["用自然语言提问"] --> context["使用语义层 + Schema 理解意图"]
-    context --> sql["生成只读 SQL"]
-    sql --> execute["执行查询"]
-    execute --> result["返回结果和摘要"]
-    result --> decision{"需要图表或进一步分析吗？"}
-    decision -->|需要| python["Python 分析与图表"]
-    decision -->|不需要| done["完成"]
-    python --> done
-    execute -->|SQL 错误| repair_sql["自动修复并重试"]
-    sql -->|重试| repair_sql
-    python -->|Python 错误| repair_py["自动修复并重试"]
-    repair_sql --> sql
-    repair_py --> python
+    data["凌乱文件 / 数据库"] --> prep["清洗与特征提取"]
+    prep --> semantic["语义层理解"]
+    semantic --> ask["自然语言提问"]
+    ask --> run["执行 SQL / Python"]
+    run --> validate["结果验证"]
+    validate -->|需要修复| run
+    validate --> report["生成带证据支持的报告"]
 ```
 
-## 截图
+## 界面截图
 
-![Schema 关系图](docs/images/schema.png)
-
-![语义层配置](docs/images/semantic.png)
+<!-- TODO: 启动项目后添加截图 -->
+<!-- ![数据源管理](docs/images/sources.png) -->
+<!-- ![报告视图](docs/images/report.png) -->
 
 ## 快速开始
 
-### 1. 克隆仓库
+### 1. 克隆项目
 
 ```bash
-git clone git@github.com:MKY508/QueryGPT.git
-cd QueryGPT
+git clone https://github.com/MoonMao42/ReceiptBI.git
+cd ReceiptBI
 ```
 
-### 2. 运行
+### 2. 运行项目
 
 **macOS / Linux** — 需要 Python 3.11+ 和 Node.js LTS：
 
@@ -59,218 +53,77 @@ cd QueryGPT
 ./start.sh
 ```
 
-或者用 Docker：
+或者使用 Docker：
 
 ```bash
 docker compose up --build
 ```
 
-**Windows** — 用 [Docker Desktop](https://www.docker.com/products/docker-desktop/)，或者 [WSL2](https://learn.microsoft.com/windows/wsl/install) + `./start.sh`。
+**Windows** — 推荐使用 Docker Desktop，或在 WSL2 环境下执行 `./start.sh`。提供了基于 Electron 的桌面客户端支持。
 
-### 3. 配置
+### 3. 配置使用
 
 打开 `http://localhost:3000`：
 
-1. 进设置页面，添加模型（提供商 + API 密钥）
-2. 用内置的演示数据库，或者连你自己的 SQLite / MySQL / PostgreSQL
-3. 可选：设置默认模型、默认连接和对话上下文轮数
-4. 开始提问
-
-> 自带 SQLite 演示数据库（`demo.db`），首次启动会自动创建示例连接。
+1. 进入设置页面，配置你偏好的模型服务（支持 OpenAI 兼容接口、Anthropic、DeepSeek、Ollama 等）
+2. 上传文件（CSV/XLSX/Parquet/JSON）或连接数据库（SQLite/MySQL/PostgreSQL）
+3. 开始探索你的数据
 
 ## 技术栈
 
-- **前端**：Next.js 15, React 19, TypeScript, Zustand, TanStack Query
-- **后端**：FastAPI, SQLAlchemy 2.0, LiteLLM, Python 3.11+
-- **数据库**：SQLite, MySQL, PostgreSQL
+- **前端**: Next.js 15, React 19, TypeScript
+- **后端**: FastAPI, Python 3.11+, PydanticAI
+- **桌面端**: Electron, Rust（用于 SQLite 安全执行的 Sidecar）
+- **数据引擎**: DuckDB（文件处理）, 原生数据库适配器
 
 <details>
 <summary><strong>配置参考</strong></summary>
 
-### 模型
+### 支持模型
+支持 OpenAI 兼容格式、Anthropic、DeepSeek、Ollama 以及自定义网关。
 
-支持 OpenAI 兼容、Anthropic、Ollama 和自定义网关。可配置字段：
-
-| 字段 | 说明 |
-|------|------|
-| `provider` | 模型提供商 |
-| `base_url` | API 端点 |
-| `model_id` | 模型标识符 |
-| `api_key` | API 密钥（Ollama 或未认证网关可选） |
-| `extra headers` | 自定义请求头 |
-| `query params` | 自定义查询参数 |
-| `api_format` | API 格式 |
-| `healthcheck_mode` | 健康检查模式 |
-
-### 数据库
-
-支持 SQLite、MySQL 和 PostgreSQL。系统只执行只读 SQL。
-
-内置 SQLite 演示数据库：
-- 路径：`apps/api/data/demo.db`
-- 默认连接名称：`Sample Database`
-
-</details>
-
-<details>
-<summary><strong>启动脚本</strong></summary>
-
-```bash
-./start.sh              # 主机模式：检查环境、安装依赖、初始化数据库、启动前后端
-./start.sh setup        # 主机模式：仅安装依赖
-./start.sh stop         # 停止主机模式服务
-./start.sh restart      # 重启主机模式服务
-./start.sh status       # 检查主机模式状态
-./start.sh logs         # 查看主机模式日志
-./start.sh doctor       # 诊断主机模式环境
-./start.sh test all     # 在主机模式下运行所有测试
-./start.sh cleanup      # 清理主机模式临时状态
-```
-
-安装分析扩展（`scikit-learn`, `scipy`, `seaborn`）：
-
-```bash
-./start.sh install analytics
-```
-
-可选环境变量：
-
-```bash
-QUERYGPT_BACKEND_RELOAD=1 ./start.sh     # 后端热重载
-QUERYGPT_BACKEND_HOST=0.0.0.0 ./start.sh # 监听所有接口
-```
-
-</details>
-
-<details>
-<summary><strong>Docker 开发</strong></summary>
-
-Windows 开发者用 Docker；`start.ps1` / `start.bat` 不再维护。
-
-默认开发栈：
-- `web`: Next.js 开发服务器（HMR）
-- `api`: FastAPI 开发服务器（`--reload`）
-- `db`: PostgreSQL 16
-
-```bash
-docker-compose up --build               # 在前台启动所有服务
-docker-compose up -d --build            # 在后台启动所有服务
-docker-compose down                     # 停止并删除容器
-docker-compose down -v --remove-orphans # 同时删除数据卷
-docker-compose ps                       # 查看状态
-docker-compose logs -f api web          # 查看前后端日志
-docker-compose restart api web          # 重启前后端
-docker-compose up db                    # 仅启动数据库
-docker-compose run --rm api ./run-tests.sh
-docker-compose run --rm web npm run type-check
-docker-compose run --rm web npm test
-```
-
-注意：
-- 前端：`http://localhost:3000`
-- 后端：`http://localhost:8000`
-- PostgreSQL：`localhost:5432`
-- 改了依赖后跑 `docker-compose up --build`
-- 装了 Docker Compose 插件的话用 `docker compose` 替换 `docker-compose`
-
-</details>
-
-<details>
-<summary><strong>本地开发（主机模式）</strong></summary>
-
-### 后端
-
-```bash
-cd apps/api
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-### 前端
-
-```bash
-cd apps/web
-npm install
-npm run dev
-```
+### 数据连接
+- **文件**: CSV, XLS, XLSX, Parquet, JSON（通过本地 DuckDB 处理）
+- **数据库**: SQLite, MySQL, PostgreSQL（仅限只读执行）
 
 ### 环境变量
-
-后端 `apps/api/.env`：
-
-```env
-DATABASE_URL=sqlite+aiosqlite:///./data/querygpt.db
-ENCRYPTION_KEY=your-fernet-key
-```
-
-前端 `apps/web/.env.local`：
-
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
-# 可选：仅在 Docker / 容器化 Next 重写时需要
-# INTERNAL_API_URL=http://api:8000
-```
-
-### 测试
-
-```bash
-# 前端
-cd apps/web && npm run type-check && npm test && npm run build
-
-# 后端
-./apps/api/run-tests.sh
-```
-
-### GitHub CI 分层
-
-GitHub Actions 分两层：
-
-- **快速层**：后端 `ruff + mypy (chat/config 主路径) + pytest`，前端 `lint + type-check + vitest + build`
-- **集成层**：Docker 全栈、Playwright 冒烟测试、`start.sh` 主机模式冒烟测试、SQLite / PostgreSQL / MySQL 连接测试、模拟网关模型测试
-
-本地运行：
-
-```bash
-# Docker 全栈
-docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --build
-
-# 后端集成测试（需要 PostgreSQL / MySQL / 模拟网关环境变量）
-cd apps/api && pytest tests/test_config_integration.py -v
-
-# 后端主路径类型检查
-cd apps/api && mypy --config-file mypy.ini
-
-# 前端浏览器冒烟测试（应用必须先运行）
-cd apps/web && npm run test:e2e
-```
+- `RECEIPTBI_BACKEND_HOST`: 后端监听地址（默认：127.0.0.1）
+- `RECEIPTBI_BACKEND_RELOAD`: 开启后端热更新
+- `RECEIPTBI_SQLITE_EXECUTOR_PATH`: Rust SQLite sidecar 路径（桌面端使用）
 
 </details>
 
 <details>
-<summary><strong>部署</strong></summary>
+<summary><strong>本地开发</strong></summary>
 
-### 后端
+### 工作区管理
+使用提供的 `start.sh` 进行标准 Web 开发：
+```bash
+./start.sh              # 启动前后端服务
+./start.sh setup        # 安装依赖
+./start.sh stop         # 停止服务
+./start.sh test         # 运行测试
+```
 
-仓库有 [render.yaml](render.yaml) 可以直接 Render Blueprint 部署。
-
-### 前端
-
-推荐 Vercel：
-
-- 根目录：`apps/web`
-- 环境变量：`NEXT_PUBLIC_API_URL=<your-api-url>`
+### 桌面端
+桌面端基于 Electron 构建，并打包了一个 Rust sidecar 用于安全执行 SQLite 查询。
+具体的打包配置请参考 `apps/desktop/electron-builder.yml`。
 
 </details>
 
-## 已知局限
+## 已知限制
 
-- 只允许只读 SQL，写操作会被拦
-- 自动修复覆盖 SQL、Python 和图表配置错误（可恢复的）
-- `/chat/stop` 按单实例语义工作
-- 开发用 Node.js LTS；`next dev` 有问题的话清 `apps/web/.next`
+- 系统严格限制对数据库进行只读操作，写入语句将被拦截
+- Python 分析执行依赖本地环境，并在项目级别进行隔离
+- 桌面端打包（如 macOS 签名、Windows 安装程序）目前仍处于开发者预览阶段
 
-## License
+## 开源协议
 
 MIT
+
+## 历史版本
+
+| 版本 | 基于 | 分支 |
+|------|------|------|
+| v2 | [gptme](https://github.com/ErikBjare/gptme) | [v2](https://github.com/MoonMao42/ReceiptBI/tree/v2) |
+| v1 | [open-interpreter](https://github.com/OpenInterpreter/open-interpreter) | [v1](https://github.com/MoonMao42/ReceiptBI/tree/v1) |

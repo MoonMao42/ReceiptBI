@@ -1,4 +1,4 @@
-name: querygpt
+name: receiptbi
 
 services:
   db:
@@ -6,13 +6,13 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: querygpt
+      POSTGRES_DB: receiptbi
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d querygpt"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d receiptbi"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -23,7 +23,7 @@ services:
       dockerfile: docker/Dockerfile.api
     working_dir: /workspace/apps/api
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/querygpt
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/receiptbi
       HOST: 0.0.0.0
       PORT: "8000"
       ENVIRONMENT: development
@@ -66,7 +66,7 @@ services:
     depends_on:
       api:
         condition: service_healthy
-    entrypoint: ["/bin/sh", "/opt/querygpt/scripts/web-bootstrap.sh"]
+    entrypoint: ["/bin/sh", "/opt/receiptbi/scripts/web-bootstrap.sh"]
     command: ["npm", "run", "dev", "--", "--hostname", "0.0.0.0", "--port", "3000"]
 
 volumes:

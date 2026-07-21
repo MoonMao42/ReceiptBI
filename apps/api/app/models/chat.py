@@ -84,6 +84,13 @@ class SSEEvent(BaseModel):
     @classmethod
     def visualization(cls, chart_type: str, chart_data: dict[str, Any]) -> "SSEEvent":
         """创建可视化事件"""
+        if chart_data.get("version") == 1:
+            if chart_data.get("type") != chart_type:
+                raise ValueError("ChartSpec type does not match visualization event type")
+            return cls(
+                type=SSEEventType.VISUALIZATION,
+                data={"chart": dict(chart_data)},
+            )
         return cls(
             type=SSEEventType.VISUALIZATION,
             data={
@@ -152,6 +159,7 @@ class ChatRequest(BaseModel):
     model: str | None = Field(default=None, description="模型 ID")
     conversation_id: UUID | None = Field(default=None, description="对话 ID")
     connection_id: UUID | None = Field(default=None, description="数据库连接 ID")
+    project_id: UUID | None = Field(default=None, description="项目 ID")
     language: Literal["zh", "en"] = Field(default="zh", description="语言")
     context_rounds: int = Field(default=5, ge=1, le=20, description="上下文轮数")
 
@@ -162,6 +170,28 @@ class ChatStopRequest(BaseModel):
     conversation_id: UUID = Field(..., description="对话 ID")
 
 
+class BusinessConfirmationCommand(BaseModel):
+    """Apply one typed business decision to a paused analysis run."""
+
+    analysis_run_id: UUID = Field(..., description="等待确认的调查 ID")
+    key: str = Field(..., min_length=1, max_length=160, description="业务口径键")
+    selected_option: str = Field(..., min_length=1, max_length=1000, description="用户选中的选项")
+
+
+class BusinessConfirmationResponse(BaseModel):
+    """A persisted decision that can continue the same analysis run."""
+
+    analysis_run_id: UUID
+    resume_run_id: UUID
+    project_id: UUID
+    conversation_id: UUID
+    key: str
+    selected_option: str
+    state: Literal["waiting_confirmation"] = "waiting_confirmation"
+    stage: Literal["confirmation_received"] = "confirmation_received"
+    ready_to_continue: bool = True
+
+
 class ChatStreamParams(BaseModel):
     """聊天流式请求参数（Query Params）"""
 
@@ -169,5 +199,31 @@ class ChatStreamParams(BaseModel):
     model: str | None = Field(default=None, description="模型 ID")
     conversation_id: UUID | None = Field(default=None, description="对话 ID")
     connection_id: UUID | None = Field(default=None, description="数据库连接 ID")
+    project_id: UUID | None = Field(default=None, description="项目 ID")
     language: Literal["zh", "en"] = Field(default="zh", description="语言")
     context_rounds: int = Field(default=5, ge=1, le=20, description="上下文轮数")
+
+
+class SemanticValidationSelectionItem(BaseModel):
+    """One exact semantic head selected for a real-data validation run."""
+
+    entry_id: UUID
+    expected_active_revision_id: UUID
+
+
+class ChatStreamRequest(BaseModel):
+    """Streaming chat payload kept out of the URL and access logs."""
+
+    query: str | None = Field(default=None, min_length=1, max_length=10000)
+    model: str | None = None
+    conversation_id: UUID | None = None
+    connection_id: UUID | None = None
+    project_id: UUID | None = None
+    resume_run_id: UUID | None = None
+    correction_id: UUID | None = None
+    semantic_validation_selection: list[SemanticValidationSelectionItem] = Field(
+        default_factory=list,
+        max_length=100,
+    )
+    language: Literal["zh", "en"] = "zh"
+    context_rounds: int | None = Field(default=None, ge=1, le=20)

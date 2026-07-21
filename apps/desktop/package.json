@@ -1,20 +1,28 @@
 {
-  "name": "querygpt-desktop",
-  "version": "0.1.0",
-  "description": "QueryGPT Desktop Application",
+  "name": "receiptbi-desktop",
+  "productName": "ReceiptBI",
+  "version": "1.0.0",
+  "description": "ReceiptBI — 本地优先的私人数据分析工作台",
   "main": "dist-electron/main.js",
-  "author": "QueryGPT Team",
+  "author": "ReceiptBI Team",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/MoonMao42/QueryGPT.git"
+    "url": "https://github.com/MoonMao42/ReceiptBI.git"
   },
   "scripts": {
-    "dev": "tsc -p tsconfig.electron.json && electron .",
+    "dev": "npm run compile:electron && electron .",
+    "test:logger": "tsx --test tests/logger.test.ts",
+    "test:migration": "tsx --test tests/data-migration.test.ts tests/cold-data-migration.test.ts tests/legacy-model-migration.test.ts",
+    "test:legacy-model-migration": "tsx --test tests/legacy-model-migration.test.ts",
+    "test:startup-reliability": "tsx --test tests/startup-reliability.test.ts",
+    "migrate:legacy-data": "tsx scripts/migrate-legacy-data.ts",
     "build": "npm run build:electron",
-    "build:electron": "electron-builder --config electron-builder.yml",
-    "build:electron:mac": "electron-builder --mac --config electron-builder.yml",
-    "build:electron:win": "electron-builder --win --config electron-builder.yml",
+    "compile:electron": "tsc -p tsconfig.electron.json",
+    "build:resources": "tsx scripts/build-all.ts",
+    "build:electron": "npm run build:resources && electron-builder --config electron-builder.yml",
+    "build:electron:mac": "npm run build:resources && electron-builder --mac --config electron-builder.yml",
+    "build:electron:win": "npm run build:resources && electron-builder --win --config electron-builder.yml",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
@@ -27,5 +35,8 @@
     "electron-builder": "^25.1.8",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
+  },
+  "allowScripts": {
+    "electron": true
   }
 }
