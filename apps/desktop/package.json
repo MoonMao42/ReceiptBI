@@ -31,8 +31,8 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
-    "electron": "^33.3.1",
-    "electron-builder": "^25.1.8",
+    "electron": "^39.8.5",
+    "electron-builder": "^26.15.7",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   },
