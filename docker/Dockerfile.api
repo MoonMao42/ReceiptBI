@@ -12,12 +12,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY apps/api/pyproject.toml ./pyproject.toml
 COPY apps/api/run-tests.sh ./run-tests.sh
+COPY apps/api/alembic.ini ./alembic.ini
+COPY apps/api/alembic ./alembic
 COPY apps/api/app ./app
+COPY docker/scripts/api-bootstrap.sh /opt/receiptbi/scripts/api-bootstrap.sh
 
-RUN chmod +x ./run-tests.sh \
+RUN chmod +x ./run-tests.sh /opt/receiptbi/scripts/api-bootstrap.sh \
     && python -m pip install --upgrade pip \
     && python -m pip install -e ".[dev,analytics]"
 
 EXPOSE 8000
+
+ENTRYPOINT ["/bin/sh", "/opt/receiptbi/scripts/api-bootstrap.sh"]
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

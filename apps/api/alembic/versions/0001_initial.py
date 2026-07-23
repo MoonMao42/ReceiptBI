@@ -20,7 +20,22 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+def _widen_postgresql_revision_column() -> None:
+    """Allow the repository's descriptive revision IDs on PostgreSQL."""
+    if op.get_bind().dialect.name != "postgresql":
+        return
+    op.alter_column(
+        "alembic_version",
+        "version_num",
+        existing_type=sa.String(length=32),
+        type_=sa.String(length=64),
+        existing_nullable=False,
+    )
+
+
 def upgrade() -> None:
+    _widen_postgresql_revision_column()
+
     # users
     op.create_table(
         "users",
@@ -116,6 +131,34 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
         ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+
+    # app_settings
+    op.create_table(
+        "app_settings",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("default_model_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("default_connection_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("context_rounds", sa.Integer(), nullable=False, server_default="5"),
+        sa.Column("python_enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column("diagnostics_enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column("auto_repair_enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column("demo_initialized", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.ForeignKeyConstraint(["default_connection_id"], ["connections.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["default_model_id"], ["models.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
     )
 
@@ -303,6 +346,7 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_conversations_status"), table_name="conversations")
     op.drop_index(op.f("ix_conversations_user_id"), table_name="conversations")
     op.drop_table("conversations")
+    op.drop_table("app_settings")
     op.drop_table("models")
     op.drop_table("connections")
     op.drop_index(op.f("ix_users_email"), table_name="users")
