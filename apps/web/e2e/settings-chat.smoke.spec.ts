@@ -6,7 +6,10 @@ test("settings workflow and chat smoke test", async ({ page }) => {
   const modelName = `CI Mock Model ${suffix}`;
 
   await page.goto("/settings");
-  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await expect(page.getByTestId("settings-tab-models")).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
 
   await page.getByTestId("settings-tab-connections").click();
   await page.getByTestId("connection-add-button").click();
