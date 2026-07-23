@@ -308,9 +308,7 @@ async def test_relationships_require_declared_profile_evidence_and_full_table_sc
     assert "payments" not in relationship.value
     assert relationship.value == "建议关联：订单信息与客户信息的关联。"
     assert relationship.definition.description == "订单信息与客户信息可关联，采纳前会核对。"
-    assert relationship.definition.example_questions == [
-        "按客户信息查看订单信息，结果有什么变化？"
-    ]
+    assert relationship.definition.example_questions == ["按客户信息查看订单信息，结果有什么变化？"]
     assert relationship.definition.synonyms == []
     public_copy = " ".join(
         [
@@ -425,12 +423,8 @@ async def test_same_table_name_in_two_schemas_never_leaks_semantics() -> None:
         if isinstance(item.definition, DimensionDefinition)
     ]
     assert public_dimensions
-    assert {
-        item.source.table_or_view for item in public_dimensions
-    } == {"public.orders"}
-    assert "legacy_label" not in {
-        item.source.action_column for item in public_dimensions
-    }
+    assert {item.source.table_or_view for item in public_dimensions} == {"public.orders"}
+    assert "legacy_label" not in {item.source.action_column for item in public_dimensions}
 
     archive_batch = await generate_semantic_recommendations(
         context,
@@ -446,15 +440,11 @@ async def test_same_table_name_in_two_schemas_never_leaks_semantics() -> None:
         for item in archive_batch.items
         if isinstance(item.definition, DimensionDefinition)
     ]
-    assert {
-        item.source.table_or_view for item in archive_dimensions
-    } == {"archive.orders"}
-    assert "legacy_label" in {
-        item.source.action_column for item in archive_dimensions
-    }
-    assert not {
-        item.source.action_column for item in archive_dimensions
-    }.intersection({"order_id", "customer_id", "amount"})
+    assert {item.source.table_or_view for item in archive_dimensions} == {"archive.orders"}
+    assert "legacy_label" in {item.source.action_column for item in archive_dimensions}
+    assert not {item.source.action_column for item in archive_dimensions}.intersection(
+        {"order_id", "customer_id", "amount"}
+    )
 
 
 @pytest.mark.asyncio
@@ -531,9 +521,7 @@ async def test_account_rep_fields_never_become_amount_metrics_from_name_substrin
         if isinstance(item.definition, AggregateMetricDefinition)
     ]
     dimensions = [
-        item.definition
-        for item in batch.items
-        if isinstance(item.definition, DimensionDefinition)
+        item.definition for item in batch.items if isinstance(item.definition, DimensionDefinition)
     ]
     assert {metric.source.action_column for metric in metrics} == {
         "paid_amount",
@@ -597,10 +585,7 @@ async def test_enhancer_can_only_change_presentation_without_reordering() -> Non
         assert all("definition" not in item and "formula" not in item for item in payload)
         assert all(item["immutable_context"]["source_technical_name"] for item in payload)
         assert all(item["immutable_context"]["table_technical_name"] for item in payload)
-        assert all(
-            len(item["immutable_context"]["same_table_fields"]) <= 80
-            for item in payload
-        )
+        assert all(len(item["immutable_context"]["same_table_fields"]) <= 80 for item in payload)
         return [
             {
                 "candidate_id": item["candidate_id"],
@@ -741,10 +726,7 @@ async def test_structure_mode_translates_safe_fields_without_guessing_metrics() 
 @pytest.mark.asyncio
 async def test_structure_inventory_keeps_the_last_wide_table_field_and_chunks_ai() -> None:
     context, source_id = _database_context()
-    columns = [
-        {"name": f"attribute_{index:03d}", "type": "VARCHAR"}
-        for index in range(1, 81)
-    ]
+    columns = [{"name": f"attribute_{index:03d}", "type": "VARCHAR"} for index in range(1, 81)]
     context.sources[0]["profile"]["tables"].append(
         {
             "name": "wide_product_attributes",
@@ -769,15 +751,10 @@ async def test_structure_inventory_keeps_the_last_wide_table_field_and_chunks_ai
     )
 
     field_candidates = [
-        item
-        for item in batch.items
-        if isinstance(item.definition, DimensionDefinition)
+        item for item in batch.items if isinstance(item.definition, DimensionDefinition)
     ]
     assert len(field_candidates) == 80
-    assert any(
-        item.definition.source.action_column == "attribute_080"
-        for item in field_candidates
-    )
+    assert any(item.definition.source.action_column == "attribute_080" for item in field_candidates)
     assert chunk_sizes == [50, 32]
     assert batch.generated_by == "ai"
 
@@ -789,8 +766,7 @@ async def test_one_invalid_ai_chunk_falls_back_for_the_whole_wide_table() -> Non
         {
             "name": "wide_product_attributes",
             "columns": [
-                {"name": f"attribute_{index:03d}", "type": "VARCHAR"}
-                for index in range(1, 81)
+                {"name": f"attribute_{index:03d}", "type": "VARCHAR"} for index in range(1, 81)
             ],
         }
     )
@@ -823,8 +799,7 @@ async def test_one_invalid_ai_chunk_falls_back_for_the_whole_wide_table() -> Non
     assert batch.generated_by == "preflight"
     assert all(
         not any(
-            evidence.get("kind") == "model_presentation_enhancement"
-            for evidence in item.evidence
+            evidence.get("kind") == "model_presentation_enhancement" for evidence in item.evidence
         )
         for item in batch.items
     )
@@ -955,11 +930,7 @@ async def test_per_table_inventory_omits_source_until_one_final_source_pass() ->
         and item.definition.scope_kind == "source"
     ]
     assert len(source_candidates) == 1
-    assert len(
-        source_candidates[0].evidence[0]["recommendation_context"][
-            "source_relations"
-        ]
-    ) == 3
+    assert len(source_candidates[0].evidence[0]["recommendation_context"]["source_relations"]) == 3
 
 
 @pytest.mark.asyncio

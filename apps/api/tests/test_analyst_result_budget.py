@@ -72,9 +72,7 @@ def test_result_budget_estimates_dataframe_bytes(
 
 @pytest.mark.asyncio
 async def test_over_budget_checkpoint_is_rejected_before_restoring_dependencies():
-    rows_by_name = {
-        f"restored_{index}": [{"value": index}] for index in range(13)
-    }
+    rows_by_name = {f"restored_{index}": [{"value": index}] for index in range(13)}
     journal = [
         {
             "op": "query_database",

@@ -422,9 +422,7 @@ async def test_deleting_only_correction_tombstones_head_but_keeps_history(
     assert entry is not None
     assert entry.is_active is False
     history = await db_session.execute(
-        select(SemanticEntryRevision).where(
-            SemanticEntryRevision.semantic_entry_id == entry_id
-        )
+        select(SemanticEntryRevision).where(SemanticEntryRevision.semantic_entry_id == entry_id)
     )
     assert [item.revision_number for item in history.scalars()] == [1, 2]
 

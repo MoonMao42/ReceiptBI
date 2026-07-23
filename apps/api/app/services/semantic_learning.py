@@ -199,9 +199,7 @@ def _unique_stable_binding(
             "已记住这条定义；同名执行字段来自多个数据位置，暂不自动选择。",
         )
     binding = candidates[0]
-    if action_kind in {"metric_column", "metric_formula"} and binding[
-        "canonical_type"
-    ] != "number":
+    if action_kind in {"metric_column", "metric_formula"} and binding["canonical_type"] != "number":
         raise _CompilationBlockedError(
             "METRIC_COLUMN_NOT_NUMERIC",
             "已记住这条定义；指定的指标字段没有可靠的数值类型证据。",
@@ -350,9 +348,7 @@ def _relationship_endpoint_candidates(
                         "source_kind": source.get("kind"),
                         "table_or_view": table_or_view,
                         "column": column_name,
-                        "data_type": str(
-                            column.get("type") or column.get("dtype") or "unknown"
-                        ),
+                        "data_type": str(column.get("type") or column.get("dtype") or "unknown"),
                         "schema_signature": signature,
                         "canonical_column": _canonical_relationship_column(column_name),
                     }
@@ -436,9 +432,7 @@ async def _compile_relationship_candidate(
             "已记住这条关联修正；请选择当前数据理解中仍有效的一条候选关系。",
         )
     try:
-        previous_definition = RelationshipDefinition.model_validate(
-            entry.definition
-        ).model_dump()
+        previous_definition = RelationshipDefinition.model_validate(entry.definition).model_dump()
     except ValueError as exc:
         raise _CompilationBlockedError(
             "INVALID_RELATIONSHIP_DEFINITION",
@@ -535,11 +529,7 @@ async def _compile_relationship_candidate(
         source = matching_sources[0]
         columns = _relationship_source_columns(source, endpoint["table_or_view"])
         current_column = next(
-            (
-                column
-                for column in columns
-                if str(column.get("name") or "") == endpoint["column"]
-            ),
+            (column for column in columns if str(column.get("name") or "") == endpoint["column"]),
             None,
         )
         if current_column is None:
@@ -620,9 +610,7 @@ async def compile_report_correction(
         compiled_at = datetime.now(UTC).isoformat()
         endpoints = [
             {
-                "source_logical_name": relationship_definition[side][
-                    "source_logical_name"
-                ],
+                "source_logical_name": relationship_definition[side]["source_logical_name"],
                 "source_kind": relationship_definition[side]["source_kind"],
                 "table_or_view": relationship_definition[side]["table_or_view"],
                 "column": relationship_definition[side]["column"],
@@ -699,21 +687,21 @@ async def compile_report_correction(
         }
     attempted_explicit_formula = (
         selected_metric_column is None
-        and
-        correction_type == "metric_definition"
+        and correction_type == "metric_definition"
         and "=" in unicodedata.normalize("NFKC", text)
     )
-    if definition is None and target_key == "revenue_refund_policy" and correction_type in {
-        "business_rule",
-        "filter_rule",
-        "metric_definition",
-    }:
-        definition = _refund_strategy_for_text(text, rows)
     if (
         definition is None
-        and correction_type == "metric_definition"
-        and attempted_explicit_formula
+        and target_key == "revenue_refund_policy"
+        and correction_type
+        in {
+            "business_rule",
+            "filter_rule",
+            "metric_definition",
+        }
     ):
+        definition = _refund_strategy_for_text(text, rows)
+    if definition is None and correction_type == "metric_definition" and attempted_explicit_formula:
         existing_columns = sorted({str(key) for row in rows for key in row})
         numeric_columns = [
             column

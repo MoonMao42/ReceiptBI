@@ -113,9 +113,7 @@ def test_messy_excel_preflight_preserves_original_and_creates_working_copy(tmp_p
         "summary_rows",
     }
     assert result.ambiguities[0]["key"] == "revenue_refund_policy"
-    assert result.ambiguities[0]["presentation_code"] == (
-        "preflight.revenue_refund_policy"
-    )
+    assert result.ambiguities[0]["presentation_code"] == ("preflight.revenue_refund_policy")
     assert result.ambiguities[0]["option_codes"]["扣除退款"] == "exclude_refunds"
     cleaned = pd.read_parquet(result.working_path)
     assert cleaned["实付金额"].tolist() == [32.0, 28.0]
@@ -1362,18 +1360,20 @@ def test_candidate_relationship_identity_is_bound_into_golden_regression() -> No
         "completeness": "complete",
         "reusable_proof_eligible": True,
     }
-    assert _relationship_proof_scope(filtered_metadata, other_full_metadata)[
-        "evidence_scope"
-    ] == "current_result"
+    assert (
+        _relationship_proof_scope(filtered_metadata, other_full_metadata)["evidence_scope"]
+        == "current_result"
+    )
     top_level_full_but_filtered_ref = {
         **full_metadata,
-        "source_refs": [
-            {**full_metadata["source_refs"][0], "query_scope": "filtered"}
-        ],
+        "source_refs": [{**full_metadata["source_refs"][0], "query_scope": "filtered"}],
     }
-    assert _relationship_proof_scope(
-        top_level_full_but_filtered_ref, other_full_metadata
-    )["reusable_proof_eligible"] is False
+    assert (
+        _relationship_proof_scope(top_level_full_but_filtered_ref, other_full_metadata)[
+            "reusable_proof_eligible"
+        ]
+        is False
+    )
     missing_ref_scope = {
         **full_metadata,
         "source_refs": [
@@ -1383,12 +1383,13 @@ def test_candidate_relationship_identity_is_bound_into_golden_regression() -> No
             }
         ],
     }
-    assert _relationship_proof_scope(missing_ref_scope, other_full_metadata)[
-        "reusable_proof_eligible"
-    ] is False
-    assert _relationship_proof_scope(full_metadata, full_metadata)[
-        "reusable_proof_eligible"
-    ] is False
+    assert (
+        _relationship_proof_scope(missing_ref_scope, other_full_metadata)["reusable_proof_eligible"]
+        is False
+    )
+    assert (
+        _relationship_proof_scope(full_metadata, full_metadata)["reusable_proof_eligible"] is False
+    )
     assert _relationship_proof_scope(
         full_metadata,
         other_full_metadata,
@@ -1613,9 +1614,7 @@ async def test_runtime_returns_the_validated_result_instead_of_the_last_temporar
                 {
                     "kind": "validation",
                     "result_name": "validated_summary",
-                    "result_hash": stable_payload_hash(
-                        [{"门店": "一店", "订单数": 2}]
-                    ),
+                    "result_hash": stable_payload_hash([{"门店": "一店", "订单数": 2}]),
                     "profile": {"truncated": False},
                 }
             )
@@ -1918,9 +1917,7 @@ async def test_apply_confirmed_rule_writes_only_the_canonical_rule_key(
         if item.get("kind") == "business_rule_application"
     )
     replay = next(
-        item
-        for item in runtime.deps.replay_journal
-        if item.get("op") == "apply_confirmed_rule"
+        item for item in runtime.deps.replay_journal if item.get("op") == "apply_confirmed_rule"
     )
     assert application["rule_key"] == "revenue_refund_policy"
     assert replay["rule_key"] == "revenue_refund_policy"
@@ -2105,14 +2102,17 @@ async def test_selected_business_option_is_persisted_without_model_cooperation(
         "我确认选择“扣除退款”，请继续调查。",
     )
 
-    assert saved.items() >= {
-        "key": "revenue_refund_policy",
-        "value": "扣除退款",
-        "selected_value": "扣除退款",
-        "applied": True,
-        "conflict": False,
-        "task_query": "我确认选择“扣除退款”，请继续调查。",
-    }.items()
+    assert (
+        saved.items()
+        >= {
+            "key": "revenue_refund_policy",
+            "value": "扣除退款",
+            "selected_value": "扣除退款",
+            "applied": True,
+            "conflict": False,
+            "task_query": "我确认选择“扣除退款”，请继续调查。",
+        }.items()
+    )
     assert saved["semantic_entry_id"]
     assert saved["active_revision_id"]
     assert len(saved["value_hash"]) == 64
@@ -2436,17 +2436,14 @@ async def test_project_api_upload_preflight_export_and_import(
     assert refreshed_recipe["status"] == "needs_attention"
     source_after_reapply = next(
         item
-        for item in (await client.get(f"/api/v1/projects/{project['id']}/sources")).json()[
-            "data"
-        ]
+        for item in (await client.get(f"/api/v1/projects/{project['id']}/sources")).json()["data"]
         if item["id"] == replacement_source["id"]
     )
     assert source_after_reapply["profile_data"]["version"] == 2
     assert source_after_reapply["profile_data"]["logical_name"] == first_query_name
     assert source_after_reapply["profile_data"]["is_current"] is False
     accepted_replacement = await client.post(
-        f"/api/v1/projects/{project['id']}/sources/{replacement_source['id']}"
-        "/accept-replacement"
+        f"/api/v1/projects/{project['id']}/sources/{replacement_source['id']}/accept-replacement"
     )
     assert accepted_replacement.status_code == 200, accepted_replacement.text
     assert accepted_replacement.json()["data"]["profile_data"]["is_current"] is True

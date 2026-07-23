@@ -114,9 +114,7 @@ async def _seed_sheet_confirmation_run(
     )
     assert uploaded.status_code == 200, uploaded.text
     source_id = uploaded.json()["data"]["id"]
-    preflight = await client.post(
-        f"/api/v1/projects/{project.id}/sources/{source_id}/preflight"
-    )
+    preflight = await client.post(f"/api/v1/projects/{project.id}/sources/{source_id}/preflight")
     assert preflight.status_code == 200, preflight.text
     report = preflight.json()["data"]
     question = next(
@@ -299,16 +297,21 @@ async def test_sheet_confirmation_rebuilds_working_copy_from_selected_sheet(
     assert run.checkpoint["confirmation_receipt"]["source_id"] == str(source.id)
 
     recipe = (
-        await db_session.execute(
-            select(SanitationRecipeRecord)
-            .where(SanitationRecipeRecord.data_source_id == source.id)
-            .order_by(SanitationRecipeRecord.created_at.desc())
+        (
+            await db_session.execute(
+                select(SanitationRecipeRecord)
+                .where(SanitationRecipeRecord.data_source_id == source.id)
+                .order_by(SanitationRecipeRecord.created_at.desc())
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     assert recipe is not None
-    assert next(item for item in recipe.operations if item["operation"] == "select_sheet")[
-        "sheet"
-    ] == "退款明细"
+    assert (
+        next(item for item in recipe.operations if item["operation"] == "select_sheet")["sheet"]
+        == "退款明细"
+    )
     entry = (
         await db_session.execute(
             select(SemanticEntry).where(
@@ -342,12 +345,16 @@ async def test_sheet_confirmation_failure_preserves_trusted_copy_and_pending_que
     old_working_bytes = Path(old_working_uri).read_bytes()
     old_profile = copy.deepcopy(source.profile_data)
     recipe = (
-        await db_session.execute(
-            select(SanitationRecipeRecord)
-            .where(SanitationRecipeRecord.data_source_id == source.id)
-            .order_by(SanitationRecipeRecord.created_at.desc())
+        (
+            await db_session.execute(
+                select(SanitationRecipeRecord)
+                .where(SanitationRecipeRecord.data_source_id == source.id)
+                .order_by(SanitationRecipeRecord.created_at.desc())
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     assert recipe is not None
     old_recipe = copy.deepcopy(recipe.operations)
 

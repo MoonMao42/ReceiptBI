@@ -171,7 +171,10 @@ async def test_queue_api_returns_job_without_chat_prompt_or_analysis_run(
     assert "validation_prompt" not in data
     assert "validation_selection" not in data
     assert data["items"][0]["allowed_actions"] == []
-    assert int(await db_session.scalar(select(func.count()).select_from(AnalysisRun)) or 0) == before_runs
+    assert (
+        int(await db_session.scalar(select(func.count()).select_from(AnalysisRun)) or 0)
+        == before_runs
+    )
 
     job_response = await client.get(
         f"/api/v1/projects/{project.id}/knowledge/validation-jobs/{data['validation_job_id']}"
@@ -208,9 +211,7 @@ async def test_validation_response_hides_worker_diagnostics(
         reason=None,
     )
     item = await db_session.scalar(
-        select(SemanticValidationJobItem).where(
-            SemanticValidationJobItem.job_id == job.id
-        )
+        select(SemanticValidationJobItem).where(SemanticValidationJobItem.job_id == job.id)
     )
     assert item is not None
     item.status = "failed"
@@ -248,9 +249,9 @@ async def test_validation_job_verifies_metric_and_blocks_empty_dimension(
     tmp_path,
 ):
     working = tmp_path / "mixed.parquet"
-    pd.DataFrame(
-        {"amount": [10.0, 20.0], "empty_group": [None, None]}
-    ).to_parquet(working, index=False)
+    pd.DataFrame({"amount": [10.0, 20.0], "empty_group": [None, None]}).to_parquet(
+        working, index=False
+    )
     columns = [
         {"name": "amount", "dtype": "float64"},
         {"name": "empty_group", "dtype": "object"},
@@ -340,9 +341,7 @@ async def test_validation_job_verifies_metric_and_blocks_empty_dimension(
     stored_job = await db_session.get(SemanticValidationJob, job_id)
     assert stored_job is not None and stored_job.status == "completed"
     item_result = await db_session.execute(
-        select(SemanticValidationJobItem).where(
-            SemanticValidationJobItem.job_id == job_id
-        )
+        select(SemanticValidationJobItem).where(SemanticValidationJobItem.job_id == job_id)
     )
     items = {item.semantic_entry_id: item for item in item_result.scalars()}
     assert items[metric_id].status == "verified"
@@ -427,9 +426,7 @@ async def test_validation_job_blocks_revision_drift_without_overwriting_new_head
     db_session.expire_all()
     stored = await db_session.get(SemanticEntry, entry_id)
     item = await db_session.scalar(
-        select(SemanticValidationJobItem).where(
-            SemanticValidationJobItem.job_id == job_id
-        )
+        select(SemanticValidationJobItem).where(SemanticValidationJobItem.job_id == job_id)
     )
     assert stored is not None
     assert stored.active_revision_id == new_revision_id
@@ -523,9 +520,7 @@ async def test_online_validation_timeout_is_blocked_with_stable_code(
 
     db_session.expire_all()
     item = await db_session.scalar(
-        select(SemanticValidationJobItem).where(
-            SemanticValidationJobItem.job_id == job_id
-        )
+        select(SemanticValidationJobItem).where(SemanticValidationJobItem.job_id == job_id)
     )
     assert item is not None and item.status == "blocked"
     assert item.code == "semantic_validation_timeout"
@@ -576,9 +571,7 @@ async def test_startup_recovery_requeues_only_interrupted_validation_items(
     job.details = {
         **dict(job.details or {}),
         "lease_owner": "dead-worker",
-        "lease_expires_at": (
-            datetime.now(UTC) - timedelta(seconds=1)
-        ).isoformat(),
+        "lease_expires_at": (datetime.now(UTC) - timedelta(seconds=1)).isoformat(),
     }
     items[0].status = "running"
     items[0].started_at = datetime.now(UTC)
@@ -622,9 +615,7 @@ async def test_startup_recovery_keeps_a_live_validation_lease(
     )
     await db_session.flush()
     item = await db_session.scalar(
-        select(SemanticValidationJobItem).where(
-            SemanticValidationJobItem.job_id == job.id
-        )
+        select(SemanticValidationJobItem).where(SemanticValidationJobItem.job_id == job.id)
     )
     assert item is not None
     started_at = datetime.now(UTC)
@@ -718,9 +709,7 @@ async def test_retry_reclaims_expired_active_job_without_losing_progress(
     await db_session.flush()
     item = (
         await db_session.execute(
-            select(SemanticValidationJobItem).where(
-                SemanticValidationJobItem.job_id == job.id
-            )
+            select(SemanticValidationJobItem).where(SemanticValidationJobItem.job_id == job.id)
         )
     ).scalar_one()
     job.status = "running"
@@ -746,9 +735,7 @@ async def test_retry_reclaims_expired_active_job_without_losing_progress(
     assert active_error.value.details == {}
     job.details = {
         **dict(job.details or {}),
-        "lease_expires_at": (
-            datetime.now(UTC) - timedelta(seconds=1)
-        ).isoformat(),
+        "lease_expires_at": (datetime.now(UTC) - timedelta(seconds=1)).isoformat(),
     }
     await db_session.commit()
 
@@ -826,8 +813,7 @@ async def test_retry_endpoint_creates_one_new_revision_pinned_job_for_failed_ite
 
     monkeypatch.setattr(projects_api, "run_semantic_validation_job", leave_queued)
     response = await client.post(
-        f"/api/v1/projects/{project_id}/knowledge/validation-jobs/"
-        f"{original_job_id}/retry"
+        f"/api/v1/projects/{project_id}/knowledge/validation-jobs/{original_job_id}/retry"
     )
 
     assert response.status_code == 202, response.text
@@ -852,8 +838,7 @@ async def test_retry_endpoint_creates_one_new_revision_pinned_job_for_failed_ite
     assert retry_item.definition_hash == failed_definition_hash
 
     duplicate = await client.post(
-        f"/api/v1/projects/{project_id}/knowledge/validation-jobs/"
-        f"{original_job_id}/retry"
+        f"/api/v1/projects/{project_id}/knowledge/validation-jobs/{original_job_id}/retry"
     )
     assert duplicate.status_code == 202, duplicate.text
     assert duplicate.json()["data"]["id"] == retry_job_id
@@ -898,9 +883,7 @@ async def test_terminal_retry_is_idempotent_across_sqlite_sessions(
                 reason=None,
             )
             item = await setup_db.scalar(
-                select(SemanticValidationJobItem).where(
-                    SemanticValidationJobItem.job_id == job.id
-                )
+                select(SemanticValidationJobItem).where(SemanticValidationJobItem.job_id == job.id)
             )
             assert item is not None
             job.status = "completed"
@@ -941,9 +924,7 @@ async def test_terminal_retry_is_idempotent_across_sqlite_sessions(
                 return retry_job.id
 
         retry_ids = await asyncio.gather(invoke_retry(), invoke_retry())
-        expected_retry_id = semantic_validation._retry_validation_job_id(
-            original_job_id
-        )
+        expected_retry_id = semantic_validation._retry_validation_job_id(original_job_id)
         assert retry_ids == [expected_retry_id, expected_retry_id]
 
         async with factory() as verify_db:
@@ -964,10 +945,7 @@ async def test_terminal_retry_is_idempotent_across_sqlite_sessions(
                 or 0
             )
             revision_count = int(
-                await verify_db.scalar(
-                    select(func.count()).select_from(SemanticEntryRevision)
-                )
-                or 0
+                await verify_db.scalar(select(func.count()).select_from(SemanticEntryRevision)) or 0
             )
         assert retry_job_count == 1
         assert retry_item_count == 1

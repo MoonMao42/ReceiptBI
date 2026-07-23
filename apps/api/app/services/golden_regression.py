@@ -204,7 +204,8 @@ def _rule_applications(tool_history: list[dict[str, Any]]) -> list[dict[str, Any
             not rule_key
             or not rule_value
             or not column
-            or action_kind not in {
+            or action_kind
+            not in {
                 "value_filter",
                 "identity",
                 "metric_column",
@@ -235,24 +236,24 @@ def _rule_applications(tool_history: list[dict[str, Any]]) -> list[dict[str, Any
             continue
         seen.add(signature)
         application_contract = {
-                "rule_key": rule_key,
-                "rule_value": rule_value,
-                "action_kind": action_kind,
-                "column": column,
-                "operator": operator or None,
-                "values": values,
-                "before_rows": before_rows,
-                "after_rows": after_rows,
-                "excluded_rows": excluded_rows,
-                "input_hash": input_hash,
-                "output_hash": output_hash,
-                "definition_hash": definition_hash or None,
-                "metric_consumed": (
-                    _metric_application_consumed(tool_history, item)
-                    if action_kind in {"metric_column", "metric_formula"}
-                    else None
-                ),
-            }
+            "rule_key": rule_key,
+            "rule_value": rule_value,
+            "action_kind": action_kind,
+            "column": column,
+            "operator": operator or None,
+            "values": values,
+            "before_rows": before_rows,
+            "after_rows": after_rows,
+            "excluded_rows": excluded_rows,
+            "input_hash": input_hash,
+            "output_hash": output_hash,
+            "definition_hash": definition_hash or None,
+            "metric_consumed": (
+                _metric_application_consumed(tool_history, item)
+                if action_kind in {"metric_column", "metric_formula"}
+                else None
+            ),
+        }
         if action_kind == "metric_formula":
             formula_hash = str(item.get("formula_hash") or "")
             if re.fullmatch(r"[0-9a-f]{64}", formula_hash) is None:
@@ -451,11 +452,7 @@ def evaluate_golden_contract(
     current_relationships = _relationship_profiles(tool_history)
     for expected in contract.get("relationships") or []:
         current = next(
-            (
-                item
-                for item in current_relationships
-                if _relationship_matches(item, expected)
-            ),
+            (item for item in current_relationships if _relationship_matches(item, expected)),
             None,
         )
         if current is None:

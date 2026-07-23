@@ -225,12 +225,8 @@ async def _seed_structured_query_run(
                 "table_or_view": "orders",
                 "query_scope": "aggregated",
                 "dimensions": ["category"],
-                "metrics": [
-                    {"operation": "sum", "column": "paid_amount", "alias": "sales"}
-                ],
-                "filters": [
-                    {"column": "refund_status", "operator": "eq", "value": "paid"}
-                ],
+                "metrics": [{"operation": "sum", "column": "paid_amount", "alias": "sales"}],
+                "filters": [{"column": "refund_status", "operator": "eq", "value": "paid"}],
                 "sort": [{"field": "sales", "direction": "desc"}],
                 "limit": 100,
                 "is_aggregate": True,
@@ -719,9 +715,7 @@ async def test_system_rerun_receipt_recaptures_as_system_mode(
     query.update(
         {
             "result_name": "result_1",
-            "source_schema_signature": playbook["source_roles"][0][
-                "schema_signature"
-            ],
+            "source_schema_signature": playbook["source_roles"][0]["schema_signature"],
         }
     )
     metadata = {

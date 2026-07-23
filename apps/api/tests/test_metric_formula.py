@@ -57,8 +57,7 @@ def test_formula_contract_enforces_limits_and_row_then_aggregate():
         validate_metric_expression(expression)
 
     column_nodes = [
-        {"op": "column", "name": f"c{index}"}
-        for index in range(MAX_FORMULA_COLUMNS + 1)
+        {"op": "column", "name": f"c{index}"} for index in range(MAX_FORMULA_COLUMNS + 1)
     ]
     while len(column_nodes) > 1:
         next_level = []
@@ -179,18 +178,21 @@ def test_interpreter_applies_null_and_divide_by_zero_policies_without_eval():
             divide_by_zero="error",
         )
 
-    assert canonical_decimal_string(
-        evaluate_metric_expression(
-            {
-                "op": "divide",
-                "left": {"op": "decimal", "value": "1"},
-                "right": {"op": "decimal", "value": "3"},
-            },
-            {},
-            null_policy="propagate",
-            divide_by_zero="error",
+    assert (
+        canonical_decimal_string(
+            evaluate_metric_expression(
+                {
+                    "op": "divide",
+                    "left": {"op": "decimal", "value": "1"},
+                    "right": {"op": "decimal", "value": "3"},
+                },
+                {},
+                null_policy="propagate",
+                divide_by_zero="error",
+            )
         )
-    ) == "0.333333333333333333"
+        == "0.333333333333333333"
+    )
     with pytest.raises(ValueError, match="安全幅度"):
         evaluate_metric_expression(
             {

@@ -228,9 +228,7 @@ async def extract_verified_aggregate_metric_observation(
     source_id = str(producer.get("source_id") or "").strip()
     table_or_view = str(producer.get("table_or_view") or "").strip()
     query_plan_source_id = str(query_plan.get("source_id") or "").strip()
-    query_plan_table = str(
-        query_plan.get("table_or_view") or query_plan.get("table") or ""
-    ).strip()
+    query_plan_table = str(query_plan.get("table_or_view") or query_plan.get("table") or "").strip()
     profile_source_id = str(profile.get("source_id") or "").strip()
     profile_table = str(profile.get("table_or_view") or "").strip()
     if (
@@ -242,8 +240,7 @@ async def extract_verified_aggregate_metric_observation(
         or table_or_view != profile_table
         or len(retained.source_refs) != 1
         or str(retained.source_refs[0].get("source_id") or "").strip() != source_id
-        or str(retained.source_refs[0].get("table_or_view") or "").strip()
-        != table_or_view
+        or str(retained.source_refs[0].get("table_or_view") or "").strip() != table_or_view
         or retained.source_refs[0].get("query_scope") != "aggregated"
         or not _same_source_refs(producer.get("source_refs"), retained.source_refs)
         or not _same_source_refs(profile.get("source_refs"), retained.source_refs)

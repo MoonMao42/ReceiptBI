@@ -18,9 +18,7 @@ def _migration_module() -> ModuleType:
         / "versions"
         / "0020_retire_stale_semantic_recommendations.py"
     )
-    spec = importlib.util.spec_from_file_location(
-        "retire_stale_semantic_recommendations", path
-    )
+    spec = importlib.util.spec_from_file_location("retire_stale_semantic_recommendations", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -168,25 +166,33 @@ def test_migration_retires_only_untouched_pre_localization_recommendations(
         monkeypatch.setattr(migration.op, "get_bind", lambda: connection)
         migration.upgrade()
 
-        retired = connection.execute(
-            sa.select(SemanticEntry).where(SemanticEntry.id == retired_id)
-        ).mappings().one()
+        retired = (
+            connection.execute(sa.select(SemanticEntry).where(SemanticEntry.id == retired_id))
+            .mappings()
+            .one()
+        )
         assert retired["is_active"] is False
         assert retired["validity"] == "stale"
         assert retired["execution_state"] == "blocked"
         assert retired["revision_number"] == 2
-        revision = connection.execute(
-            sa.select(SemanticEntryRevision).where(
-                SemanticEntryRevision.id == retired["active_revision_id"]
+        revision = (
+            connection.execute(
+                sa.select(SemanticEntryRevision).where(
+                    SemanticEntryRevision.id == retired["active_revision_id"]
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
         assert revision["mutation_kind"] == "stale_recommendation_retired"
         assert revision["parent_revision_id"] is not None
 
         for entry_id in protected_ids:
-            protected = connection.execute(
-                sa.select(SemanticEntry).where(SemanticEntry.id == entry_id)
-            ).mappings().one()
+            protected = (
+                connection.execute(sa.select(SemanticEntry).where(SemanticEntry.id == entry_id))
+                .mappings()
+                .one()
+            )
             assert protected["is_active"] is True
             assert protected["revision_number"] == 1
 
@@ -194,8 +200,9 @@ def test_migration_retires_only_untouched_pre_localization_recommendations(
             sa.select(sa.func.count()).select_from(SemanticEntryRevision)
         )
         migration.upgrade()
-        assert connection.scalar(
-            sa.select(sa.func.count()).select_from(SemanticEntryRevision)
-        ) == revision_count
+        assert (
+            connection.scalar(sa.select(sa.func.count()).select_from(SemanticEntryRevision))
+            == revision_count
+        )
 
     engine.dispose()

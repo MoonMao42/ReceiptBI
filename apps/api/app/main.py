@@ -157,9 +157,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 allowed_root=legacy_root_input,
             )
             legacy_key = (
-                legacy_key_input.get_secret_value()
-                if legacy_key_input is not None
-                else None
+                legacy_key_input.get_secret_value() if legacy_key_input is not None else None
             )
 
         async with AsyncSessionLocal() as session:
@@ -171,9 +169,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                     current_encryptor=encryptor,
                 )
             if desktop_runtime:
-                migrated_credentials, unreadable_credentials = (
-                    await rotate_legacy_desktop_credentials(session)
-                )
+                (
+                    migrated_credentials,
+                    unreadable_credentials,
+                ) = await rotate_legacy_desktop_credentials(session)
             recovered_runs = await recover_interrupted_analysis_runs(session)
             recovered_inventory_job_ids = await recover_semantic_inventory_jobs(session)
             recovered_validation_job_ids = await recover_semantic_validation_jobs(session)

@@ -38,9 +38,7 @@ async def rotate_legacy_desktop_credentials(
         *(await session.scalars(select(Model))).all(),
     ]
     for record in records:
-        attribute = (
-            "password_encrypted" if isinstance(record, Connection) else "api_key_encrypted"
-        )
+        attribute = "password_encrypted" if isinstance(record, Connection) else "api_key_encrypted"
         ciphertext = getattr(record, attribute)
         if not ciphertext:
             continue

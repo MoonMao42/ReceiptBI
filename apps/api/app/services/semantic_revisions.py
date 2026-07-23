@@ -142,9 +142,13 @@ async def append_semantic_revision(
         # A competing SQLite writer may surface as SQLITE_BUSY before it can
         # reach the unique constraint. Treat that as a refreshable conflict,
         # while preserving unrelated database failures.
-        if db.bind is None or db.bind.dialect.name != "sqlite" or not any(
-            marker in str(exc).casefold()
-            for marker in ("database is locked", "database table is locked", "sqlite_busy")
+        if (
+            db.bind is None
+            or db.bind.dialect.name != "sqlite"
+            or not any(
+                marker in str(exc).casefold()
+                for marker in ("database is locked", "database table is locked", "sqlite_busy")
+            )
         ):
             raise
         raise SemanticRevisionConflictError(

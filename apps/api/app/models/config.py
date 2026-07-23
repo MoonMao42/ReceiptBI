@@ -64,9 +64,7 @@ class ConnectionExtraOptions(BaseModel):
             raise ValueError("客户端证书与私钥路径必须同时填写")
         if self.sslmode in {"verify-ca", "verify-full"} and not self.sslrootcert:
             raise ValueError("验证服务器证书时必须填写 CA 证书路径")
-        if self.sslmode == "disable" and any(
-            (self.sslrootcert, self.sslcert, self.sslkey)
-        ):
+        if self.sslmode == "disable" and any((self.sslrootcert, self.sslcert, self.sslkey)):
             raise ValueError("关闭加密时不能配置证书")
         return self
 

@@ -183,9 +183,7 @@ async def test_v3_import_rejects_broken_cleaning_chain_before_creating_project(
     exported = await client.get(f"/api/v1/projects/{project.id}/export")
     broken = deepcopy(exported.json()["data"])
     broken["project"] = {"name": "不应创建的项目"}
-    broken["sanitation_histories"][0]["revisions"][0]["parent_revision_id"] = str(
-        uuid4()
-    )
+    broken["sanitation_histories"][0]["revisions"][0]["parent_revision_id"] = str(uuid4())
     before = await db_session.scalar(select(func.count(Project.id)))
 
     rejected = await client.post("/api/v1/projects/import", json=broken)
@@ -249,15 +247,12 @@ async def test_cleaning_history_api_restores_by_appending_a_new_head(
     }
     await db_session.commit()
 
-    listed = await client.get(
-        f"/api/v1/projects/{project.id}/recipes/{recipe.id}/revisions"
-    )
+    listed = await client.get(f"/api/v1/projects/{project.id}/recipes/{recipe.id}/revisions")
     assert listed.status_code == 200, listed.text
     assert [item["revision_number"] for item in listed.json()["data"]] == [2, 1]
 
     restored = await client.post(
-        f"/api/v1/projects/{project.id}/recipes/{recipe.id}"
-        f"/revisions/{first.id}/restore",
+        f"/api/v1/projects/{project.id}/recipes/{recipe.id}/revisions/{first.id}/restore",
         json={"expected_active_revision_id": str(second.id), "reason": "恢复首次方法"},
     )
     assert restored.status_code == 200, restored.text
@@ -274,8 +269,7 @@ async def test_cleaning_history_api_restores_by_appending_a_new_head(
     assert "visual_cleaning" not in (source.profile_data or {})
 
     stale = await client.post(
-        f"/api/v1/projects/{project.id}/recipes/{recipe.id}"
-        f"/revisions/{second.id}/restore",
+        f"/api/v1/projects/{project.id}/recipes/{recipe.id}/revisions/{second.id}/restore",
         json={"expected_active_revision_id": str(second.id)},
     )
     assert stale.status_code == 409
@@ -364,10 +358,7 @@ async def test_imported_cleaning_template_previews_without_mutation_then_binds_o
     assert source.working_uri == str(trusted_working_path)
     assert source.status == "attached"
     assert await db_session.scalar(select(func.count(SanitationRecipeRecord.id))) == 1
-    assert (
-        await db_session.scalar(select(func.count(SanitationRecipeRevisionRecord.id)))
-        == 1
-    )
+    assert await db_session.scalar(select(func.count(SanitationRecipeRevisionRecord.id))) == 1
     preview_root = (
         settings.WORKSPACE_ROOT
         / str(project.id)
@@ -382,19 +373,11 @@ async def test_imported_cleaning_template_previews_without_mutation_then_binds_o
         f"/api/v1/projects/{project.id}/recipe-templates/{history['recipe_id']}/bind",
         json={
             "source_id": str(source.id),
-            "expected_template_active_revision_id": preview_data[
-                "template_active_revision_id"
-            ],
-            "expected_template_operations_hash": preview_data[
-                "template_operations_hash"
-            ],
+            "expected_template_active_revision_id": preview_data["template_active_revision_id"],
+            "expected_template_operations_hash": preview_data["template_operations_hash"],
             "expected_source_fingerprint": preview_data["source_fingerprint"],
-            "expected_preview_output_fingerprint": preview_data[
-                "preview_output_fingerprint"
-            ],
-            "expected_current_working_fingerprint": preview_data[
-                "current_working_fingerprint"
-            ],
+            "expected_preview_output_fingerprint": preview_data["preview_output_fingerprint"],
+            "expected_current_working_fingerprint": preview_data["current_working_fingerprint"],
             "expected_current_recipe_active_revision_id": preview_data[
                 "current_recipe_active_revision_id"
             ],
@@ -407,10 +390,7 @@ async def test_imported_cleaning_template_previews_without_mutation_then_binds_o
     assert bound_data["recipe"]["id"] == str(existing_recipe.id)
     assert bound_data["revision"]["parent_revision_id"] == str(existing_revision.id)
     assert await db_session.scalar(select(func.count(SanitationRecipeRecord.id))) == 1
-    assert (
-        await db_session.scalar(select(func.count(SanitationRecipeRevisionRecord.id)))
-        == 2
-    )
+    assert await db_session.scalar(select(func.count(SanitationRecipeRevisionRecord.id))) == 2
 
     await db_session.refresh(source)
     await db_session.refresh(project)
@@ -426,19 +406,11 @@ async def test_imported_cleaning_template_previews_without_mutation_then_binds_o
         f"/api/v1/projects/{project.id}/recipe-templates/{history['recipe_id']}/bind",
         json={
             "source_id": str(source.id),
-            "expected_template_active_revision_id": preview_data[
-                "template_active_revision_id"
-            ],
-            "expected_template_operations_hash": preview_data[
-                "template_operations_hash"
-            ],
+            "expected_template_active_revision_id": preview_data["template_active_revision_id"],
+            "expected_template_operations_hash": preview_data["template_operations_hash"],
             "expected_source_fingerprint": preview_data["source_fingerprint"],
-            "expected_preview_output_fingerprint": preview_data[
-                "preview_output_fingerprint"
-            ],
-            "expected_current_working_fingerprint": preview_data[
-                "current_working_fingerprint"
-            ],
+            "expected_preview_output_fingerprint": preview_data["preview_output_fingerprint"],
+            "expected_current_working_fingerprint": preview_data["current_working_fingerprint"],
             "expected_current_recipe_active_revision_id": preview_data[
                 "current_recipe_active_revision_id"
             ],
@@ -450,9 +422,7 @@ async def test_imported_cleaning_template_previews_without_mutation_then_binds_o
     assert exported.status_code == 200, exported.text
     histories = exported.json()["data"]["sanitation_histories"]
     assert len(histories) == 2
-    imported_history = next(
-        item for item in histories if item["recipe_id"] == history["recipe_id"]
-    )
+    imported_history = next(item for item in histories if item["recipe_id"] == history["recipe_id"])
     assert [
         {key: value for key, value in item.items() if key != "created_at"}
         for item in imported_history["revisions"]
@@ -502,19 +472,11 @@ async def test_template_bind_rejects_a_changed_source_without_mutating_the_proje
         f"/api/v1/projects/{project.id}/recipe-templates/{history['recipe_id']}/bind",
         json={
             "source_id": str(source.id),
-            "expected_template_active_revision_id": preview_data[
-                "template_active_revision_id"
-            ],
-            "expected_template_operations_hash": preview_data[
-                "template_operations_hash"
-            ],
+            "expected_template_active_revision_id": preview_data["template_active_revision_id"],
+            "expected_template_operations_hash": preview_data["template_operations_hash"],
             "expected_source_fingerprint": preview_data["source_fingerprint"],
-            "expected_preview_output_fingerprint": preview_data[
-                "preview_output_fingerprint"
-            ],
-            "expected_current_working_fingerprint": preview_data[
-                "current_working_fingerprint"
-            ],
+            "expected_preview_output_fingerprint": preview_data["preview_output_fingerprint"],
+            "expected_current_working_fingerprint": preview_data["current_working_fingerprint"],
             "expected_current_recipe_active_revision_id": preview_data[
                 "current_recipe_active_revision_id"
             ],

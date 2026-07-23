@@ -98,9 +98,7 @@ async def test_current_bundle_round_trips_complete_semantic_history_with_new_ids
     )
 
     base_time = datetime(2026, 7, 18, 8, 0, tzinfo=UTC)
-    for offset, revision in enumerate(
-        [first, second, restored, inactive_first, inactive_last]
-    ):
+    for offset, revision in enumerate([first, second, restored, inactive_first, inactive_last]):
         revision.created_at = base_time + timedelta(minutes=offset)
     active.created_at = base_time - timedelta(days=1)
     active.updated_at = base_time + timedelta(minutes=3)

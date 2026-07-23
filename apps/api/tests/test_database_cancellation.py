@@ -421,9 +421,7 @@ def test_sample_table_uses_the_same_cancellable_adapter_path(monkeypatch):
     assert isinstance(outcome.get("error"), DatabaseQueryCancelledError)
     assert control.calls == ["KILL QUERY 91"]
     assert target.close_calls == 1
-    assert [sql for sql, _ in cursor.calls].count(
-        "SET SESSION TRANSACTION READ ONLY"
-    ) == 1
+    assert [sql for sql, _ in cursor.calls].count("SET SESSION TRANSACTION READ ONLY") == 1
 
 
 @pytest.mark.parametrize("method_name", ["execute_query", "sample_table"])

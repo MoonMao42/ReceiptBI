@@ -592,13 +592,9 @@ def _stored_recipe_templates(project: Project) -> list[ProjectBundleSanitationHi
             sanitation_histories=raw_histories,
         )
         for history in bundle.sanitation_histories:
-            history.head.operations = canonicalize_sanitation_operations(
-                history.head.operations
-            )
+            history.head.operations = canonicalize_sanitation_operations(history.head.operations)
             for revision in history.revisions:
-                revision.operations = canonicalize_sanitation_operations(
-                    revision.operations
-                )
+                revision.operations = canonicalize_sanitation_operations(revision.operations)
         return bundle.sanitation_histories
     except (ValidationError, SanitationContractError) as exc:
         raise HTTPException(
@@ -631,11 +627,7 @@ def _recipe_template_or_404(
     template_id: UUID,
 ) -> ProjectBundleSanitationHistory:
     history = next(
-        (
-            item
-            for item in _stored_recipe_templates(project)
-            if item.recipe_id == template_id
-        ),
+        (item for item in _stored_recipe_templates(project) if item.recipe_id == template_id),
         None,
     )
     if history is None:
@@ -724,9 +716,8 @@ def _stored_visual_cleaning_operations(
         # Old sources did not record which head operations came from the manual editor.
         # Preserve their recipe conservatively instead of guessing what may be removed.
         return None
-    if (
-        active_revision_id is None
-        or str(visual_cleaning.get("active_revision_id") or "") != str(active_revision_id)
+    if active_revision_id is None or str(visual_cleaning.get("active_revision_id") or "") != str(
+        active_revision_id
     ):
         # Manual steps are removable only while the exact revision they created
         # remains active. Another head must never inherit stale editor ownership.
@@ -821,12 +812,8 @@ def _visual_cleaning_proof_hash(
     payload = json.dumps(
         {
             "version": 1,
-            "selected_operations": canonicalize_visual_sanitation_operations(
-                selected_operations
-            ),
-            "materialized_operations": canonicalize_sanitation_operations(
-                materialized_operations
-            ),
+            "selected_operations": canonicalize_visual_sanitation_operations(selected_operations),
+            "materialized_operations": canonicalize_sanitation_operations(materialized_operations),
         },
         ensure_ascii=False,
         sort_keys=True,
@@ -875,8 +862,7 @@ def _enforce_visual_cleaning_source_limits(source_path: Path) -> None:
                     raise HTTPException(
                         status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                         detail=(
-                            "这份 Excel 展开后过大，暂时不能直接整理。"
-                            "请先拆分工作表或文件后再试。"
+                            "这份 Excel 展开后过大，暂时不能直接整理。请先拆分工作表或文件后再试。"
                         ),
                     )
     except zipfile.BadZipFile:
@@ -1630,9 +1616,7 @@ def _playbook_execution_mode(
         )
         if not presentation_only:
             return "agent_replan_required"
-    structured_receipts = [
-        item for item in tool_history if item.get("kind") == "structured_query"
-    ]
+    structured_receipts = [item for item in tool_history if item.get("kind") == "structured_query"]
     structured_steps = [step for step in steps if step.kind == "structured_query"]
     validation_steps = [step for step in steps if step.kind == "validate_result"]
     execution_receipts = [
@@ -1679,7 +1663,9 @@ def _playbook_execution_mode(
         expected_shape_hash = _playbook_shape_hash(
             source_roles,
             steps,
-            _validation_summary(validation, {str(validation.get("result_name")): step.output_result}),
+            _validation_summary(
+                validation, {str(validation.get("result_name")): step.output_result}
+            ),
             schema_version=3,
             execution_mode="system_structured_query",
         )
@@ -1864,11 +1850,7 @@ def _is_legacy_name_match_relationship(entry: SemanticEntry) -> bool:
     """Recognize the old relationship suggestions created from names alone."""
 
     evidence = entry.evidence if isinstance(entry.evidence, list) else []
-    kinds = {
-        str(item.get("kind") or "")
-        for item in evidence
-        if isinstance(item, dict)
-    }
+    kinds = {str(item.get("kind") or "") for item in evidence if isinstance(item, dict)}
     return "matching_column_names" in kinds and "declared_foreign_key" not in kinds
 
 
@@ -1882,9 +1864,7 @@ async def _retire_legacy_name_match_relationship_candidates(
     user_revision_result = await db.execute(
         select(SemanticEntryRevision.semantic_entry_id).where(
             SemanticEntryRevision.project_id == project_id,
-            SemanticEntryRevision.mutation_kind.in_(
-                _RELATIONSHIP_USER_GOVERNANCE_MUTATIONS
-            ),
+            SemanticEntryRevision.mutation_kind.in_(_RELATIONSHIP_USER_GOVERNANCE_MUTATIONS),
         )
     )
     user_governed_ids = set(user_revision_result.scalars())
@@ -1934,8 +1914,7 @@ def _is_legacy_preflight_column_candidate(
     """Recognize only the obsolete, untyped column suggestions we created."""
 
     if not (
-        entry.key == f"grain:{source_id}"
-        or entry.key.startswith(f"metric_candidate:{source_id}:")
+        entry.key == f"grain:{source_id}" or entry.key.startswith(f"metric_candidate:{source_id}:")
     ):
         return False
     definition = entry.definition if isinstance(entry.definition, dict) else None
@@ -2037,8 +2016,7 @@ async def _persist_preflight_candidates(
     governed_relationship_pairs = {
         pair_identity
         for item in governed_result.scalars()
-        if (pair_identity := _relationship_definition_pair_identity(item.definition))
-        is not None
+        if (pair_identity := _relationship_definition_pair_identity(item.definition)) is not None
     }
     logical_name = str(profile.get("logical_name") or source.name)
     tables = [item for item in profile.get("tables") or [] if isinstance(item, dict)]
@@ -2122,12 +2100,8 @@ async def _persist_preflight_candidates(
             # untouched and avoid a second candidate for the same logical pair.
             continue
         pair_hash = hashlib.sha256(pair_identity.encode("utf-8")).hexdigest()[:12]
-        left_label = (
-            f"{source.name}.{left_endpoint['table_or_view']}.{left_endpoint['column']}"
-        )
-        right_label = (
-            f"{source.name}.{right_endpoint['table_or_view']}.{right_endpoint['column']}"
-        )
+        left_label = f"{source.name}.{left_endpoint['table_or_view']}.{left_endpoint['column']}"
+        right_label = f"{source.name}.{right_endpoint['table_or_view']}.{right_endpoint['column']}"
         await _upsert_candidate_knowledge(
             db,
             project_id=source.project_id,
@@ -2159,7 +2133,6 @@ async def _persist_preflight_candidates(
                 }
             ],
         )
-
 
 
 def _candidate_mentions_source(entry: SemanticEntry, source: ProjectDataSource) -> bool:
@@ -2392,9 +2365,7 @@ async def _reuse_confirmed_preflight_answers(
             separators=(",", ":"),
         )
         confirmed_by_slot.setdefault(slot, set()).add(meaning)
-    confirmed_keys = {
-        slot for slot, meanings in confirmed_by_slot.items() if len(meanings) == 1
-    }
+    confirmed_keys = {slot for slot, meanings in confirmed_by_slot.items() if len(meanings) == 1}
     if not confirmed_keys:
         return
     original = list(preflight.ambiguities)
@@ -2989,9 +2960,7 @@ async def attach_connection_source(
     for active_source in active_sources_result.scalars():
         active_names = {
             str(active_source.name).strip().casefold(),
-            str((active_source.profile_data or {}).get("logical_name") or "")
-            .strip()
-            .casefold(),
+            str((active_source.profile_data or {}).get("logical_name") or "").strip().casefold(),
         }
         active_names.discard("")
         if requested_logical_name in active_names:
@@ -3363,9 +3332,7 @@ async def _record_preflight_failure(
         }
     else:
         existing_issues = [
-            item
-            for item in profile.get("issues") or []
-            if item.get("code") != "preflight_failed"
+            item for item in profile.get("issues") or [] if item.get("code") != "preflight_failed"
         ]
         source.status = "error"
         source.profile_data = {
@@ -3844,9 +3811,7 @@ async def _preflight_source_impl(
         source.status = "ready"
         source.profile_data = {
             "summary": value_profile.summary,
-            "logical_name": str(
-                (source.profile_data or {}).get("logical_name") or source.name
-            ),
+            "logical_name": str((source.profile_data or {}).get("logical_name") or source.name),
             "schema_text": schema_text,
             "tables": schema_catalog,
             "preanalysis": value_profile.preanalysis,
@@ -4236,10 +4201,7 @@ async def list_recipe_templates(
     )
     sources = list(source_result.scalars())
     bindings = _stored_recipe_template_bindings(project)
-    bound_pairs = {
-        (item["template_recipe_id"], item["source_id"])
-        for item in bindings
-    }
+    bound_pairs = {(item["template_recipe_id"], item["source_id"]) for item in bindings}
     summaries = []
     for history in histories:
         compatible_source_ids = [
@@ -4823,8 +4785,7 @@ async def accept_source_replacement(
     accepted_changes = [
         item
         for item in profile.get("issues") or []
-        if item.get("code")
-        in {"schema_drift", "recipe_replay_drift", "recipe_input_changed"}
+        if item.get("code") in {"schema_drift", "recipe_replay_drift", "recipe_input_changed"}
     ]
     acceptance_issue = {
         "code": "replacement_accepted",
@@ -5041,10 +5002,7 @@ async def _remember_candidate_rejection(
     if (
         details.get("status") != "verified"
         or details.get("definition_hash") != definition_hash
-        or not (
-            details.get("last_verified_run_id")
-            or details.get("last_validation_job_id")
-        )
+        or not (details.get("last_verified_run_id") or details.get("last_validation_job_id"))
         or (details.get("value_hash") and details.get("value_hash") != value_hash)
     ):
         return "候选验证摘要不属于当前定义或当前值"
@@ -5078,12 +5036,14 @@ async def _remember_candidate_rejection(
             matching_proof = bool(item.get("result_hash"))
             if matching_proof:
                 break
-        if kind in {"semantic_execution_verification", "correction_application", "semantic_human_attestation"}:
+        if kind in {
+            "semantic_execution_verification",
+            "correction_application",
+            "semantic_human_attestation",
+        }:
             if item.get("status") not in {None, "verified"}:
                 continue
-            if item.get("semantic_entry_id") and str(item["semantic_entry_id"]) != str(
-                entry.id
-            ):
+            if item.get("semantic_entry_id") and str(item["semantic_entry_id"]) != str(entry.id):
                 continue
             if item.get("rule_value") and str(item["rule_value"]) != entry.value:
                 continue
@@ -5136,8 +5096,7 @@ async def _semantic_entry_allowed_actions(
     if not entry.is_active:
         return (
             ["restore"]
-            if entry.state == "candidate"
-            and await _restore_candidate_target(db, entry) is not None
+            if entry.state == "candidate" and await _restore_candidate_target(db, entry) is not None
             else []
         )
 
@@ -5151,21 +5110,14 @@ async def _semantic_entry_allowed_actions(
     )
     if validation_is_queued:
         return []
-    if (
-        needs_current_version_validation
-        and entry.state == "candidate"
-        and not validation_is_queued
-    ):
+    if needs_current_version_validation and entry.state == "candidate" and not validation_is_queued:
         if entry.entry_type == "relationship" and entry.definition:
             actions.append("queue_validation")
         elif entry.entry_type in {"metric", "dimension"} and is_executable_semantic_definition(
             entry.definition
         ):
             actions.append("queue_validation")
-    if (
-        needs_current_version_validation
-        and is_executable_semantic_definition(entry.definition)
-    ):
+    if needs_current_version_validation and is_executable_semantic_definition(entry.definition):
         actions.append("attest")
     if entry.state == "candidate" and await _remember_candidate_rejection(db, entry) is None:
         actions.append("remember")
@@ -5238,9 +5190,7 @@ def _semantic_recommendation_is_user_governed(
     """Protect every head whose lifecycle has moved beyond an untouched suggestion."""
 
     is_scope_presentation = entry.entry_type == "scope_presentation"
-    expected_execution_state = (
-        "definition_only" if is_scope_presentation else "needs_validation"
-    )
+    expected_execution_state = "definition_only" if is_scope_presentation else "needs_validation"
 
     if (
         entry.id in user_revision_entry_ids
@@ -5265,8 +5215,7 @@ def _semantic_recommendation_is_user_governed(
     ):
         return True
     return any(
-        isinstance(item, dict)
-        and item.get("kind") in _SEMANTIC_RECOMMENDATION_PROTECTED_EVIDENCE
+        isinstance(item, dict) and item.get("kind") in _SEMANTIC_RECOMMENDATION_PROTECTED_EVIDENCE
         for item in (entry.evidence or [])
     )
 
@@ -5458,9 +5407,7 @@ async def _persist_semantic_recommendation_batch(
             entry_type=item.entry_type,
         )
         execution_state = (
-            "definition_only"
-            if item.entry_type == "scope_presentation"
-            else "needs_validation"
+            "definition_only" if item.entry_type == "scope_presentation" else "needs_validation"
         )
         definition = item.model_dump(mode="json").get("definition")
         if existing is not None:
@@ -5586,9 +5533,9 @@ async def summarize_knowledge(
     active_business_facing = active & business_facing
     result = await db.execute(
         select(
-            func.coalesce(
-                func.sum(case((active_business_facing, 1), else_=0)), 0
-            ).label("active_total"),
+            func.coalesce(func.sum(case((active_business_facing, 1), else_=0)), 0).label(
+                "active_total"
+            ),
             func.coalesce(
                 func.sum(
                     case(
@@ -5608,8 +5555,7 @@ async def summarize_knowledge(
                 func.sum(
                     case(
                         (
-                            active_business_facing
-                            & (SemanticEntry.entry_type == "relationship"),
+                            active_business_facing & (SemanticEntry.entry_type == "relationship"),
                             1,
                         ),
                         else_=0,
@@ -5621,8 +5567,7 @@ async def summarize_knowledge(
                 func.sum(
                     case(
                         (
-                            active_business_facing
-                            & (SemanticEntry.state == "confirmed"),
+                            active_business_facing & (SemanticEntry.state == "confirmed"),
                             1,
                         ),
                         else_=0,
@@ -5634,8 +5579,7 @@ async def summarize_knowledge(
                 func.sum(
                     case(
                         (
-                            active_business_facing
-                            & (SemanticEntry.state == "locked"),
+                            active_business_facing & (SemanticEntry.state == "locked"),
                             1,
                         ),
                         else_=0,
@@ -5715,24 +5659,16 @@ async def page_knowledge(
     normalized_right_table = right_table.strip() if right_table else None
     if normalized_left_table:
         statement = statement.where(
-            func.lower(
-                SemanticEntry.definition["left"]["table_or_view"].as_string()
-            )
+            func.lower(SemanticEntry.definition["left"]["table_or_view"].as_string())
             == normalized_left_table.casefold()
         )
     if normalized_right_table:
         statement = statement.where(
-            func.lower(
-                SemanticEntry.definition["right"]["table_or_view"].as_string()
-            )
+            func.lower(SemanticEntry.definition["right"]["table_or_view"].as_string())
             == normalized_right_table.casefold()
         )
     if normalized_search:
-        escaped = (
-            normalized_search.replace("\\", "\\\\")
-            .replace("%", "\\%")
-            .replace("_", "\\_")
-        )
+        escaped = normalized_search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         pattern = f"%{escaped}%"
         statement = statement.where(
             or_(
@@ -5858,11 +5794,7 @@ async def recommend_knowledge(
                 for entry in entries
             ],
         ),
-        message=(
-            "语义推荐已生成，仍需独立验证"
-            if entries
-            else "没有可新增或安全刷新的语义推荐"
-        ),
+        message=("语义推荐已生成，仍需独立验证" if entries else "没有可新增或安全刷新的语义推荐"),
     )
 
 
@@ -6081,9 +6013,7 @@ async def batch_knowledge_candidates(
                         ),
                         "semantic_entry_id": str(entry.id),
                         (
-                            "reviewed_revision_id"
-                            if presentation_only
-                            else "validated_revision_id"
+                            "reviewed_revision_id" if presentation_only else "validated_revision_id"
                         ): str(previous_revision_id),
                         "definition_hash": definition_hash,
                         "value_hash": value_hash,
@@ -6102,9 +6032,7 @@ async def batch_knowledge_candidates(
                     actor_source="user",
                     reason=payload.reason
                     or (
-                        "用户核对并采用数据范围名称"
-                        if presentation_only
-                        else "用户记住已验证候选"
+                        "用户核对并采用数据范围名称" if presentation_only else "用户记住已验证候选"
                     ),
                     expected_active_revision_id=previous_revision_id,
                 )
@@ -6406,13 +6334,9 @@ async def update_knowledge(
             project_id=project_id,
             definition=next_definition,
             requested_scope_id=(
-                changes.get("scope_id")
-                if "scope_id" in changes
-                else entry.scope_id
+                changes.get("scope_id") if "scope_id" in changes else entry.scope_id
             ),
-            allow_unresolved_project_fallback=(
-                changes.get("state", entry.state) == "candidate"
-            ),
+            allow_unresolved_project_fallback=(changes.get("state", entry.state) == "candidate"),
         )
     except SemanticScopeResolutionError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -6579,9 +6503,7 @@ def _correction_evidence(
         "target_ref": payload.target_ref,
         "target_key": None if payload.target_ref else payload.target_key,
         "selection": (
-            payload.selection.model_dump(mode="json")
-            if payload.selection is not None
-            else None
+            payload.selection.model_dump(mode="json") if payload.selection is not None else None
         ),
     }
 
@@ -6624,11 +6546,7 @@ def _inferred_correction_target_key(
     if payload.target_key:
         return payload.target_key
     checkpoint = run.checkpoint if isinstance(run.checkpoint, dict) else {}
-    tool_history = [
-        item
-        for item in checkpoint.get("tool_history") or []
-        if isinstance(item, dict)
-    ]
+    tool_history = [item for item in checkpoint.get("tool_history") or [] if isinstance(item, dict)]
     if payload.correction_type == "relationship_rule":
         relationship_keys = {
             str(item.get(field) or "").strip()
@@ -7233,9 +7151,7 @@ async def list_analysis_corrections(
     if analysis_run_id is not None:
         statement = statement.where(AnalysisCorrection.analysis_run_id == analysis_run_id)
     result = await db.execute(statement.order_by(AnalysisCorrection.created_at.desc()))
-    return APIResponse.ok(
-        data=[_analysis_correction_response(item) for item in result.scalars()]
-    )
+    return APIResponse.ok(data=[_analysis_correction_response(item) for item in result.scalars()])
 
 
 @router.post(
@@ -8026,11 +7942,7 @@ async def export_project(project_id: UUID, db: AsyncSession = Depends(get_db)):
             (revision for revision in revisions if revision.id == recipe.active_revision_id),
             None,
         )
-        if (
-            not revisions
-            or active_revision is None
-            or active_revision.id != revisions[-1].id
-        ):
+        if not revisions or active_revision is None or active_revision.id != revisions[-1].id:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="项目整理方法缺少连续版本历史，无法安全导出",
@@ -8060,8 +7972,7 @@ async def export_project(project_id: UUID, db: AsyncSession = Depends(get_db)):
             ) from exc
         if (
             canonical_head_operations != canonical_revisions[-1]["operations"]
-            or (active_revision.input_contract or {}).get("fingerprint")
-            != recipe.input_fingerprint
+            or (active_revision.input_contract or {}).get("fingerprint") != recipe.input_fingerprint
             or (active_revision.output_contract or {}).get("fingerprint")
             != recipe.output_fingerprint
         ):
@@ -8174,19 +8085,13 @@ async def import_project(bundle: ProjectBundle, db: AsyncSession = Depends(get_d
                                 if revision.parent_revision_id is not None
                                 else None
                             ),
-                            "operations": canonicalize_sanitation_operations(
-                                revision.operations
-                            ),
+                            "operations": canonicalize_sanitation_operations(revision.operations),
                         }
                     )
                 portable_head = {
                     **history.head.model_dump(mode="json"),
-                    "active_revision_id": str(
-                        revision_id_map[history.head.active_revision_id]
-                    ),
-                    "operations": canonicalize_sanitation_operations(
-                        history.head.operations
-                    ),
+                    "active_revision_id": str(revision_id_map[history.head.active_revision_id]),
+                    "operations": canonicalize_sanitation_operations(history.head.operations),
                 }
                 recipe_template_histories.append(
                     {
@@ -8210,9 +8115,7 @@ async def import_project(bundle: ProjectBundle, db: AsyncSession = Depends(get_d
                 name = str(legacy_recipe.get("name") or f"导入的整理方法 {index}").strip()
                 if not name:
                     raise SanitationContractError("历史整理方法名称不能为空")
-                operations = canonicalize_sanitation_operations(
-                    legacy_recipe.get("operations")
-                )
+                operations = canonicalize_sanitation_operations(legacy_recipe.get("operations"))
                 recipe_id = uuid4()
                 revision_id = uuid4()
                 input_contract = sanitation_fingerprint_contract(None)

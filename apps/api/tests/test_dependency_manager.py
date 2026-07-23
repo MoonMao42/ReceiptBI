@@ -98,8 +98,7 @@ async def test_install_uses_staging_then_atomically_commits(tmp_path: Path, monk
         pip_targets.append(staging)
         assert "--no-deps" in arguments
         assert arguments[-1] == (
-            "https://packages.example.invalid/demo_pkg-1.2.3-py3-none-any.whl"
-            f"#sha256={'a' * 64}"
+            f"https://packages.example.invalid/demo_pkg-1.2.3-py3-none-any.whl#sha256={'a' * 64}"
         )
         assert staging != manager.target
         assert (staging / "old_helper" / "__init__.py").is_file()

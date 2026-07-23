@@ -279,9 +279,7 @@ class TestExecutionService:
         service._load_execution_inputs = AsyncMock(
             return_value=SimpleNamespace(model_config={"model": "gpt-4o"}, history=[])
         )
-        service._prepare_analysis_run = AsyncMock(
-            return_value=(run, "show revenue", None, None)
-        )
+        service._prepare_analysis_run = AsyncMock(return_value=(run, "show revenue", None, None))
         service._mark_run_needs_attention = AsyncMock()
         service._persist_project_result = AsyncMock()
 

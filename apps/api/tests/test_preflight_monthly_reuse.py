@@ -47,9 +47,7 @@ async def test_failed_reapply_keeps_the_last_trusted_working_copy(
         "orders.csv",
         "order_id,amount\nO-1,32\nO-2,28\n",
     )
-    preflight = await client.post(
-        f"/api/v1/projects/{project_id}/sources/{source['id']}/preflight"
-    )
+    preflight = await client.post(f"/api/v1/projects/{project_id}/sources/{source['id']}/preflight")
     assert preflight.status_code == 200, preflight.text
 
     source_row = await db_session.get(ProjectDataSource, UUID(source["id"]))
@@ -74,9 +72,7 @@ async def test_failed_reapply_keeps_the_last_trusted_working_copy(
         raise RuntimeError("simulated sanitation failure")
 
     monkeypatch.setattr(projects_api, "run_preflight", fail_after_writing_attempt)
-    failed = await client.post(
-        f"/api/v1/projects/{project_id}/recipes/{recipe['id']}/reapply"
-    )
+    failed = await client.post(f"/api/v1/projects/{project_id}/recipes/{recipe['id']}/reapply")
     assert failed.status_code == 409, failed.text
     assert "仍使用上一次成功副本" in failed.json()["detail"]
 
@@ -115,9 +111,7 @@ async def test_failed_first_preflight_never_becomes_a_runtime_source(
         raise RuntimeError("simulated first preflight failure")
 
     monkeypatch.setattr(projects_api, "run_preflight", fail_preflight)
-    failed = await client.post(
-        f"/api/v1/projects/{project_id}/sources/{source['id']}/preflight"
-    )
+    failed = await client.post(f"/api/v1/projects/{project_id}/sources/{source['id']}/preflight")
     assert failed.status_code == 409, failed.text
 
     source_row = await db_session.get(ProjectDataSource, UUID(source["id"]))
@@ -315,9 +309,10 @@ async def test_severe_monthly_drift_still_replays_series_recipe_without_touching
     assert accepted.status_code == 200, accepted.text
     assert accepted.json()["data"]["status"] == "ready"
     assert accepted.json()["data"]["profile_data"]["is_current"] is True
-    assert accepted.json()["data"]["profile_data"]["accepted_replacement"][
-        "previous_source_id"
-    ] == july["id"]
+    assert (
+        accepted.json()["data"]["profile_data"]["accepted_replacement"]["previous_source_id"]
+        == july["id"]
+    )
     await db_session.refresh(july_row)
     await db_session.refresh(august_row)
     assert july_row.status == "superseded"
@@ -342,9 +337,7 @@ async def test_severe_monthly_drift_still_replays_series_recipe_without_touching
     }
     await db_session.commit()
 
-    undone = await client.post(
-        f"/api/v1/projects/{project_id}/recipes/{august_recipe['id']}/undo"
-    )
+    undone = await client.post(f"/api/v1/projects/{project_id}/recipes/{august_recipe['id']}/undo")
     assert undone.status_code == 200, undone.text
     assert undone.json()["data"]["status"] == "reverted"
     assert "恢复上一个成功版本" in undone.json()["message"]

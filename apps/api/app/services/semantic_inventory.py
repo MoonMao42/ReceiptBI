@@ -258,11 +258,7 @@ def _resolve_relation(
             "请选择要整理的表。",
             status_code=422,
         )
-    qualified = [
-        item
-        for item in relations
-        if _canonical_relation_name(item).casefold() == marker
-    ]
+    qualified = [item for item in relations if _canonical_relation_name(item).casefold() == marker]
     if qualified:
         if len(qualified) == 1:
             return dict(qualified[0])
@@ -271,11 +267,7 @@ def _resolve_relation(
             "这张表无法唯一确定，请选择带所属范围的名称。",
             status_code=422,
         )
-    bare = [
-        item
-        for item in relations
-        if str(item.get("name") or "").strip().casefold() == marker
-    ]
+    bare = [item for item in relations if str(item.get("name") or "").strip().casefold() == marker]
     if len(bare) == 1:
         return dict(bare[0])
     if len(bare) > 1:
@@ -309,9 +301,7 @@ async def _materialize_relation_index(
             ),
             timeout=_ITEM_TIMEOUT_SECONDS,
         )
-        page_relations = _normalized_relations(
-            [dict(item) for item in page.relations]
-        )
+        page_relations = _normalized_relations([dict(item) for item in page.relations])
         if heartbeat is not None:
             await heartbeat()
         for relation in page_relations:
@@ -386,9 +376,7 @@ def _profile_table_for_reference(
     if len(matches) == 1:
         return matches[0]
     qualified_matches = [
-        table
-        for table in matches
-        if _canonical_relation_name(table).casefold() == marker
+        table for table in matches if _canonical_relation_name(table).casefold() == marker
     ]
     return qualified_matches[0] if len(qualified_matches) == 1 else None
 
@@ -418,9 +406,7 @@ def _relationship_scope_tables(
     table_lookup = _profile_table_lookup(profile)
     relationship_evidence = [
         dict(item)
-        for item in (profile.get("preanalysis") or {}).get(
-            "relationship_evidence", []
-        )
+        for item in (profile.get("preanalysis") or {}).get("relationship_evidence", [])
         if isinstance(item, Mapping)
         and item.get("kind") == "declared_foreign_key"
         and item.get("catalog_verified") is True
@@ -440,8 +426,7 @@ def _relationship_scope_tables(
             },
         ]
         if not any(
-            current_aliases & _table_reference_candidates(endpoint)
-            for endpoint in endpoint_tables
+            current_aliases & _table_reference_candidates(endpoint) for endpoint in endpoint_tables
         ):
             continue
         for endpoint in endpoint_tables:
@@ -461,10 +446,7 @@ def _relationship_scope_batches(table_names: list[str]) -> list[list[str]]:
     if len(table_names) <= 1:
         return []
     current, *neighbors = table_names
-    return [
-        [current, *neighbors[offset : offset + 99]]
-        for offset in range(0, len(neighbors), 99)
-    ]
+    return [[current, *neighbors[offset : offset + 99]] for offset in range(0, len(neighbors), 99)]
 
 
 def _inventory_context_profile(
@@ -495,9 +477,7 @@ def _inventory_context_profile(
         is not None
     ]
     selected_aliases = {
-        alias
-        for table in selected_tables
-        for alias in _table_reference_candidates(table)
+        alias for table in selected_tables for alias in _table_reference_candidates(table)
     }
     raw_preanalysis = dict(profile.get("preanalysis") or {})
 
@@ -516,11 +496,7 @@ def _inventory_context_profile(
 
     relation_index = _relation_index(profile)
     relations = (
-        [
-            dict(item)
-            for item in relation_index.get("relations") or []
-            if isinstance(item, Mapping)
-        ]
+        [dict(item) for item in relation_index.get("relations") or [] if isinstance(item, Mapping)]
         if include_relation_directory
         else [
             {
@@ -716,12 +692,8 @@ async def create_semantic_inventory_job(
     connection = await _eligible_connection(db, source)
 
     requested_tables = list(request.tables)
-    pending_relation_hash = stable_payload_hash(
-        {"state": "pending", "source_id": str(source.id)}
-    )
-    normalized_selection_tables = sorted(
-        table.strip().casefold() for table in requested_tables
-    )
+    pending_relation_hash = stable_payload_hash({"state": "pending", "source_id": str(source.id)})
+    normalized_selection_tables = sorted(table.strip().casefold() for table in requested_tables)
     selection_hash = stable_payload_hash(
         {
             "source_id": str(source.id),
@@ -950,8 +922,7 @@ async def semantic_inventory_job_response(
             else None
         ),
         "failed_item_preview": [
-            SemanticInventoryJobItemResponse.model_validate(item)
-            for item in failed_items
+            SemanticInventoryJobItemResponse.model_validate(item) for item in failed_items
         ],
         "tables": [],
         "progress": SemanticInventoryJobProgress(
@@ -1002,8 +973,7 @@ async def semantic_inventory_job_items_response(
                 select(SemanticInventoryJobItem.table_name)
                 .where(
                     SemanticInventoryJobItem.job_id == job.id,
-                    func.lower(SemanticInventoryJobItem.table_name)
-                    == marker.casefold(),
+                    func.lower(SemanticInventoryJobItem.table_name) == marker.casefold(),
                 )
                 .limit(1)
             )
@@ -1019,10 +989,7 @@ async def semantic_inventory_job_items_response(
                 select(SemanticInventoryJobItem.table_name)
                 .where(
                     SemanticInventoryJobItem.job_id == job.id,
-                    (
-                        func.lower(SemanticInventoryJobItem.table_name)
-                        == marker.casefold()
-                    )
+                    (func.lower(SemanticInventoryJobItem.table_name) == marker.casefold())
                     | SemanticInventoryJobItem.table_name.iendswith(
                         f".{marker}",
                         autoescape=True,
@@ -1046,36 +1013,26 @@ async def semantic_inventory_job_items_response(
                 )
             resolved_table = matches[0]
 
-    query = select(SemanticInventoryJobItem).where(
-        SemanticInventoryJobItem.job_id == job.id
-    )
+    query = select(SemanticInventoryJobItem).where(SemanticInventoryJobItem.job_id == job.id)
     if after_ordinal is not None:
         query = query.where(SemanticInventoryJobItem.ordinal > after_ordinal)
     if resolved_table is not None:
         query = query.where(
-            func.lower(SemanticInventoryJobItem.table_name)
-            == resolved_table.casefold()
+            func.lower(SemanticInventoryJobItem.table_name) == resolved_table.casefold()
         )
     if reviewable:
         query = query.where(
             SemanticInventoryJobItem.status == "succeeded",
             SemanticInventoryJobItem.recommendation_batch_id.is_not(None),
         )
-    result = await db.execute(
-        query.order_by(SemanticInventoryJobItem.ordinal).limit(limit + 1)
-    )
+    result = await db.execute(query.order_by(SemanticInventoryJobItem.ordinal).limit(limit + 1))
     rows = list(result.scalars())
     has_more = len(rows) > limit
     page_items = rows[:limit]
     return SemanticInventoryJobItemPageResponse(
         job_id=job.id,
-        items=[
-            SemanticInventoryJobItemResponse.model_validate(item)
-            for item in page_items
-        ],
-        next_after_ordinal=(
-            page_items[-1].ordinal if has_more and page_items else None
-        ),
+        items=[SemanticInventoryJobItemResponse.model_validate(item) for item in page_items],
+        next_after_ordinal=(page_items[-1].ordinal if has_more and page_items else None),
         has_more=has_more,
     )
 
@@ -1179,8 +1136,7 @@ async def retry_semantic_inventory_job(
     )
     items = list(item_result.scalars())
     if not items and not (
-        job.status == "failed"
-        and dict(job.details or {}).get("retryable") is True
+        job.status == "failed" and dict(job.details or {}).get("retryable") is True
     ):
         raise SemanticInventoryError(
             "semantic_inventory_retry_unavailable",
@@ -1415,9 +1371,7 @@ async def _claim_job(
 ) -> list[UUID] | None:
     async with factory() as db:
         result = await db.execute(
-            select(SemanticInventoryJob)
-            .where(SemanticInventoryJob.id == job_id)
-            .with_for_update()
+            select(SemanticInventoryJob).where(SemanticInventoryJob.id == job_id).with_for_update()
         )
         job = result.scalar_one_or_none()
         if job is None or job.status != "queued" or job.cancel_requested:
@@ -1476,9 +1430,7 @@ async def _prepare_job_items(
         )
         existing_items = list(existing_result.scalars())
         requested_tables = [
-            str(item).strip()
-            for item in details.get("requested_tables") or []
-            if str(item).strip()
+            str(item).strip() for item in details.get("requested_tables") or [] if str(item).strip()
         ]
         if existing_items and len(existing_items) != len(requested_tables):
             raise SemanticInventoryError(
@@ -1509,9 +1461,7 @@ async def _prepare_job_items(
             worker_id=worker_id,
         ),
     )
-    relations = _normalized_relations(
-        [dict(item) for item in snapshot.get("relations") or []]
-    )
+    relations = _normalized_relations([dict(item) for item in snapshot.get("relations") or []])
     if not relations:
         raise SemanticInventoryError(
             "semantic_inventory_empty_source",
@@ -1521,9 +1471,7 @@ async def _prepare_job_items(
 
     async with factory() as db:
         result = await db.execute(
-            select(SemanticInventoryJob)
-            .where(SemanticInventoryJob.id == job_id)
-            .with_for_update()
+            select(SemanticInventoryJob).where(SemanticInventoryJob.id == job_id).with_for_update()
         )
         job = result.scalar_one_or_none()
         if job is None or job.status != "running" or job.lease_owner != worker_id:
@@ -1555,21 +1503,15 @@ async def _prepare_job_items(
             connection_identity=str(details.get("connection_identity") or ""),
         )
         requested_tables = [
-            str(item).strip()
-            for item in details.get("requested_tables") or []
-            if str(item).strip()
+            str(item).strip() for item in details.get("requested_tables") or [] if str(item).strip()
         ]
         selected_relations = (
             [_resolve_relation(table, relations) for table in requested_tables]
             if requested_tables
             else relations
         )
-        canonical_tables = [
-            _canonical_relation_name(relation) for relation in selected_relations
-        ]
-        if len({value.casefold() for value in canonical_tables}) != len(
-            canonical_tables
-        ):
+        canonical_tables = [_canonical_relation_name(relation) for relation in selected_relations]
+        if len({value.casefold() for value in canonical_tables}) != len(canonical_tables):
             raise SemanticInventoryError(
                 "semantic_inventory_table_ambiguous",
                 "所选表中存在无法区分的同名项。",
@@ -1898,15 +1840,18 @@ async def _start_item(
     *,
     job_id: UUID,
     item_id: UUID,
-) -> tuple[
-    dict[str, Any],
-    dict[str, Any],
-    str,
-    str,
-    UUID | None,
-    UUID,
-    UUID,
-] | None:
+) -> (
+    tuple[
+        dict[str, Any],
+        dict[str, Any],
+        str,
+        str,
+        UUID | None,
+        UUID,
+        UUID,
+    ]
+    | None
+):
     async with factory() as db:
         job = await db.get(SemanticInventoryJob, job_id)
         item = await db.get(SemanticInventoryJobItem, item_id)
@@ -1934,9 +1879,7 @@ async def _start_item(
                 _normalized_relations(
                     [
                         dict(value)
-                        for value in _relation_index(source.profile_data or {}).get(
-                            "relations", []
-                        )
+                        for value in _relation_index(source.profile_data or {}).get("relations", [])
                     ]
                 ),
             )
@@ -1986,10 +1929,7 @@ async def _assert_job_snapshot(
             "这次整理缺少必要的来源记录，请重新开始。",
         ) from exc
     relations = _normalized_relations(
-        [
-            dict(item)
-            for item in _relation_index(source.profile_data or {}).get("relations") or []
-        ]
+        [dict(item) for item in _relation_index(source.profile_data or {}).get("relations") or []]
     )
     if _relation_index_hash(relations) != job.relation_index_hash:
         raise SemanticInventoryError(
@@ -2022,12 +1962,10 @@ def _merged_table_profile_data(
     }
     if portrait is not None:
         table_entry["candidate_roles"] = [
-            {**dict(item), "table": canonical}
-            for item in portrait.get("candidate_roles") or []
+            {**dict(item), "table": canonical} for item in portrait.get("candidate_roles") or []
         ]
         table_entry["candidate_grain"] = [
-            {**dict(item), "table": canonical}
-            for item in portrait.get("candidate_grain") or []
+            {**dict(item), "table": canonical} for item in portrait.get("candidate_grain") or []
         ]
 
     def same_table(value: Mapping[str, Any]) -> bool:
@@ -2066,8 +2004,7 @@ def _merged_table_profile_data(
         portraits = [
             dict(item)
             for item in preanalysis.get("tables") or []
-            if str(item.get("table") or item.get("name") or "").casefold()
-            not in aliases
+            if str(item.get("table") or item.get("name") or "").casefold() not in aliases
         ]
         portraits.append(
             {
@@ -2388,9 +2325,7 @@ async def _finish_job(
                 item.message = "已停止整理这张表。"
                 item.completed_at = _utcnow()
         status_result = await db.execute(
-            select(SemanticInventoryJobItem.status).where(
-                SemanticInventoryJobItem.job_id == job.id
-            )
+            select(SemanticInventoryJobItem.status).where(SemanticInventoryJobItem.job_id == job.id)
         )
         counts = Counter(status_result.scalars())
         retryable_result = await db.execute(
@@ -2418,8 +2353,7 @@ async def _finish_job(
             "succeeded": counts["succeeded"],
             "failed": counts["failed"],
             "cancelled": counts["cancelled"],
-            "retryable": status == "completed_with_errors"
-            and has_retryable_failure,
+            "retryable": status == "completed_with_errors" and has_retryable_failure,
         }
         await db.commit()
 

@@ -836,9 +836,7 @@ async def test_batch_queue_and_ignore_are_revision_bound_and_reversible(
     assert completed_job.status_code == 200
     assert completed_job.json()["data"]["status"] == "completed"
     assert completed_job.json()["data"]["items"][0]["status"] == "blocked"
-    current = await client.get(
-        f"/api/v1/projects/{project.id}/knowledge/{candidate['id']}"
-    )
+    current = await client.get(f"/api/v1/projects/{project.id}/knowledge/{candidate['id']}")
     current_entry = current.json()["data"]
 
     ignored = await client.post(
@@ -1215,10 +1213,7 @@ async def test_user_can_edit_candidate_governance_without_bypassing_execution_va
     entry = corrected.json()["data"]
     assert entry["state"] == "confirmed"
     assert entry["validity"] == "active"
-    assert all(
-        entry["definition"][key] == value
-        for key, value in corrected_definition.items()
-    )
+    assert all(entry["definition"][key] == value for key, value in corrected_definition.items())
     assert entry["definition"]["business_name"] is None
     assert entry["definition"]["description"] is None
     assert entry["definition"]["example_questions"] == []

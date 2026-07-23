@@ -138,8 +138,7 @@ def upgrade() -> None:
                 semantic_entry_revisions.c.mutation_kind,
             )
         ).mappings()
-        if row["actor_source"] == "user"
-        or row["mutation_kind"] in _USER_GOVERNANCE_MUTATIONS
+        if row["actor_source"] == "user" or row["mutation_kind"] in _USER_GOVERNANCE_MUTATIONS
     }
     revision_rows = list(
         bind.execute(
@@ -157,9 +156,7 @@ def upgrade() -> None:
     revision_maxima: dict[str, int] = defaultdict(int)
     for row in revision_rows:
         entry_id = _id(row["semantic_entry_id"])
-        revision_maxima[entry_id] = max(
-            revision_maxima[entry_id], int(row["revision_number"])
-        )
+        revision_maxima[entry_id] = max(revision_maxima[entry_id], int(row["revision_number"]))
 
     candidates = list(
         bind.execute(

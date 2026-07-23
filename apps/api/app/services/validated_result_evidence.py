@@ -46,9 +46,7 @@ def _result_dependencies(step: dict[str, Any]) -> list[str]:
         if value:
             dependencies.append(value)
     dependencies.extend(
-        str(value).strip()
-        for value in (step.get("input_results") or [])
-        if str(value).strip()
+        str(value).strip() for value in (step.get("input_results") or []) if str(value).strip()
     )
     return dependencies
 
@@ -116,9 +114,7 @@ async def load_validated_retained_result(
         if isinstance(item, dict)
     ]
     validations = [
-        (index, item)
-        for index, item in enumerate(tool_history)
-        if item.get("kind") == "validation"
+        (index, item) for index, item in enumerate(tool_history) if item.get("kind") == "validation"
     ]
     if not validations:
         raise ValidatedResultEvidenceError(
@@ -146,8 +142,7 @@ async def load_validated_retained_result(
             "已记住这条定义；原报告缺少完整行数证据，暂不自动执行。",
         )
     if any(
-        item.get("kind") in DATA_PRODUCER_KINDS
-        for item in tool_history[validation_index + 1 :]
+        item.get("kind") in DATA_PRODUCER_KINDS for item in tool_history[validation_index + 1 :]
     ):
         raise ValidatedResultEvidenceError(
             "UNVALIDATED_LATER_RESULT",

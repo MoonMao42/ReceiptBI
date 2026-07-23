@@ -68,8 +68,7 @@ def upgrade() -> None:
             name="ck_semantic_scope_parent_shape",
         ),
         sa.CheckConstraint(
-            "kind != 'table' OR "
-            "(source_logical_name IS NOT NULL AND table_or_view IS NOT NULL)",
+            "kind != 'table' OR (source_logical_name IS NOT NULL AND table_or_view IS NOT NULL)",
             name="ck_semantic_scope_table_binding",
         ),
     )
@@ -99,9 +98,7 @@ def upgrade() -> None:
     with op.batch_alter_table(
         "semantic_entries",
         recreate=recreate,
-        naming_convention={
-            "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s"
-        },
+        naming_convention={"fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s"},
     ) as batch_op:
         batch_op.add_column(sa.Column("scope_id", _uuid()))
         batch_op.create_foreign_key(
@@ -120,9 +117,7 @@ def downgrade() -> None:
     with op.batch_alter_table(
         "semantic_entries",
         recreate=recreate,
-        naming_convention={
-            "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s"
-        },
+        naming_convention={"fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s"},
     ) as batch_op:
         batch_op.drop_index("ix_semantic_entries_scope_id")
         batch_op.drop_constraint("fk_semantic_entries_scope_id", type_="foreignkey")

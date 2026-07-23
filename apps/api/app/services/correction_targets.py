@@ -237,11 +237,7 @@ async def discover_report_correction_targets(
         for item in checkpoint.get("semantic_revision_transitions") or []
         if isinstance(item, dict)
     ]
-    tool_history = [
-        item
-        for item in checkpoint.get("tool_history") or []
-        if isinstance(item, dict)
-    ]
+    tool_history = [item for item in checkpoint.get("tool_history") or [] if isinstance(item, dict)]
     candidates: dict[str, dict[str, Any]] = {}
 
     for item in tool_history:
@@ -269,9 +265,7 @@ async def discover_report_correction_targets(
                     "rule_value": _clean_text(item.get("rule_value"), limit=1000),
                     "action_kind": action_kind,
                     "semantic_entry_id": _clean_text(item.get("semantic_entry_id"), limit=36),
-                    "active_revision_id": _clean_text(
-                        item.get("active_revision_id"), limit=36
-                    ),
+                    "active_revision_id": _clean_text(item.get("active_revision_id"), limit=36),
                     "definition_hash": _clean_text(item.get("definition_hash"), limit=64),
                     "column": _clean_text(
                         item.get("metric_output_column")
@@ -285,10 +279,10 @@ async def discover_report_correction_targets(
             )
             continue
 
-        if (
-            item.get("kind") in {"relationship_validation", "relationship_application"}
-            and is_reusable_full_relationship_evidence(item)
-        ):
+        if item.get("kind") in {
+            "relationship_validation",
+            "relationship_application",
+        } and is_reusable_full_relationship_evidence(item):
             relationship_key = _clean_text(
                 item.get("candidate_relationship_key") or item.get("relationship_key"),
                 limit=161,
@@ -314,12 +308,8 @@ async def discover_report_correction_targets(
                 evidence={
                     "kind": str(item.get("kind")),
                     "relationship_key": relationship_key,
-                    "semantic_entry_id": _clean_text(
-                        item.get("semantic_entry_id"), limit=36
-                    ),
-                    "active_revision_id": _clean_text(
-                        item.get("active_revision_id"), limit=36
-                    ),
+                    "semantic_entry_id": _clean_text(item.get("semantic_entry_id"), limit=36),
+                    "active_revision_id": _clean_text(item.get("active_revision_id"), limit=36),
                     "definition_hash": _clean_text(item.get("definition_hash"), limit=64),
                     "endpoints": endpoints,
                 },
@@ -327,11 +317,7 @@ async def discover_report_correction_targets(
             )
 
     receipt = checkpoint.get("confirmation_receipt")
-    if (
-        isinstance(receipt, dict)
-        and receipt.get("applied") is True
-        and not receipt.get("conflict")
-    ):
+    if isinstance(receipt, dict) and receipt.get("applied") is True and not receipt.get("conflict"):
         receipt_key = _clean_text(receipt.get("key"), limit=161)
         if receipt_key:
             receipt_key = canonicalize_decision_key(receipt_key)
@@ -347,15 +333,9 @@ async def discover_report_correction_targets(
                         receipt.get("selected_option") or receipt.get("value"),
                         limit=1000,
                     ),
-                    "semantic_entry_id": _clean_text(
-                        receipt.get("semantic_entry_id"), limit=36
-                    ),
-                    "active_revision_id": _clean_text(
-                        receipt.get("active_revision_id"), limit=36
-                    ),
-                    "definition_hash": _clean_text(
-                        receipt.get("definition_hash"), limit=64
-                    ),
+                    "semantic_entry_id": _clean_text(receipt.get("semantic_entry_id"), limit=36),
+                    "active_revision_id": _clean_text(receipt.get("active_revision_id"), limit=36),
+                    "definition_hash": _clean_text(receipt.get("definition_hash"), limit=64),
                     "value_hash": _clean_text(receipt.get("value_hash"), limit=64),
                 },
                 source_kind="confirmation_receipt",
@@ -486,15 +466,12 @@ async def discover_report_correction_targets(
                         or transition is not None
                     )
                 )
-                if (
-                    entry is not None
-                    and (
-                        not evidence_entry_id
-                        or evidence_entry_id != str(entry.id)
-                        or not revision_matches
-                        or not evidence_definition_hash
-                        or evidence_definition_hash != stable_payload_hash(entry.definition)
-                    )
+                if entry is not None and (
+                    not evidence_entry_id
+                    or evidence_entry_id != str(entry.id)
+                    or not revision_matches
+                    or not evidence_definition_hash
+                    or evidence_definition_hash != stable_payload_hash(entry.definition)
                 ):
                     evidence_conflicts = True
                     break
@@ -530,8 +507,7 @@ async def discover_report_correction_targets(
                     or not revision_matches
                     or str(claim.get("definition_hash") or "")
                     != stable_payload_hash(entry.definition)
-                    or str(claim.get("value_hash") or "")
-                    != stable_payload_hash(entry.value)
+                    or str(claim.get("value_hash") or "") != stable_payload_hash(entry.value)
                 ):
                     evidence_conflicts = True
                     break

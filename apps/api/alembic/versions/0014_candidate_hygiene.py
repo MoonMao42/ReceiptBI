@@ -89,9 +89,13 @@ def _id(value: object) -> str:
 
 
 def _pure_name_match(evidence: object) -> bool:
-    return bool(evidence) and isinstance(evidence, list) and all(
-        isinstance(item, dict) and item.get("kind") == "matching_column_names"
-        for item in evidence
+    return (
+        bool(evidence)
+        and isinstance(evidence, list)
+        and all(
+            isinstance(item, dict) and item.get("kind") == "matching_column_names"
+            for item in evidence
+        )
     )
 
 
@@ -171,10 +175,7 @@ def _candidate_identity(
 
 
 def _snapshot(row: Mapping[str, Any], updates: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        field: updates.get(field, row.get(field))
-        for field in _SNAPSHOT_FIELDS
-    }
+    return {field: updates.get(field, row.get(field)) for field in _SNAPSHOT_FIELDS}
 
 
 def _append_revision(
@@ -304,16 +305,11 @@ def upgrade() -> None:
             by_group[candidate["group"]].append(candidate)
         per_column_retained: list[dict[str, Any]] = []
         for group_candidates in by_group.values():
-            group_candidates.sort(
-                key=lambda item: (-item["score"], item["identity"])
-            )
+            group_candidates.sort(key=lambda item: (-item["score"], item["identity"]))
             per_column_retained.extend(group_candidates[:_PER_COLUMN_CAP])
-        per_column_retained.sort(
-            key=lambda item: (-item["score"], item["group"], item["identity"])
-        )
+        per_column_retained.sort(key=lambda item: (-item["score"], item["group"], item["identity"]))
         retained_ids.update(
-            _id(item["row"]["id"])
-            for item in per_column_retained[:_PER_PROJECT_CAP]
+            _id(item["row"]["id"]) for item in per_column_retained[:_PER_PROJECT_CAP]
         )
         eligible.extend(candidates)
 

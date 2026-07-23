@@ -196,9 +196,7 @@ async def test_excel_preflight_confirmation_localizes_prose_but_not_sheet_names(
     result = next(event for event in events if event.type == SSEEventType.RESULT)
     confirmation = result.data["report"]["confirmation"]
     assert model.calls == 0
-    assert confirmation["question"] == (
-        "Should this analysis use the “订单明细” worksheet?"
-    )
+    assert confirmation["question"] == ("Should this analysis use the “订单明细” worksheet?")
     assert confirmation["reason"].startswith("This file contains multiple worksheets")
     assert confirmation["options"] == ["订单明细", "退款明细"]
 

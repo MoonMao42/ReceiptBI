@@ -1566,13 +1566,12 @@ class ExecutionService:
             run.error = summary[:4000]
             run.report = rejected_report
             semantic_validation_result = {
-                    "status": "incomplete",
-                    "required": total_count,
-                    "matched": completed_count,
-                    "missing_semantic_entry_ids": [
-                        str(item.get("semantic_entry_id") or "")
-                        for item in missing_validation_contract
-                    ],
+                "status": "incomplete",
+                "required": total_count,
+                "matched": completed_count,
+                "missing_semantic_entry_ids": [
+                    str(item.get("semantic_entry_id") or "") for item in missing_validation_contract
+                ],
             }
             run.checkpoint = self._checkpoint_payload(
                 run,
@@ -1991,9 +1990,7 @@ class ExecutionService:
                         "python": result_data.get("python"),
                         "tool_history": result_data.get("tool_history") or [],
                         "report_fallback": (
-                            dict(report_fallback)
-                            if isinstance(report_fallback, dict)
-                            else None
+                            dict(report_fallback) if isinstance(report_fallback, dict) else None
                         ),
                     },
                     tool_history=tool_history,
@@ -2148,11 +2145,7 @@ class ExecutionService:
                     ],
                 }
                 if self.execution_policy.diagnostics_enabled
-                else {
-                    "business_evidence": self.execution_policy.business_evidence(
-                        tool_history
-                    )
-                }
+                else {"business_evidence": self.execution_policy.business_evidence(tool_history)}
             )
             self.db.add(
                 ArtifactRecord(
@@ -2427,8 +2420,7 @@ class ExecutionService:
 
         if (
             self.execution_policy.diagnostics_enabled
-            and
-            state == "completed"
+            and state == "completed"
             and has_confirmed_correction
             and validations
             and confirmed_corrections_are_audited
@@ -2847,9 +2839,7 @@ class ExecutionService:
                     project_result_data = dict(event.data)
                     buffer_event = True
                 elif event.type.value == "result" and not claim_finalization():
-                    raise _AnalysisFinalizationStoppedError(
-                        "分析已在结果发布前停止"
-                    )
+                    raise _AnalysisFinalizationStoppedError("分析已在结果发布前停止")
                 if run and event.type.value == "python_image":
                     image = event.data.get("image")
                     if image:
@@ -2872,9 +2862,7 @@ class ExecutionService:
                 project_result_data["python_images"] = project_python_images
                 project_result_data["visualization"] = project_visualization
                 if not claim_finalization():
-                    raise _AnalysisFinalizationStoppedError(
-                        "分析已在结果保存前停止"
-                    )
+                    raise _AnalysisFinalizationStoppedError("分析已在结果保存前停止")
                 try:
                     persistence = await self._persist_project_result(run, project_result_data)
                 except BaseException:
@@ -3277,9 +3265,7 @@ class ExecutionService:
                 if self.execution_policy.diagnostics_enabled
                 else reason
             )
-            checkpoint_updates.update(
-                {"reason": reason, "last_error": persisted_error}
-            )
+            checkpoint_updates.update({"reason": reason, "last_error": persisted_error})
             checkpoint = self.execution_policy.checkpoint_payload(
                 run.checkpoint,
                 updates=checkpoint_updates,

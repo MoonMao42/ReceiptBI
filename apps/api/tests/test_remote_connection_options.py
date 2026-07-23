@@ -67,9 +67,7 @@ async def test_remote_options_round_trip_and_reach_connection_test(
         "app.api.v1.connections.create_database_manager",
         create_manager,
     )
-    test_response = await client.post(
-        f"/api/v1/config/connections/{saved['id']}/test"
-    )
+    test_response = await client.post(f"/api/v1/config/connections/{saved['id']}/test")
 
     assert test_response.status_code == 200
     assert test_response.json()["data"]["connected"] is True
@@ -204,9 +202,7 @@ def test_postgresql_adapter_pins_default_search_path_to_public(
     adapter.create_connection(DatabaseConfig(driver="postgresql"))
 
     search_path_call = next(
-        (sql, params)
-        for sql, params in connection.executed
-        if "set_config('search_path'" in sql
+        (sql, params) for sql, params in connection.executed if "set_config('search_path'" in sql
     )
     assert search_path_call[1] == ("public",)
     assert adapter.get_tables(connection) == ["orders"]

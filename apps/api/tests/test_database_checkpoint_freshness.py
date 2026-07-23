@@ -59,7 +59,7 @@ def _manifest(
                 "result_hash": stable_payload_hash(rows),
                 "metadata_hash": stable_payload_hash(metadata),
             }
-        ]
+        ],
     }
 
 
@@ -145,10 +145,7 @@ async def test_database_checkpoint_revalidation_rejects_changed_truncation_at_ro
     tmp_path: Path,
 ):
     database = tmp_path / "stores.sqlite"
-    rows = [
-        {"store_id": f"S-{index:05d}", "orders": index}
-        for index in range(10_000)
-    ]
+    rows = [{"store_id": f"S-{index:05d}", "orders": index} for index in range(10_000)]
     with sqlite3.connect(database) as connection:
         connection.execute("CREATE TABLE stores (store_id TEXT PRIMARY KEY, orders INTEGER)")
         connection.executemany(

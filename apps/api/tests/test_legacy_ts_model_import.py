@@ -175,10 +175,7 @@ def test_prepare_snapshot_uses_online_backup_for_live_wal_without_mutating_sourc
         journal.write_bytes(bytes(512))
         journal.chmod(0o600)
         assert wal.stat().st_size > 0
-        source_assets = {
-            path: path.read_bytes()
-            for path in (source, wal, journal, environment)
-        }
+        source_assets = {path: path.read_bytes() for path in (source, wal, journal, environment)}
         shm_identity = (shm.stat().st_dev, shm.stat().st_ino)
 
         prepared = prepare_legacy_model_snapshot(
@@ -190,7 +187,9 @@ def test_prepare_snapshot_uses_online_backup_for_live_wal_without_mutating_sourc
         assert prepared == snapshot.resolve()
         assert snapshot.stat().st_mode & 0o777 == 0o600
         assert snapshot.stat().st_nlink == 1
-        assert not any(Path(f"{snapshot}{suffix}").exists() for suffix in ("-wal", "-shm", "-journal"))
+        assert not any(
+            Path(f"{snapshot}{suffix}").exists() for suffix in ("-wal", "-shm", "-journal")
+        )
         with sqlite3.connect(f"{snapshot.as_uri()}?mode=ro&immutable=1", uri=True) as copied:
             assert copied.execute("PRAGMA journal_mode").fetchone() == ("delete",)
             assert copied.execute("PRAGMA quick_check").fetchall() == [("ok",)]
@@ -230,9 +229,7 @@ def test_prepare_snapshot_reuses_valid_final_without_requiring_source(tmp_path: 
     assert reused == first
     assert snapshot.read_bytes() == original
     with sqlite3.connect(f"{snapshot.as_uri()}?mode=ro&immutable=1", uri=True) as copied:
-        assert copied.execute("SELECT value FROM marker").fetchone() == (
-            "authoritative-final",
-        )
+        assert copied.execute("SELECT value FROM marker").fetchone() == ("authoritative-final",)
 
 
 def test_prepare_snapshot_recovers_crash_leftover_hard_link(tmp_path: Path) -> None:
@@ -261,9 +258,7 @@ def test_prepare_snapshot_recovers_crash_leftover_hard_link(tmp_path: Path) -> N
     assert not leftover.exists()
     assert snapshot.stat().st_nlink == 1
     with sqlite3.connect(f"{snapshot.as_uri()}?mode=ro&immutable=1", uri=True) as copied:
-        assert copied.execute("SELECT value FROM marker").fetchone() == (
-            "crash-recovery",
-        )
+        assert copied.execute("SELECT value FROM marker").fetchone() == ("crash-recovery",)
 
 
 def test_snapshot_recovery_does_not_delete_unrelated_temp_shaped_entries(
@@ -491,9 +486,7 @@ async def test_same_identity_with_different_uuid_is_imported_separately(
 
 
 @pytest.mark.asyncio
-async def test_same_uuid_with_field_mismatch_fails_closed(
-    db_session: AsyncSession, tmp_path: Path
-):
+async def test_same_uuid_with_field_mismatch_fails_closed(db_session: AsyncSession, tmp_path: Path):
     source = tmp_path / "querygpt-ts.db"
     secret = "legacy-test-secret"
     legacy_id = _create_legacy_db(source, secret=secret)

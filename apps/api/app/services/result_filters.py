@@ -97,9 +97,9 @@ def _is_refunded_value(value: str) -> bool:
     return any(token in normalized for token in ("退款", "退货", "refunded", "returned"))
 
 
-def canonical_data_type(raw_type: Any) -> Literal[
-    "boolean", "number", "datetime", "text", "unknown"
-]:
+def canonical_data_type(
+    raw_type: Any,
+) -> Literal["boolean", "number", "datetime", "text", "unknown"]:
     """Map source-specific type names to the small stable semantic type set."""
 
     normalized = _normalized_value(raw_type)
@@ -194,9 +194,7 @@ def stable_field_binding_candidates(
     bindings: list[dict[str, str]] = []
     for table_or_view, columns in structures:
         matches = [
-            column
-            for column in columns
-            if str(column.get("name") or "").strip() == action_column
+            column for column in columns if str(column.get("name") or "").strip() == action_column
         ]
         if len(matches) != 1:
             continue

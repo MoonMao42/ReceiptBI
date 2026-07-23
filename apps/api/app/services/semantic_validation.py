@@ -119,11 +119,7 @@ def _public_item_details(details: Mapping[str, Any] | None) -> dict[str, Any]:
     """Expose only stable product copy, never leases or worker diagnostics."""
 
     payload = dict(details or {})
-    return {
-        key: payload[key]
-        for key in _PUBLIC_ITEM_DETAIL_KEYS
-        if key in payload
-    }
+    return {key: payload[key] for key in _PUBLIC_ITEM_DETAIL_KEYS if key in payload}
 
 
 def _retry_validation_job_id(job_id: UUID) -> UUID:
@@ -147,10 +143,7 @@ async def _existing_retry_child(
     if retry_job is None:
         return None
     retry_of_job_id = dict(retry_job.details or {}).get("retry_of_job_id")
-    if (
-        retry_job.project_id != project_id
-        or str(retry_of_job_id or "") != str(original_job_id)
-    ):
+    if retry_job.project_id != project_id or str(retry_of_job_id or "") != str(original_job_id):
         raise SemanticValidationQueueError(
             "semantic_validation_retry_conflict",
             "验证状态刚刚发生变化，请刷新后重试。",
@@ -195,9 +188,7 @@ def _lease_details(
     payload = dict(details or {})
     payload["code"] = code
     payload["lease_owner"] = worker_id
-    payload["heartbeat_at"] = (
-        heartbeat_at.isoformat() if heartbeat_at is not None else None
-    )
+    payload["heartbeat_at"] = heartbeat_at.isoformat() if heartbeat_at is not None else None
     payload["lease_expires_at"] = (
         (heartbeat_at + timedelta(seconds=_LEASE_SECONDS)).isoformat()
         if heartbeat_at is not None and worker_id is not None
@@ -521,9 +512,7 @@ async def retry_semantic_validation_job(
         )
 
     retryable_statuses = (
-        ("failed",)
-        if job.status == "completed"
-        else ("queued", "running", "failed")
+        ("failed",) if job.status == "completed" else ("queued", "running", "failed")
     )
     item_result = await db.execute(
         select(SemanticValidationJobItem)
@@ -575,10 +564,7 @@ async def retry_semantic_validation_job(
     entries: list[SemanticEntry] = []
     for item in retry_items:
         entry = entries_by_id.get(item.semantic_entry_id)
-        if (
-            entry is None
-            or stable_payload_hash(entry.definition) != item.definition_hash
-        ):
+        if entry is None or stable_payload_hash(entry.definition) != item.definition_hash:
             raise SemanticValidationQueueError(
                 "semantic_validation_target_changed",
                 "待验证定义已经变化，请从当前版本重新发起验证。",
@@ -702,11 +688,7 @@ async def run_semantic_validation_job(
                 and job.status in _ACTIVE_JOB_STATUSES
                 and (
                     _lease_owner(job) == worker_id
-                    or (
-                        not claimed
-                        and job.status == "queued"
-                        and _lease_owner(job) is None
-                    )
+                    or (not claimed and job.status == "queued" and _lease_owner(job) is None)
                 )
             ):
                 job.status = "failed"
@@ -820,11 +802,7 @@ async def _heartbeat_validation_job(
             .with_for_update()
         )
         job = result.scalar_one_or_none()
-        if (
-            job is None
-            or job.status != "running"
-            or _lease_owner(job) != worker_id
-        ):
+        if job is None or job.status != "running" or _lease_owner(job) != worker_id:
             raise _ValidationLeaseLostError()
         now = _utcnow()
         job.details = _lease_details(
@@ -874,11 +852,7 @@ async def _finish_validation_job(
             .with_for_update()
         )
         job = result.scalar_one_or_none()
-        if (
-            job is None
-            or job.status != "running"
-            or _lease_owner(job) != worker_id
-        ):
+        if job is None or job.status != "running" or _lease_owner(job) != worker_id:
             raise _ValidationLeaseLostError()
         item_result = await db.execute(
             select(SemanticValidationJobItem.status).where(
@@ -1233,7 +1207,10 @@ async def _resolve_binding(
             payload,
             str(binding["action_column"]),
         )
-        if any(all(str(candidate.get(key)) == value for key, value in expected.items()) for candidate in candidates):
+        if any(
+            all(str(candidate.get(key)) == value for key, value in expected.items())
+            for candidate in candidates
+        ):
             matches.append((source, connection))
     if len(matches) != 1:
         raise _BlockedValidation(
@@ -1271,10 +1248,7 @@ def _run_duckdb_query(sql: str, timeout_seconds: float) -> dict[str, Any]:
         row = cursor.fetchone()
         if row is None:
             return {}
-        return {
-            column[0]: _json_value(value)
-            for column, value in zip(cursor.description, row)
-        }
+        return {column[0]: _json_value(value) for column, value in zip(cursor.description, row)}
     finally:
         timer.cancel()
         connection.close()
@@ -1312,7 +1286,9 @@ async def _execute_source_query(
             "semantic_connection_unavailable",
             "数据库连接当前不可用，未执行验证。",
         )
-    password = encryptor.decrypt(connection.password_encrypted) if connection.password_encrypted else ""
+    password = (
+        encryptor.decrypt(connection.password_encrypted) if connection.password_encrypted else ""
+    )
     manager = create_database_manager(
         {
             "driver": connection.driver,
@@ -1347,7 +1323,9 @@ async def _execute_source_query(
             "在线数据库只读验证超时，未将候选标为已验证。",
             facts={"timeout_seconds": VALIDATION_TIMEOUT_SECONDS},
         ) from exc
-    return {key: _json_value(value) for key, value in (result.data[0] if result.data else {}).items()}
+    return {
+        key: _json_value(value) for key, value in (result.data[0] if result.data else {}).items()
+    }
 
 
 def _table_query_builder(table: str, factory: Callable[[Callable[[str], str], str], str]):
@@ -1410,8 +1388,12 @@ def _formula_sql(
         return f"COALESCE({column}, 0)" if null_policy == "zero" else column
     if operation == "negate":
         return f"(-({_formula_sql(node['operand'], quote=quote, null_policy=null_policy, divide_by_zero=divide_by_zero)}))"
-    left = _formula_sql(node["left"], quote=quote, null_policy=null_policy, divide_by_zero=divide_by_zero)
-    right = _formula_sql(node["right"], quote=quote, null_policy=null_policy, divide_by_zero=divide_by_zero)
+    left = _formula_sql(
+        node["left"], quote=quote, null_policy=null_policy, divide_by_zero=divide_by_zero
+    )
+    right = _formula_sql(
+        node["right"], quote=quote, null_policy=null_policy, divide_by_zero=divide_by_zero
+    )
     operators = {"add": "+", "subtract": "-", "multiply": "*", "divide": "/"}
     if operation not in operators:
         raise _BlockedValidation("derived_metric_formula_invalid", "派生指标公式包含不支持的操作。")
@@ -1432,18 +1414,24 @@ async def _validate_derived_metric(
     columns = set(metric_formula_columns(formula))
     if columns != {str(item.get("action_column")) for item in bindings if isinstance(item, dict)}:
         raise _BlockedValidation("derived_metric_binding_mismatch", "公式字段与稳定绑定不一致。")
-    if any(not isinstance(item, dict) or item.get("canonical_type") != "number" for item in bindings):
+    if any(
+        not isinstance(item, dict) or item.get("canonical_type") != "number" for item in bindings
+    ):
         raise _BlockedValidation("derived_metric_binding_not_numeric", "派生指标只能引用数值字段。")
     resolved = [await _resolve_binding(db, project_id, item) for item in bindings]
     if len({source.id for source, _connection in resolved}) != 1:
-        raise _BlockedValidation("derived_metric_cross_source", "派生指标字段没有解析到同一数据源。")
+        raise _BlockedValidation(
+            "derived_metric_cross_source", "派生指标字段没有解析到同一数据源。"
+        )
     tables = {str(item.get("table_or_view")) for item in bindings}
     signatures = {str(item.get("schema_signature")) for item in bindings}
     if len(tables) != 1 or len(signatures) != 1:
         raise _BlockedValidation("derived_metric_cross_table", "派生指标字段必须属于同一张表。")
     aggregate = str(definition.get("aggregate") or "")
     if aggregate not in {"sum", "avg"}:
-        raise _BlockedValidation("derived_metric_aggregate_unsupported", "派生指标汇总方式不受支持。")
+        raise _BlockedValidation(
+            "derived_metric_aggregate_unsupported", "派生指标汇总方式不受支持。"
+        )
     source, connection = resolved[0]
 
     def build(quote: Callable[[str], str], relation: str) -> str:
@@ -1476,7 +1464,9 @@ async def _validate_derived_metric(
             facts=stats,
         )
     if int(stats.get("total_rows") or 0) <= 0 or int(stats.get("computed_rows") or 0) <= 0:
-        raise _BlockedValidation("derived_metric_has_no_values", "派生指标没有可执行的完整数据行。", facts=stats)
+        raise _BlockedValidation(
+            "derived_metric_has_no_values", "派生指标没有可执行的完整数据行。", facts=stats
+        )
     return {"check": "derived_metric_probe", "aggregate": aggregate, **stats}
 
 
@@ -1507,7 +1497,9 @@ async def _validate_dimension(
     total_rows = int(stats.get("total_rows") or 0)
     non_null_rows = int(stats.get("non_null_rows") or 0)
     if total_rows <= 0 or non_null_rows <= 0:
-        raise _BlockedValidation("dimension_probe_has_no_values", "维度字段没有可验证值。", facts=stats)
+        raise _BlockedValidation(
+            "dimension_probe_has_no_values", "维度字段没有可验证值。", facts=stats
+        )
     stats["uniqueness"] = round(int(stats.get("distinct_values") or 0) / non_null_rows, 8)
     return {"check": "dimension_probe", "role": role, **stats}
 
@@ -1529,11 +1521,9 @@ async def _resolve_relationship_endpoint(
     matches: list[tuple[ProjectDataSource, Connection | None]] = []
     for source, connection in await _project_sources(db, project_id):
         profile = dict(source.profile_data or {})
-        if (
-            source.kind != str(endpoint["source_kind"])
-            or str(profile.get("logical_name") or "")
-            != str(endpoint["source_logical_name"])
-        ):
+        if source.kind != str(endpoint["source_kind"]) or str(
+            profile.get("logical_name") or ""
+        ) != str(endpoint["source_logical_name"]):
             continue
         if source.kind == "file":
             table_name = str(profile.get("logical_name") or "")
@@ -1545,8 +1535,7 @@ async def _resolve_relationship_endpoint(
                 (
                     item
                     for item in profile.get("tables") or []
-                    if isinstance(item, dict)
-                    and str(item.get("name") or "") == table_name
+                    if isinstance(item, dict) and str(item.get("name") or "") == table_name
                 ),
                 None,
             )
@@ -1560,9 +1549,7 @@ async def _resolve_relationship_endpoint(
                 [
                     {
                         "name": str(column.get("name") or ""),
-                        "type": str(
-                            column.get("type") or column.get("dtype") or "unknown"
-                        ),
+                        "type": str(column.get("type") or column.get("dtype") or "unknown"),
                     }
                     for column in columns
                 ],
@@ -1577,9 +1564,7 @@ async def _resolve_relationship_endpoint(
             matches.append((source, connection))
     if len(matches) != 1:
         raise _BlockedValidation(
-            "relationship_binding_unresolved"
-            if not matches
-            else "relationship_binding_ambiguous",
+            "relationship_binding_unresolved" if not matches else "relationship_binding_ambiguous",
             "关联端点当前无法唯一解析，未执行验证。",
             facts={"matching_sources": len(matches)},
         )
@@ -1632,12 +1617,18 @@ async def _validate_relationship(
             "当前无法在所有目标数据库上完整复现该规范化方式。",
             facts={"normalization": normalization},
         )
-    left_source, left_connection = await _resolve_relationship_endpoint(db, project_id, left_endpoint)
-    right_source, right_connection = await _resolve_relationship_endpoint(db, project_id, right_endpoint)
+    left_source, left_connection = await _resolve_relationship_endpoint(
+        db, project_id, left_endpoint
+    )
+    right_source, right_connection = await _resolve_relationship_endpoint(
+        db, project_id, right_endpoint
+    )
 
     if left_source.kind == right_source.kind == "file":
         if not left_source.working_uri or not right_source.working_uri:
-            raise _BlockedValidation("semantic_working_copy_unavailable", "关联所需可信副本不可用。")
+            raise _BlockedValidation(
+                "semantic_working_copy_unavailable", "关联所需可信副本不可用。"
+            )
         sql = _relationship_stats_sql(
             quote=_file_quote,
             left_relation=_duckdb_relation(left_source.working_uri),
@@ -1653,7 +1644,11 @@ async def _validate_relationship(
         and left_connection is not None
         and right_connection is not None
     ):
-        password = encryptor.decrypt(left_connection.password_encrypted) if left_connection.password_encrypted else ""
+        password = (
+            encryptor.decrypt(left_connection.password_encrypted)
+            if left_connection.password_encrypted
+            else ""
+        )
         manager = create_database_manager(
             {
                 "driver": left_connection.driver,

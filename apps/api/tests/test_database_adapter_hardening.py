@@ -132,9 +132,7 @@ def test_doris_missing_select_or_dangerous_grant_is_rejected(privileges: str) ->
 def test_connection_test_fails_when_doris_read_only_boundary_is_not_proven(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    connection = _MySQLHardeningConnection(
-        grants=_doris_grants("Select_priv,Load_priv")
-    )
+    connection = _MySQLHardeningConnection(grants=_doris_grants("Select_priv,Load_priv"))
     manager = DatabaseManager(DatabaseConfig(driver="mysql", database="sales"))
     monkeypatch.setattr(manager, "_create_connection", lambda: connection)
 

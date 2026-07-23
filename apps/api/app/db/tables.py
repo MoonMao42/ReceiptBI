@@ -291,8 +291,7 @@ class SemanticScopeNode(Base, UUIDMixin, TimestampMixin):
             name="ck_semantic_scope_parent_shape",
         ),
         CheckConstraint(
-            "kind != 'table' OR "
-            "(source_logical_name IS NOT NULL AND table_or_view IS NOT NULL)",
+            "kind != 'table' OR (source_logical_name IS NOT NULL AND table_or_view IS NOT NULL)",
             name="ck_semantic_scope_table_binding",
         ),
     )
@@ -360,9 +359,7 @@ class SemanticEntry(Base, UUIDMixin, TimestampMixin):
     # Semantic revisions are immutable, so a successfully written pointer cannot dangle
     # unless the whole project is removed.
     active_revision_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), index=True)
-    recommendation_batch_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True), index=True
-    )
+    recommendation_batch_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), index=True)
 
     project: Mapped["Project"] = relationship(back_populates="semantic_entries")
     scope: Mapped["SemanticScopeNode | None"] = relationship(back_populates="semantic_entries")
@@ -527,18 +524,14 @@ class SemanticInventoryJob(Base, UUIDMixin, TimestampMixin):
     selection_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
     lease_owner: Mapped[str | None] = mapped_column(String(160))
-    lease_expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), index=True
-    )
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     project: Mapped["Project"] = relationship(back_populates="semantic_inventory_jobs")
-    source: Mapped["ProjectDataSource"] = relationship(
-        back_populates="semantic_inventory_jobs"
-    )
+    source: Mapped["ProjectDataSource"] = relationship(back_populates="semantic_inventory_jobs")
     model: Mapped["Model | None"] = relationship()
     items: Mapped[list["SemanticInventoryJobItem"]] = relationship(
         back_populates="job",
@@ -590,16 +583,12 @@ class SemanticInventoryJobItem(Base, UUIDMixin, TimestampMixin):
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
     phase: Mapped[str] = mapped_column(String(20), default="structure")
     attempt_count: Mapped[int] = mapped_column(Integer, default=0)
-    next_attempt_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), index=True
-    )
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     retryable: Mapped[bool] = mapped_column(Boolean, default=True)
     code: Mapped[str | None] = mapped_column(String(80))
     message: Mapped[str | None] = mapped_column(Text)
     profile_result: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    recommendation_batch_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True), index=True
-    )
+    recommendation_batch_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), index=True)
     candidate_count: Mapped[int] = mapped_column(Integer, default=0)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

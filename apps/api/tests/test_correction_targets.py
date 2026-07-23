@@ -239,9 +239,7 @@ async def test_target_ref_is_stable_opaque_run_bound_and_tamper_evident(
     )
     assert cross_run.status_code == 409, cross_run.text
 
-    tampered_ref = target["target_ref"][:-1] + (
-        "0" if target["target_ref"][-1] != "0" else "1"
-    )
+    tampered_ref = target["target_ref"][:-1] + ("0" if target["target_ref"][-1] != "0" else "1")
     tampered = await client.post(
         f"/api/v1/projects/{project['id']}/corrections",
         json={
@@ -293,10 +291,7 @@ async def test_metric_target_options_are_opaque_run_bound_and_fail_closed(
     assert first.json()["data"] == repeated.json()["data"]
     options = first.json()["data"]
     assert len(options) == 2
-    assert all(
-        set(option) == {"kind", "field_ref", "label", "description"}
-        for option in options
-    )
+    assert all(set(option) == {"kind", "field_ref", "label", "description"} for option in options)
     assert all(option["kind"] == "metric_column" for option in options)
     assert all(option["field_ref"].startswith("mcf1_") for option in options)
     public_payload = json.dumps(options, ensure_ascii=False)
@@ -334,9 +329,9 @@ async def test_metric_target_options_are_opaque_run_bound_and_fail_closed(
     await db_session.commit()
     drifted = await client.get(endpoint)
     assert drifted.status_code == 200, drifted.text
-    assert {
-        option["field_ref"] for option in drifted.json()["data"]
-    }.isdisjoint({option["field_ref"] for option in options})
+    assert {option["field_ref"] for option in drifted.json()["data"]}.isdisjoint(
+        {option["field_ref"] for option in options}
+    )
     stale = await client.post(
         f"/api/v1/projects/{project['id']}/corrections",
         json={
@@ -359,9 +354,7 @@ async def test_incomplete_run_cannot_mint_or_accept_a_target_ref(client: AsyncCl
     incomplete_run = await _new_run(client, project["id"])
     history = [_rule_application("revenue_refund_policy", "退款订单不计入收入")]
     await _set_run_evidence(db_session, completed_run["id"], tool_history=history)
-    valid_ref = (await _targets(client, project["id"], completed_run["id"]))[0][
-        "target_ref"
-    ]
+    valid_ref = (await _targets(client, project["id"], completed_run["id"]))[0]["target_ref"]
     await _set_run_evidence(
         db_session,
         incomplete_run["id"],

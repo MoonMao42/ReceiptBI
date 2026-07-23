@@ -144,9 +144,7 @@ async def revalidate_database_replay_journal(
             or not expected_metadata_hash
             or not isinstance(expected_metadata, dict)
         ):
-            raise CheckpointDriftError(
-                "数据库恢复记录缺少来源、实际查询、结果指纹或结果元数据。"
-            )
+            raise CheckpointDriftError("数据库恢复记录缺少来源、实际查询、结果指纹或结果元数据。")
         if stable_payload_hash(expected_metadata) != expected_metadata_hash:
             raise CheckpointDriftError("数据库恢复记录的结果元数据与暂停时不一致。")
         expected_truncated = expected_metadata.get("truncated")

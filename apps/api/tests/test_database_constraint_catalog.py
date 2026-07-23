@@ -534,9 +534,7 @@ def test_selected_sqlite_relation_schema_preserves_declared_foreign_keys(
             """
         )
 
-    manager = DatabaseManager(
-        DatabaseConfig(driver="sqlite", database=str(database_path))
-    )
+    manager = DatabaseManager(DatabaseConfig(driver="sqlite", database=str(database_path)))
     selected = manager.get_bounded_relation_schema("orders", max_columns=8)
 
     assert selected["constraint_metadata_status"] == "available"

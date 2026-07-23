@@ -61,9 +61,7 @@ class ActiveQueryRegistry:
             if self._queries.get(previous) == _QUERY_ACTIVE:
                 self._queries[previous] = _QUERY_STOPPED
             query_key = f"{conversation_key}:{uuid4().hex}"
-            initial_state = (
-                _QUERY_STOPPED if self._shutdown_requested else _QUERY_ACTIVE
-            )
+            initial_state = _QUERY_STOPPED if self._shutdown_requested else _QUERY_ACTIVE
             self._query_conversations[query_key] = conversation_key
             if client_stream_id:
                 client_key = (conversation_key, client_stream_id)
@@ -129,9 +127,7 @@ class ActiveQueryRegistry:
     ) -> bool:
         with self._lock:
             conversation_key = str(conversation_id)
-            client_key = (
-                (conversation_key, client_stream_id) if client_stream_id else None
-            )
+            client_key = (conversation_key, client_stream_id) if client_stream_id else None
             query_key = (
                 self._client_stream_queries.get(client_key)
                 if client_key is not None
@@ -268,16 +264,11 @@ def _bounded_result_preview(event_data: dict[str, Any]) -> dict[str, Any]:
         rows_count = max(rows_count, len(data))
 
     preview_truncated = bool(event_data.get("preview_truncated")) or bool(
-        preview is not None
-        and rows_count is not None
-        and rows_count > len(preview)
+        preview is not None and rows_count is not None and rows_count > len(preview)
     )
     data_note = event_data.get("data_note")
     if preview_truncated and not data_note:
-        data_note = (
-            f"消息仅保留前 {len(preview or [])} 行预览；"
-            f"本轮结果共 {rows_count or 0:,} 行。"
-        )
+        data_note = f"消息仅保留前 {len(preview or [])} 行预览；本轮结果共 {rows_count or 0:,} 行。"
     return {
         "data": preview,
         "rows_count": rows_count,

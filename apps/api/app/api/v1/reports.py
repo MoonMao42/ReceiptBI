@@ -190,9 +190,7 @@ def _structured_block_rows(
                 for index in range(width)
             ]
             kept_indexes = [
-                index
-                for index, name in enumerate(indexed_columns)
-                if _is_exportable_field(name)
+                index for index, name in enumerate(indexed_columns) if _is_exportable_field(name)
             ]
             if not kept_indexes:
                 continue
@@ -459,9 +457,11 @@ async def _append_page(
     payload: ReportPageCreate,
     validated_blocks: Sequence[dict[str, Any]] | None = None,
 ) -> ReportPage:
-    block_values = list(validated_blocks) if validated_blocks is not None else [
-        await _validated_block_values(db, project_id, block) for block in payload.blocks
-    ]
+    block_values = (
+        list(validated_blocks)
+        if validated_blocks is not None
+        else [await _validated_block_values(db, project_id, block) for block in payload.blocks]
+    )
     page = ReportPage(
         report_id=report.id,
         title=payload.title,
@@ -502,9 +502,9 @@ async def _validate_sync_tree(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="页面不属于当前报表",
                 )
-        existing_blocks = {
-            block.id: block for block in existing_page.blocks
-        } if existing_page is not None else {}
+        existing_blocks = (
+            {block.id: block for block in existing_page.blocks} if existing_page is not None else {}
+        )
 
         for block_index, block_payload in enumerate(page_payload.blocks):
             if block_payload.id is not None:
@@ -520,9 +520,7 @@ async def _validate_sync_tree(
                         detail="区块不属于指定页面",
                     )
             existing_block = (
-                existing_blocks.get(block_payload.id)
-                if block_payload.id is not None
-                else None
+                existing_blocks.get(block_payload.id) if block_payload.id is not None else None
             )
             validated[(page_index, block_index)] = await _validated_block_values(
                 db,
@@ -1279,9 +1277,7 @@ def _refresh_playbook_contract(playbook: AnalysisPlaybookResponse) -> dict[str, 
         "id": playbook.id,
         "binding_policy": playbook.binding_policy,
         "requires_revalidation": playbook.requires_revalidation,
-        "source_roles": [
-            item.model_dump(mode="json") for item in playbook.source_roles
-        ],
+        "source_roles": [item.model_dump(mode="json") for item in playbook.source_roles],
         "confirmed_knowledge_keys": list(playbook.confirmed_knowledge_keys),
         "relationship_keys": list(playbook.relationship_keys),
         "steps": [item.model_dump(mode="json") for item in playbook.steps],
@@ -1303,11 +1299,7 @@ async def _lock_project_for_report_refresh(
         await db.execute(text("BEGIN IMMEDIATE"))
         statement = select(Project).where(Project.id == project_id)
     else:
-        statement = (
-            select(Project)
-            .where(Project.id == project_id)
-            .with_for_update()
-        )
+        statement = select(Project).where(Project.id == project_id).with_for_update()
     result = await db.execute(statement.execution_options(populate_existing=True))
     project = result.scalar_one_or_none()
     if project is None:
@@ -1317,9 +1309,7 @@ async def _lock_project_for_report_refresh(
 
 def _without_temporary_filters(content: dict[str, Any]) -> dict[str, Any]:
     refreshed = {
-        key: value
-        for key, value in content.items()
-        if not str(key).startswith("_filter_")
+        key: value for key, value in content.items() if not str(key).startswith("_filter_")
     }
     for key in ("data", "items", "values"):
         refreshed.pop(key, None)
@@ -1440,11 +1430,9 @@ async def refresh_report_block(
             project=current_project,
             block=current_block,
         )
-        if (
-            current_binding != execution_binding
-            or _refresh_playbook_contract(current_playbook)
-            != _refresh_playbook_contract(execution_playbook)
-        ):
+        if current_binding != execution_binding or _refresh_playbook_contract(
+            current_playbook
+        ) != _refresh_playbook_contract(execution_playbook):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="这个区块的刷新来源已变化，请重新刷新",
@@ -1521,13 +1509,9 @@ async def update_report_block(
             artifact_id = None
         else:
             analysis_run_id = (
-                payload.analysis_run_id
-                if "analysis_run_id" in fields
-                else block.analysis_run_id
+                payload.analysis_run_id if "analysis_run_id" in fields else block.analysis_run_id
             )
-            artifact_id = (
-                payload.artifact_id if "artifact_id" in fields else block.artifact_id
-            )
+            artifact_id = payload.artifact_id if "artifact_id" in fields else block.artifact_id
             if source_kind == "analysis_run":
                 artifact_id = None
             elif source_kind == "artifact" and "artifact_id" in fields:

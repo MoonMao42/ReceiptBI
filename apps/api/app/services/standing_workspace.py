@@ -395,9 +395,7 @@ def _tool_result_dependencies(step: dict[str, Any]) -> list[str]:
         if str(step.get(key) or "").strip()
     ]
     dependencies.extend(
-        str(value).strip()
-        for value in step.get("input_results") or []
-        if str(value).strip()
+        str(value).strip() for value in step.get("input_results") or [] if str(value).strip()
     )
     return dependencies
 
@@ -508,9 +506,7 @@ def _validate_v3_agent_alias_dag(
         for alias in step.input_results:
             actual = aliases.get(str(alias))
             if not actual:
-                raise StandingWorkspaceError(
-                    f"持续分析步骤缺少已绑定的输入结果：{step.summary}"
-                )
+                raise StandingWorkspaceError(f"持续分析步骤缺少已绑定的输入结果：{step.summary}")
             values.append(actual)
         return values
 
@@ -540,9 +536,7 @@ def _validate_v3_agent_alias_dag(
             output_alias = str(step.output_result or "")
             result_name = str(evidence.get("result_name") or "")
             if not output_alias or not result_name:
-                raise StandingWorkspaceError(
-                    f"持续分析步骤缺少输出结果绑定：{step.summary}"
-                )
+                raise StandingWorkspaceError(f"持续分析步骤缺少输出结果绑定：{step.summary}")
             aliases[output_alias] = result_name
         return evidence
 
@@ -601,8 +595,7 @@ def _validate_v3_agent_alias_dag(
                     and str(item.get("action_kind") or "") == step.action_kind
                     and str(item.get("column") or "") == step.column
                     and (str(item.get("operator") or "") or None) == step.operator
-                    and ([str(value) for value in item.get("values") or []] or None)
-                    == step.values
+                    and ([str(value) for value in item.get("values") or []] or None) == step.values
                     and (
                         not step.definition_hash
                         or str(item.get("definition_hash") or "") == step.definition_hash
@@ -619,9 +612,7 @@ def _validate_v3_agent_alias_dag(
                 )
                 is None
             ):
-                raise StandingWorkspaceError(
-                    f"本次调查没有重新执行持续分析步骤：{step.summary}"
-                )
+                raise StandingWorkspaceError(f"本次调查没有重新执行持续分析步骤：{step.summary}")
             continue
 
         if step.kind == "validate_relationship":
@@ -629,8 +620,7 @@ def _validate_v3_agent_alias_dag(
             def matches_relationship(item: dict[str, Any]) -> bool:
                 item_profile = item.get("profile") or {}
                 return bool(
-                    item.get("kind")
-                    in {"relationship_validation", "relationship_application"}
+                    item.get("kind") in {"relationship_validation", "relationship_application"}
                     and str(item.get("left_result") or "") == inputs[0]
                     and str(item.get("right_result") or "") == inputs[1]
                     and (
@@ -710,9 +700,11 @@ def _validate_v3_agent_alias_dag(
         if step.kind == "analyze":
             select_evidence(
                 step,
-                lambda item: item.get("kind") == "python"
-                and not item.get("generated")
-                and [str(value) for value in item.get("input_results") or []] == inputs,
+                lambda item: (
+                    item.get("kind") == "python"
+                    and not item.get("generated")
+                    and [str(value) for value in item.get("input_results") or []] == inputs
+                ),
                 produces_result=False,
             )
             continue
@@ -720,20 +712,20 @@ def _validate_v3_agent_alias_dag(
         if step.kind == "visualize":
             select_evidence(
                 step,
-                lambda item: item.get("kind") == "python"
-                and item.get("generated")
-                and str(item.get("chart_type") or "") == step.chart_type
-                and int(item.get("images") or 0) > 0
-                and str(item.get("result_name") or "") == inputs[0],
+                lambda item: (
+                    item.get("kind") == "python"
+                    and item.get("generated")
+                    and str(item.get("chart_type") or "") == step.chart_type
+                    and int(item.get("images") or 0) > 0
+                    and str(item.get("result_name") or "") == inputs[0]
+                ),
                 produces_result=False,
             )
             continue
 
         if step.kind == "validate_result":
             if inputs != [final_result]:
-                raise StandingWorkspaceError(
-                    f"本次调查没有重新执行持续分析步骤：{step.summary}"
-                )
+                raise StandingWorkspaceError(f"本次调查没有重新执行持续分析步骤：{step.summary}")
             continue
 
         raise StandingWorkspaceError(f"本次调查没有重新执行持续分析步骤：{step.summary}")
@@ -749,10 +741,7 @@ def validate_playbook_execution_evidence(
 ) -> None:
     """Require a Standing run to prove the bound playbook contract on current data."""
 
-    if (
-        playbook.schema_version == 3
-        and playbook.execution_mode == "system_structured_query"
-    ):
+    if playbook.schema_version == 3 and playbook.execution_mode == "system_structured_query":
         _validate_system_playbook_execution_evidence(playbook, tool_history, validation)
         return
 
@@ -797,11 +786,7 @@ def validate_playbook_execution_evidence(
             continue
         if step.kind == "structured_query":
             role = next(
-                (
-                    item
-                    for item in playbook.source_roles
-                    if item.logical_name == step.source_role
-                ),
+                (item for item in playbook.source_roles if item.logical_name == step.source_role),
                 None,
             )
             matching_queries: list[dict[str, Any]] = []
@@ -824,11 +809,7 @@ def validate_playbook_execution_evidence(
                     )
                 except ValidationError:
                     continue
-                refs = [
-                    ref
-                    for ref in item.get("source_refs") or []
-                    if isinstance(ref, dict)
-                ]
+                refs = [ref for ref in item.get("source_refs") or [] if isinstance(ref, dict)]
                 role_bound = role is not None and any(
                     str(ref.get("source_logical_name") or "") == step.source_role
                     and str(ref.get("source_kind") or "") == role.source_kind
@@ -852,19 +833,19 @@ def validate_playbook_execution_evidence(
                 item
                 for item in tool_history
                 if (
-                item.get("kind") == "business_rule_application"
-                and str(item.get("rule_key") or "") == step.rule_key
-                and str(item.get("action_kind") or "") == step.action_kind
-                and str(item.get("column") or "") == step.column
-                and (
-                    not step.definition_hash
-                    or str(item.get("definition_hash") or "") == step.definition_hash
-                )
-                and _tool_result_is_ancestor(
-                    tool_history,
-                    ancestor=str(item.get("result_name") or ""),
-                    descendant=final_result,
-                )
+                    item.get("kind") == "business_rule_application"
+                    and str(item.get("rule_key") or "") == step.rule_key
+                    and str(item.get("action_kind") or "") == step.action_kind
+                    and str(item.get("column") or "") == step.column
+                    and (
+                        not step.definition_hash
+                        or str(item.get("definition_hash") or "") == step.definition_hash
+                    )
+                    and _tool_result_is_ancestor(
+                        tool_history,
+                        ancestor=str(item.get("result_name") or ""),
+                        descendant=final_result,
+                    )
                 )
             ]
             matched = bool(matching_applications)
@@ -931,9 +912,7 @@ def validate_playbook_execution_evidence(
         else:  # pragma: no cover - discriminated model keeps this exhaustive
             matched = False
         if not matched:
-            raise StandingWorkspaceError(
-                f"本次调查没有重新执行持续分析步骤：{step.summary}"
-            )
+            raise StandingWorkspaceError(f"本次调查没有重新执行持续分析步骤：{step.summary}")
 
 
 def validate_playbook_baseline_evidence(
@@ -951,10 +930,7 @@ def validate_playbook_baseline_evidence(
     ``validate_playbook_execution_evidence`` and requires the system receipt.
     """
 
-    if not (
-        playbook.schema_version == 3
-        and playbook.execution_mode == "system_structured_query"
-    ):
+    if not (playbook.schema_version == 3 and playbook.execution_mode == "system_structured_query"):
         validate_playbook_execution_evidence(playbook, tool_history, validation)
         return
 
@@ -969,9 +945,7 @@ def validate_playbook_baseline_evidence(
     if profile.get("truncated") is not False:
         raise StandingWorkspaceError("初始结果不是完整结果，不能建立持续分析")
 
-    source_refs = [
-        item for item in profile.get("source_refs") or [] if isinstance(item, dict)
-    ]
+    source_refs = [item for item in profile.get("source_refs") or [] if isinstance(item, dict)]
     actual_roles = {
         (
             str(item.get("source_logical_name") or ""),
@@ -986,8 +960,7 @@ def validate_playbook_baseline_evidence(
     ]
     if missing_roles:
         raise StandingWorkspaceError(
-            "初始结果没有证明使用了保存方法绑定的数据来源："
-            + "、".join(missing_roles)
+            "初始结果没有证明使用了保存方法绑定的数据来源：" + "、".join(missing_roles)
         )
 
     columns = [str(item) for item in profile.get("columns") or []]

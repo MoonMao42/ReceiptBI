@@ -197,9 +197,7 @@ class DatabaseAdapter(Protocol):
 
     def get_table_columns(self, conn: Any, table_name: str) -> list[dict[str, Any]]: ...
 
-    def validate_relation_columns(
-        self, conn: Any, table_name: str, columns: list[str]
-    ) -> bool: ...
+    def validate_relation_columns(self, conn: Any, table_name: str, columns: list[str]) -> bool: ...
 
     def get_schema_catalog(self, conn: Any) -> list[dict[str, Any]]: ...
 
@@ -340,13 +338,10 @@ def _validate_doris_select_only_grants(rows: list[dict[str, Any]]) -> None:
     }
     if "SELECT_PRIV" not in privileges:
         raise PermissionError("Doris connection requires an explicit Select_priv grant")
-    unsafe = (privileges - _DORIS_SAFE_PRIVILEGES) | (
-        privileges & _DORIS_LEGACY_WRITE_PRIVILEGES
-    )
+    unsafe = (privileges - _DORIS_SAFE_PRIVILEGES) | (privileges & _DORIS_LEGACY_WRITE_PRIVILEGES)
     if unsafe:
         raise PermissionError(
-            "Doris connection has write or administrative privileges: "
-            + ", ".join(sorted(unsafe))
+            "Doris connection has write or administrative privileges: " + ", ".join(sorted(unsafe))
         )
 
 
@@ -385,8 +380,7 @@ def _apply_mysql_constraint_rows(
                     "referenced_schema": _mysql_value(first, "REFERENCED_TABLE_SCHEMA"),
                     "referenced_table": _mysql_value(first, "REFERENCED_TABLE_NAME"),
                     "referenced_columns": [
-                        _mysql_value(row, "REFERENCED_COLUMN_NAME")
-                        for row in constraint_rows
+                        _mysql_value(row, "REFERENCED_COLUMN_NAME") for row in constraint_rows
                     ],
                     "on_update": _mysql_value(first, "UPDATE_RULE"),
                     "on_delete": _mysql_value(first, "DELETE_RULE"),
@@ -397,9 +391,7 @@ def _apply_mysql_constraint_rows(
         _apply_constraint_column_flags(entry)
 
 
-def _apply_postgresql_constraint_rows(
-    entries: dict[str, dict[str, Any]], rows: list[Any]
-) -> None:
+def _apply_postgresql_constraint_rows(entries: dict[str, dict[str, Any]], rows: list[Any]) -> None:
     action_names = {
         "a": "NO ACTION",
         "r": "RESTRICT",
@@ -442,15 +434,9 @@ def _apply_postgresql_constraint_rows(
                 {
                     "name": str(constraint_name),
                     "columns": normalized_columns,
-                    "referenced_schema": (
-                        str(referenced_schema) if referenced_schema else None
-                    ),
-                    "referenced_table": (
-                        str(referenced_table) if referenced_table else None
-                    ),
-                    "referenced_columns": [
-                        str(column) for column in referenced_columns or []
-                    ],
+                    "referenced_schema": (str(referenced_schema) if referenced_schema else None),
+                    "referenced_table": (str(referenced_table) if referenced_table else None),
+                    "referenced_columns": [str(column) for column in referenced_columns or []],
                     "on_update": action_names.get(str(update_action), None),
                     "on_delete": action_names.get(str(delete_action), None),
                 }
@@ -694,17 +680,13 @@ class MySQLAdapter:
                     "nullable": str(_mysql_value(row, "IS_NULLABLE")).upper() == "YES",
                     "primary_key": str(_mysql_value(row, "COLUMN_KEY")).upper() == "PRI",
                     "unique": (
-                        True
-                        if str(_mysql_value(row, "COLUMN_KEY")).upper() == "UNI"
-                        else None
+                        True if str(_mysql_value(row, "COLUMN_KEY")).upper() == "UNI" else None
                     ),
                 }
                 for row in cursor.fetchall()
             ]
 
-    def validate_relation_columns(
-        self, conn: Any, table_name: str, columns: list[str]
-    ) -> bool:
+    def validate_relation_columns(self, conn: Any, table_name: str, columns: list[str]) -> bool:
         if not columns:
             return False
         placeholders = ", ".join(["%s"] * len(columns))
@@ -715,9 +697,7 @@ class MySQLAdapter:
                 f"AND COLUMN_NAME IN ({placeholders}) LIMIT {len(columns) + 1}",
                 (table_name, *columns),
             )
-            found = {
-                str(_mysql_value(row, "COLUMN_NAME")) for row in cursor.fetchall()
-            }
+            found = {str(_mysql_value(row, "COLUMN_NAME")) for row in cursor.fetchall()}
         return found == set(columns)
 
     def get_bounded_relation_index(
@@ -737,8 +717,7 @@ class MySQLAdapter:
                 cursor.execute(f"{query} ORDER BY TABLE_NAME LIMIT {max_relations + 1}")
             else:
                 cursor.execute(
-                    f"{query} AND TABLE_NAME > %s ORDER BY TABLE_NAME "
-                    f"LIMIT {max_relations + 1}",
+                    f"{query} AND TABLE_NAME > %s ORDER BY TABLE_NAME LIMIT {max_relations + 1}",
                     (after,),
                 )
             rows = list(cursor.fetchall())
@@ -812,8 +791,7 @@ class MySQLAdapter:
                 {
                     "name": str(_mysql_value(row, "COLUMN_NAME")),
                     "type": str(_mysql_value(row, "COLUMN_TYPE") or ""),
-                    "nullable": str(_mysql_value(row, "IS_NULLABLE")).upper()
-                    == "YES",
+                    "nullable": str(_mysql_value(row, "IS_NULLABLE")).upper() == "YES",
                     "primary_key": False,
                     "unique": False,
                 }
@@ -924,8 +902,7 @@ class MySQLAdapter:
                     {
                         "name": str(_mysql_value(row, "COLUMN_NAME")),
                         "type": str(_mysql_value(row, "COLUMN_TYPE") or ""),
-                        "nullable": str(_mysql_value(row, "IS_NULLABLE")).upper()
-                        == "YES",
+                        "nullable": str(_mysql_value(row, "IS_NULLABLE")).upper() == "YES",
                         "primary_key": False,
                         "unique": False,
                     }
@@ -1074,9 +1051,7 @@ class MySQLAdapter:
             constraint_type = str(_mysql_value(row, "CONSTRAINT_TYPE")).upper()
             if table_name not in entries:
                 continue
-            grouped.setdefault(
-                (table_name, constraint_name, constraint_type), []
-            ).append(row)
+            grouped.setdefault((table_name, constraint_name, constraint_type), []).append(row)
 
         for (table_name, constraint_name, constraint_type), rows in grouped.items():
             entry = entries[table_name]
@@ -1098,12 +1073,8 @@ class MySQLAdapter:
                     {
                         "name": constraint_name,
                         "columns": columns,
-                        "referenced_schema": _mysql_value(
-                            first, "REFERENCED_TABLE_SCHEMA"
-                        ),
-                        "referenced_table": _mysql_value(
-                            first, "REFERENCED_TABLE_NAME"
-                        ),
+                        "referenced_schema": _mysql_value(first, "REFERENCED_TABLE_SCHEMA"),
+                        "referenced_table": _mysql_value(first, "REFERENCED_TABLE_NAME"),
                         "referenced_columns": [
                             _mysql_value(row, "REFERENCED_COLUMN_NAME") for row in rows
                         ],
@@ -1282,9 +1253,7 @@ class PostgreSQLAdapter:
                 for row in cursor.fetchall()
             ]
 
-    def validate_relation_columns(
-        self, conn: Any, table_name: str, columns: list[str]
-    ) -> bool:
+    def validate_relation_columns(self, conn: Any, table_name: str, columns: list[str]) -> bool:
         if not columns:
             return False
         with conn.cursor() as cursor:
@@ -1514,9 +1483,7 @@ class PostgreSQLAdapter:
 
         relations_truncated = len(relation_rows) > max_relations
         entries = {
-            str(row[0]): _catalog_entry(
-                str(row[0]), _relation_kind(row[1]), schema=self._schema
-            )
+            str(row[0]): _catalog_entry(str(row[0]), _relation_kind(row[1]), schema=self._schema)
             for row in relation_rows[:max_relations]
         }
         remaining_columns = max_total_columns
@@ -1644,9 +1611,7 @@ class PostgreSQLAdapter:
             relation_rows = list(cursor.fetchall())
 
         entries = {
-            str(row[0]): _catalog_entry(
-                str(row[0]), _relation_kind(row[1]), schema=self._schema
-            )
+            str(row[0]): _catalog_entry(str(row[0]), _relation_kind(row[1]), schema=self._schema)
             for row in relation_rows
         }
         if not entries:
@@ -1777,12 +1742,8 @@ class PostgreSQLAdapter:
                         "referenced_schema": (
                             str(referenced_schema) if referenced_schema else None
                         ),
-                        "referenced_table": (
-                            str(referenced_table) if referenced_table else None
-                        ),
-                        "referenced_columns": [
-                            str(column) for column in referenced_columns or []
-                        ],
+                        "referenced_table": (str(referenced_table) if referenced_table else None),
+                        "referenced_columns": [str(column) for column in referenced_columns or []],
                         "on_update": action_names.get(str(update_action), None),
                         "on_delete": action_names.get(str(delete_action), None),
                     }
@@ -2018,9 +1979,7 @@ class SQLiteAdapter:
 
         cursor = conn.cursor()
         deadline = time.monotonic() + (
-            max(0.01, min(float(timeout_seconds), 60.0))
-            if timeout_seconds is not None
-            else 60.0
+            max(0.01, min(float(timeout_seconds), 60.0)) if timeout_seconds is not None else 60.0
         )
         conn.execute("PRAGMA query_only=ON")
         conn.set_progress_handler(
@@ -2077,9 +2036,7 @@ class SQLiteAdapter:
             _mark_constraints_unavailable(entries)
         return list(entry["columns"])
 
-    def validate_relation_columns(
-        self, conn: Any, table_name: str, columns: list[str]
-    ) -> bool:
+    def validate_relation_columns(self, conn: Any, table_name: str, columns: list[str]) -> bool:
         if not columns:
             return False
         relation = conn.execute(
@@ -2184,9 +2141,7 @@ class SQLiteAdapter:
         ).fetchall()
         relations_truncated = len(rows) > max_relations
         entries = {
-            str(row[0]): _catalog_entry(
-                str(row[0]), _relation_kind(row[1]), schema="main"
-            )
+            str(row[0]): _catalog_entry(str(row[0]), _relation_kind(row[1]), schema="main")
             for row in rows[:max_relations]
         }
         remaining_columns = max_total_columns
@@ -2267,7 +2222,7 @@ class SQLiteAdapter:
         else:
             sentinel_limit = max_columns + 1 if max_columns else 1
             cursor.execute(
-                "SELECT cid, name, type, \"notnull\", dflt_value, pk, hidden "
+                'SELECT cid, name, type, "notnull", dflt_value, pk, hidden '
                 "FROM pragma_table_xinfo(?) WHERE hidden != 1 "
                 "ORDER BY cid LIMIT ?",
                 (table_name, sentinel_limit),
@@ -2305,9 +2260,7 @@ class SQLiteAdapter:
                 "columns": ordered_primary_columns,
             }
             table_list_cursor = conn.cursor()
-            table_list_cursor.execute(
-                f"PRAGMA table_list({self.quote_identifier(table_name)})"
-            )
+            table_list_cursor.execute(f"PRAGMA table_list({self.quote_identifier(table_name)})")
             table_flags = table_list_cursor.fetchone()
             without_rowid = bool(table_flags[4]) if table_flags is not None else False
             strict = bool(table_flags[5]) if table_flags is not None else False
@@ -2336,9 +2289,7 @@ class SQLiteAdapter:
             if origin == "pk":
                 continue
             index_cursor = conn.cursor()
-            index_cursor.execute(
-                f"PRAGMA index_info({self.quote_identifier(index_name)})"
-            )
+            index_cursor.execute(f"PRAGMA index_info({self.quote_identifier(index_name)})")
             column_names = [
                 str(index_row[2])
                 for index_row in index_cursor.fetchall()
@@ -2371,8 +2322,7 @@ class SQLiteAdapter:
                     "referenced_schema": "main",
                     "referenced_table": str(first[2]),
                     "referenced_columns": [
-                        str(row[4]) if row[4] is not None else None
-                        for row in ordered_rows
+                        str(row[4]) if row[4] is not None else None for row in ordered_rows
                     ],
                     "on_update": str(first[5]),
                     "on_delete": str(first[6]),

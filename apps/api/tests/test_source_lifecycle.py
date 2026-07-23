@@ -44,9 +44,7 @@ async def test_preflight_failure_becomes_a_retryable_business_state(
         raise RuntimeError("parser exploded")
 
     monkeypatch.setattr(projects_api, "run_preflight", fail_preflight)
-    failed = await client.post(
-        f"/api/v1/projects/{project_id}/sources/{source['id']}/preflight"
-    )
+    failed = await client.post(f"/api/v1/projects/{project_id}/sources/{source['id']}/preflight")
 
     assert failed.status_code == 409
     assert failed.json()["detail"] == "这份数据暂时没有整理成功，可以重新整理或移除来源"
@@ -71,9 +69,7 @@ async def test_remove_source_deletes_only_receiptbi_copy_and_records(
     original_bytes = external_file.read_bytes()
     project_id = await _project(client)
     source = await _upload(client, project_id, original_bytes)
-    prepared = await client.post(
-        f"/api/v1/projects/{project_id}/sources/{source['id']}/preflight"
-    )
+    prepared = await client.post(f"/api/v1/projects/{project_id}/sources/{source['id']}/preflight")
     assert prepared.status_code == 200, prepared.text
 
     stored = await db_session.get(ProjectDataSource, UUID(source["id"]))
@@ -81,9 +77,7 @@ async def test_remove_source_deletes_only_receiptbi_copy_and_records(
     receiptbi_source_dir = Path(stored.source_uri).parent
     assert receiptbi_source_dir.exists()
 
-    removed = await client.delete(
-        f"/api/v1/projects/{project_id}/sources/{source['id']}"
-    )
+    removed = await client.delete(f"/api/v1/projects/{project_id}/sources/{source['id']}")
     assert removed.status_code == 200, removed.text
     assert removed.json()["data"]["external_data_untouched"] is True
     assert external_file.read_bytes() == original_bytes

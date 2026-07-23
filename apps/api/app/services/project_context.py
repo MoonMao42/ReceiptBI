@@ -608,9 +608,7 @@ class ProjectRuntimeContext:
     def public_summary(self, query: str | None = None) -> dict[str, Any]:
         query_terms = _semantic_query_terms(query)
         globally_visible_knowledge = [
-            item
-            for item in self.confirmed_knowledge
-            if _globally_visible_semantic(item)
+            item for item in self.confirmed_knowledge if _globally_visible_semantic(item)
         ]
         confirmed_knowledge, confirmed_knowledge_meta = _budget_semantic_items(
             globally_visible_knowledge,
@@ -888,8 +886,7 @@ def _source_column_details(source: dict[str, Any], table_or_view: str) -> list[d
         bare_matches = [
             table
             for table in tables
-            if str(table.get("name") or "").strip().casefold()
-            == table_or_view.strip().casefold()
+            if str(table.get("name") or "").strip().casefold() == table_or_view.strip().casefold()
         ]
         if len(bare_matches) == 1:
             return list(bare_matches[0].get("columns") or [])

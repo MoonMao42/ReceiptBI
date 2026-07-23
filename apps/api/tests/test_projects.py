@@ -201,8 +201,7 @@ async def test_ambiguous_logical_source_name_disables_verified_relationship(
 
     assert entry.key not in context.executable_relationships
     assert any(
-        diagnostic["key"] == entry.key
-        and diagnostic["kind"] == "ambiguous_relationship_source"
+        diagnostic["key"] == entry.key and diagnostic["kind"] == "ambiguous_relationship_source"
         for diagnostic in context.semantic_diagnostics
     )
 
@@ -726,9 +725,7 @@ async def test_project_context_dual_reads_one_legacy_decision_alias(
 
     context = await load_project_context(db_session, project.id)
 
-    assert [item["key"] for item in context.confirmed_knowledge] == [
-        "revenue_refund_policy"
-    ]
+    assert [item["key"] for item in context.confirmed_knowledge] == ["revenue_refund_policy"]
     assert context.confirmed_knowledge[0]["state"] == "locked"
 
 
@@ -769,13 +766,9 @@ async def test_project_context_fails_closed_on_conflicting_decision_aliases(
 
     context = await load_project_context(db_session, project.id)
 
-    assert not any(
-        item["key"] == "revenue_refund_policy"
-        for item in context.confirmed_knowledge
-    )
+    assert not any(item["key"] == "revenue_refund_policy" for item in context.confirmed_knowledge)
     assert any(
-        item["key"] == "revenue_refund_policy"
-        and item["kind"] == "decision_slot_conflict"
+        item["key"] == "revenue_refund_policy" and item["kind"] == "decision_slot_conflict"
         for item in context.semantic_diagnostics
     )
 
@@ -843,9 +836,7 @@ async def test_database_preflight_persists_bounded_value_context_for_the_project
         lambda _config: ProfileManager(),
     )
 
-    response = await client.post(
-        f"/api/v1/projects/{project.id}/sources/{source.id}/preflight"
-    )
+    response = await client.post(f"/api/v1/projects/{project.id}/sources/{source.id}/preflight")
 
     assert response.status_code == 200, response.text
     report = response.json()["data"]
@@ -859,8 +850,7 @@ async def test_database_preflight_persists_bounded_value_context_for_the_project
         "rows_are_sampled": True,
     }
     roles = {
-        item["column"]: item
-        for item in report["source_snapshot"]["preanalysis"]["candidate_roles"]
+        item["column"]: item for item in report["source_snapshot"]["preanalysis"]["candidate_roles"]
     }
     assert roles["order_id"]["value_visibility"] == "suppressed_identifier"
     assert roles["order_date"]["role"] == "time"
@@ -895,9 +885,7 @@ async def test_preflight_requires_explicit_permission_and_preserves_attached_sou
     db_session.add(source)
     await db_session.commit()
 
-    response = await client.post(
-        f"/api/v1/projects/{project.id}/sources/{source.id}/preflight"
-    )
+    response = await client.post(f"/api/v1/projects/{project.id}/sources/{source.id}/preflight")
 
     assert response.status_code == 403
     assert "数据预处理已在设置中关闭" in response.json()["detail"]
@@ -948,9 +936,7 @@ async def test_database_foreign_key_becomes_unverified_project_relationship_cand
     db_session.add(source)
     await db_session.commit()
 
-    response = await client.post(
-        f"/api/v1/projects/{project.id}/sources/{source.id}/preflight"
-    )
+    response = await client.post(f"/api/v1/projects/{project.id}/sources/{source.id}/preflight")
     assert response.status_code == 200, response.text
 
     entries_result = await db_session.execute(
@@ -959,8 +945,7 @@ async def test_database_foreign_key_becomes_unverified_project_relationship_cand
     relationships = [
         entry
         for entry in entries_result.scalars()
-        if entry.entry_type == "relationship"
-        and entry.key.startswith("relationship_candidate:fk:")
+        if entry.entry_type == "relationship" and entry.key.startswith("relationship_candidate:fk:")
     ]
     assert len(relationships) == 1
     candidate = relationships[0]

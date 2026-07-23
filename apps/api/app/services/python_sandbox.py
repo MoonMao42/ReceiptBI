@@ -108,8 +108,7 @@ class PythonSandbox:
                 available = importlib.util.find_spec(module) is not None
                 if not available:
                     available = (
-                        importlib.machinery.PathFinder.find_spec(module, search_paths)
-                        is not None
+                        importlib.machinery.PathFinder.find_spec(module, search_paths) is not None
                     )
             except (ImportError, ModuleNotFoundError, ValueError):
                 available = False

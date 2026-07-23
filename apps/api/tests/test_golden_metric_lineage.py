@@ -74,9 +74,7 @@ def test_formula_metric_requires_aggregate_on_final_result_lineage():
         result_rows=rows,
     )
     assert contract is not None
-    GoldenScenarioRuleApplicationContract.model_validate(
-        contract["required_rule_applications"][0]
-    )
+    GoldenScenarioRuleApplicationContract.model_validate(contract["required_rule_applications"][0])
     assert contract["required_rule_applications"][0]["metric_consumed"] is True
     assert contract["required_rule_applications"][0]["formula_hash"] == "f" * 64
     assert (

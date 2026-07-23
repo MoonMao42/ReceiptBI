@@ -65,11 +65,14 @@ async def test_relation_discovery_pages_beyond_512_without_row_access(
             after_values.append(after)
             start = 0
             if after is not None:
-                start = next(
-                    index
-                    for index, relation in enumerate(relations)
-                    if relation["name"] == after
-                ) + 1
+                start = (
+                    next(
+                        index
+                        for index, relation in enumerate(relations)
+                        if relation["name"] == after
+                    )
+                    + 1
+                )
             page = relations[start : start + max_relations]
             truncated = start + len(page) < len(relations)
             return BoundedRelationIndex(
@@ -193,11 +196,14 @@ async def test_structure_job_captures_every_indexed_table_without_global_limit(
 
     factory = async_sessionmaker(async_engine, expire_on_commit=False)
     worker_id = "inventory-test-worker"
-    assert await inventory._claim_job(
-        factory,
-        job_id=job.id,
-        worker_id=worker_id,
-    ) == []
+    assert (
+        await inventory._claim_job(
+            factory,
+            job_id=job.id,
+            worker_id=worker_id,
+        )
+        == []
+    )
     item_ids = await inventory._prepare_job_items(
         factory,
         job_id=job.id,
@@ -326,9 +332,7 @@ async def test_recovery_requeues_abandoned_running_item(
     await db_session.flush()
     item = (
         await db_session.execute(
-            select(SemanticInventoryJobItem).where(
-                SemanticInventoryJobItem.job_id == job.id
-            )
+            select(SemanticInventoryJobItem).where(SemanticInventoryJobItem.job_id == job.id)
         )
     ).scalar_one()
     job.tables = ["main.table_000"]
@@ -397,6 +401,7 @@ async def test_structure_runner_reads_columns_but_never_samples_rows(
 
     monkeypatch.setattr(inventory, "create_database_manager", lambda _config: _Manager())
     monkeypatch.setattr(inventory, "generate_semantic_recommendations", _recommend)
+
     async def _no_enhancer(*_args, **_kwargs):
         return None
 
@@ -429,9 +434,7 @@ async def test_structure_runner_reads_columns_but_never_samples_rows(
         stored_source = await check.get(ProjectDataSource, source.id)
         stored_item = (
             await check.execute(
-                select(SemanticInventoryJobItem).where(
-                    SemanticInventoryJobItem.job_id == job.id
-                )
+                select(SemanticInventoryJobItem).where(SemanticInventoryJobItem.job_id == job.id)
             )
         ).scalar_one()
     assert calls == {"structure": 2, "sample": 0}
@@ -564,8 +567,7 @@ async def test_structure_inventory_keeps_one_source_candidate_and_safe_field_lab
         entry
         for entry in entries
         if entry.entry_type == "dimension"
-        and (entry.definition or {}).get("source", {}).get("action_column")
-        == "published_at"
+        and (entry.definition or {}).get("source", {}).get("action_column") == "published_at"
     ]
 
     assert stored_job is not None and stored_job.status == "completed"
@@ -677,9 +679,7 @@ async def test_source_drift_before_profile_write_fails_closed(
         stored_source = await check.get(ProjectDataSource, source.id)
         item = (
             await check.execute(
-                select(SemanticInventoryJobItem).where(
-                    SemanticInventoryJobItem.job_id == job.id
-                )
+                select(SemanticInventoryJobItem).where(SemanticInventoryJobItem.job_id == job.id)
             )
         ).scalar_one()
     assert stored_job is not None and stored_job.status == "completed_with_errors"
@@ -752,9 +752,7 @@ async def test_table_contract_drift_during_generation_does_not_persist_candidate
         stored_source = await check.get(ProjectDataSource, source.id)
         item = (
             await check.execute(
-                select(SemanticInventoryJobItem).where(
-                    SemanticInventoryJobItem.job_id == job.id
-                )
+                select(SemanticInventoryJobItem).where(SemanticInventoryJobItem.job_id == job.id)
             )
         ).scalar_one()
         entries = list(
@@ -814,9 +812,7 @@ async def test_cancel_and_retry_keep_durable_item_progress(
     await db_session.flush()
     retry_item = (
         await db_session.execute(
-            select(SemanticInventoryJobItem).where(
-                SemanticInventoryJobItem.job_id == retry_job.id
-            )
+            select(SemanticInventoryJobItem).where(SemanticInventoryJobItem.job_id == retry_job.id)
         )
     ).scalar_one()
     retry_job.status = "completed_with_errors"
@@ -1445,9 +1441,7 @@ async def test_retry_requeues_finalization_failure_and_invalidates_old_source_pa
     )
     item = (
         await db_session.execute(
-            select(SemanticInventoryJobItem).where(
-                SemanticInventoryJobItem.job_id == job.id
-            )
+            select(SemanticInventoryJobItem).where(SemanticInventoryJobItem.job_id == job.id)
         )
     ).scalar_one()
     item.status = "succeeded"
@@ -1549,9 +1543,7 @@ async def test_source_finalization_failure_retries_without_reprocessing_table(
         failed_job = await first_check.get(SemanticInventoryJob, job.id)
         first_item = (
             await first_check.execute(
-                select(SemanticInventoryJobItem).where(
-                    SemanticInventoryJobItem.job_id == job.id
-                )
+                select(SemanticInventoryJobItem).where(SemanticInventoryJobItem.job_id == job.id)
             )
         ).scalar_one()
         assert failed_job is not None and failed_job.status == "failed"
@@ -1573,9 +1565,7 @@ async def test_source_finalization_failure_retries_without_reprocessing_table(
         completed_job = await second_check.get(SemanticInventoryJob, job.id)
         completed_item = (
             await second_check.execute(
-                select(SemanticInventoryJobItem).where(
-                    SemanticInventoryJobItem.job_id == job.id
-                )
+                select(SemanticInventoryJobItem).where(SemanticInventoryJobItem.job_id == job.id)
             )
         ).scalar_one()
         source_presentations = list(
@@ -1594,7 +1584,9 @@ async def test_source_finalization_failure_retries_without_reprocessing_table(
     assert completed_item.attempt_count == 1
     assert schema_reads == 2
     assert finalization_attempts == 2
-    assert sum(
-        (entry.definition or {}).get("scope_kind") == "source"
-        for entry in source_presentations
-    ) == 1
+    assert (
+        sum(
+            (entry.definition or {}).get("scope_kind") == "source" for entry in source_presentations
+        )
+        == 1
+    )

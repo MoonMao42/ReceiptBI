@@ -257,8 +257,7 @@ async def test_runtime_executes_required_v3_result_before_model(
     runtime._run_agent = fake_run_agent  # type: ignore[method-assign]
     try:
         events = [
-            event
-            async for event in runtime.execute(query="Compare paid revenue by category")
+            event async for event in runtime.execute(query="Compare paid revenue by category")
         ]
     finally:
         runtime.deps.python_sandbox.cleanup()
@@ -281,9 +280,9 @@ async def test_runtime_can_cancel_system_playbook_before_model(
     monkeypatch: pytest.MonkeyPatch,
 ):
     path = tmp_path / "orders.parquet"
-    pd.DataFrame(
-        [{"category": "latte", "amount": 62.0, "status": "paid"}]
-    ).to_parquet(path, index=False)
+    pd.DataFrame([{"category": "latte", "amount": 62.0, "status": "paid"}]).to_parquet(
+        path, index=False
+    )
     source = _file_source(path)
     context = ProjectRuntimeContext(
         sources=[source],
@@ -314,9 +313,9 @@ async def test_runtime_rejects_poisoned_resumed_system_result(
     monkeypatch: pytest.MonkeyPatch,
 ):
     path = tmp_path / "orders.parquet"
-    pd.DataFrame(
-        [{"category": "latte", "amount": 62.0, "status": "paid"}]
-    ).to_parquet(path, index=False)
+    pd.DataFrame([{"category": "latte", "amount": 62.0, "status": "paid"}]).to_parquet(
+        path, index=False
+    )
     source = _file_source(path)
     context = ProjectRuntimeContext(
         sources=[source],
@@ -355,9 +354,7 @@ async def test_runtime_rejects_poisoned_resumed_system_result(
 
 
 def test_protected_system_result_blocks_model_owned_result_producers():
-    deps = SimpleNamespace(
-        protected_results={"result_1": {"result_hash": "a" * 64}}
-    )
+    deps = SimpleNamespace(protected_results={"result_1": {"result_hash": "a" * 64}})
     with pytest.raises(ModelRetry, match="不要重新查询"):
         _ensure_result_write_allowed(deps)  # type: ignore[arg-type]
 
@@ -365,9 +362,9 @@ def test_protected_system_result_blocks_model_owned_result_producers():
 @pytest.mark.asyncio
 async def test_standing_accepts_only_exact_system_execution_receipt(tmp_path: Path):
     path = tmp_path / "orders.parquet"
-    pd.DataFrame(
-        [{"category": "latte", "amount": 62.0, "status": "paid"}]
-    ).to_parquet(path, index=False)
+    pd.DataFrame([{"category": "latte", "amount": 62.0, "status": "paid"}]).to_parquet(
+        path, index=False
+    )
     source = _file_source(path)
     playbook = _playbook(source)
     result = await run_analysis_playbook(

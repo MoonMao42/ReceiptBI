@@ -45,9 +45,7 @@ if TYPE_CHECKING:
 
 Locale: TypeAlias = Literal["zh", "en"]
 GeneratedBy: TypeAlias = Literal["ai", "preflight"]
-RecommendationMode: TypeAlias = Literal[
-    "full", "presentation", "structure", "relationships"
-]
+RecommendationMode: TypeAlias = Literal["full", "presentation", "structure", "relationships"]
 
 _MAX_SCOPES = 20
 _MAX_TABLES_PER_SCOPE = 100
@@ -262,9 +260,7 @@ def _identifier_tokens(value: str) -> list[str]:
 
     expanded = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", value)
     return [
-        token.casefold()
-        for token in re.split(r"[^a-zA-Z0-9\u4e00-\u9fff]+", expanded)
-        if token
+        token.casefold() for token in re.split(r"[^a-zA-Z0-9\u4e00-\u9fff]+", expanded) if token
     ]
 
 
@@ -325,11 +321,7 @@ def _field_presentation_name(
 
 def _field_synonyms(column: str, business_name: str, locale: Locale) -> list[str]:
     values = [column]
-    if (
-        locale == "zh"
-        and _normalized_name(column) == "publishedat"
-        and business_name == "发布时间"
-    ):
+    if locale == "zh" and _normalized_name(column) == "publishedat" and business_name == "发布时间":
         values.extend(["表格时间", "发布日期"])
     business_key = business_name.strip().casefold()
     return list(
@@ -356,11 +348,7 @@ def _normalized_synonyms(values: Sequence[Any], business_name: str) -> list[str]
 
 
 def _technical_tokens(value: str) -> list[str]:
-    return [
-        token
-        for token in re.split(r"[^a-z0-9\u4e00-\u9fff]+", value.casefold())
-        if token
-    ]
+    return [token for token in re.split(r"[^a-z0-9\u4e00-\u9fff]+", value.casefold()) if token]
 
 
 def _zh_table_presentation(table_name: str) -> tuple[str, bool]:
@@ -669,15 +657,11 @@ def _profile_tables(profile: Mapping[str, Any]) -> list[dict[str, Any]]:
             **previous,
             **item,
             "description": (
-                item.get("description")
-                or item.get("comment")
-                or previous.get("description")
+                item.get("description") or item.get("comment") or previous.get("description")
             ),
             "columns": list(item.get("columns") or previous.get("columns") or []),
             "profile_status": (
-                "profiled"
-                if item.get("columns") or previous.get("columns")
-                else "catalog_only"
+                "profiled" if item.get("columns") or previous.get("columns") else "catalog_only"
             ),
         }
     return [merged[key] for key in order]
@@ -745,8 +729,7 @@ def _scoped_tables(
 
         preanalysis = profile.get("preanalysis") or {}
         role_profile_is_current = (
-            preanalysis.get("semantic_role_inference_version")
-            == SEMANTIC_ROLE_INFERENCE_VERSION
+            preanalysis.get("semantic_role_inference_version") == SEMANTIC_ROLE_INFERENCE_VERSION
         )
         all_roles = [
             {**dict(item), "_role_inference_current": role_profile_is_current}
@@ -787,10 +770,14 @@ def _scoped_tables(
                     source_kind="file",
                     logical_name=logical_name,
                     table_name=table_name,
-                    source_description=str(profile.get("description") or profile.get("summary") or "").strip() or None,
+                    source_description=str(
+                        profile.get("description") or profile.get("summary") or ""
+                    ).strip()
+                    or None,
                     table_description=str(profile.get("table_description") or "").strip() or None,
                     source_business_name=str(profile.get("business_name") or "").strip() or None,
-                    table_business_name=str(profile.get("table_business_name") or "").strip() or None,
+                    table_business_name=str(profile.get("table_business_name") or "").strip()
+                    or None,
                     table_profiled=True,
                     source_table_names=[table_name],
                     columns=columns,
@@ -832,7 +819,10 @@ def _scoped_tables(
                     source_kind="connection",
                     logical_name=logical_name,
                     table_name=table_name,
-                    source_description=str(profile.get("description") or profile.get("summary") or "").strip() or None,
+                    source_description=str(
+                        profile.get("description") or profile.get("summary") or ""
+                    ).strip()
+                    or None,
                     table_description=str(table.get("description") or "").strip() or None,
                     source_business_name=str(profile.get("business_name") or "").strip() or None,
                     table_business_name=str(table.get("business_name") or "").strip() or None,
@@ -991,7 +981,7 @@ def _scope_presentation_drafts(
     for table in tables:
         by_source[table.source_id].append(table)
 
-    for source_tables in (by_source.values() if include_source else ()):
+    for source_tables in by_source.values() if include_source else ():
         first = source_tables[0]
         if locale == "zh":
             source_name, source_resolved = _zh_source_presentation(
@@ -1003,9 +993,7 @@ def _scope_presentation_drafts(
             )
             source_questions = [f"{source_name}包含哪些可分析的业务数据？"]
         else:
-            source_name = first.source_business_name or re.sub(
-                r"\.[^.]+$", "", first.source_name
-            )
+            source_name = first.source_business_name or re.sub(r"\.[^.]+$", "", first.source_name)
             source_resolved = bool(source_name)
             source_description = first.source_description or (
                 f"Data source containing {len(first.source_table_names)} cataloged tables."
@@ -1050,7 +1038,7 @@ def _scope_presentation_drafts(
             )
         )
 
-    for table in (tables if include_tables else ()):
+    for table in tables if include_tables else ():
         if locale == "zh":
             table_name, table_resolved = _zh_table_presentation(table.table_name)
             if table.table_business_name and re.search(
@@ -1064,18 +1052,17 @@ def _scope_presentation_drafts(
                 else "这张表的业务用途尚待确认。"
             )
             if not table.table_profiled:
-                table_description = (
-                    f"{table_description.rstrip('。')}；目前先根据表名和字段整理用途，确认后可继续完善。"
-                )
+                table_description = f"{table_description.rstrip('。')}；目前先根据表名和字段整理用途，确认后可继续完善。"
             table_questions = [
                 f"{table_name}可以回答哪些业务问题？"
                 if table_resolved
                 else "这张表主要记录什么业务信息？"
             ]
         else:
-            table_name = table.table_business_name or re.sub(
-                r"[_\-.]+", " ", table.table_name
-            ).strip().title()
+            table_name = (
+                table.table_business_name
+                or re.sub(r"[_\-.]+", " ", table.table_name).strip().title()
+            )
             table_resolved = bool(table_name)
             table_description = table.table_description or (
                 f"Business records provided by {table_name}."
@@ -1206,11 +1193,7 @@ def _profile_drafts(
         evidence = _base_evidence(
             table,
             batch_id=batch_id,
-            kind=(
-                "structure_dimension_role"
-                if metadata_only
-                else "profile_dimension_role"
-            ),
+            kind=("structure_dimension_role" if metadata_only else "profile_dimension_role"),
             columns=[column_name],
         )
         if metadata_only:
@@ -1245,9 +1228,7 @@ def _profile_drafts(
                 confidence=(
                     min(confidence, 0.52)
                     if metadata_only and name_resolved
-                    else (
-                        confidence if explicit_role else min(confidence, 0.58)
-                    )
+                    else (confidence if explicit_role else min(confidence, 0.58))
                     if name_resolved
                     else 0.3
                 ),
@@ -1503,9 +1484,7 @@ def declared_relationship_evidence(
 
     evidence = [
         dict(item)
-        for item in (profile.get("preanalysis") or {}).get(
-            "relationship_evidence", []
-        )
+        for item in (profile.get("preanalysis") or {}).get("relationship_evidence", [])
         if isinstance(item, Mapping)
         and item.get("kind") == "declared_foreign_key"
         and item.get("catalog_verified") is True
@@ -1531,14 +1510,8 @@ def declared_relationship_evidence(
                 for value in foreign_key.get("referenced_columns") or []
                 if str(value).strip()
             ]
-            target_table = str(
-                foreign_key.get("referenced_table") or ""
-            ).strip()
-            if (
-                not target_table
-                or not source_columns
-                or len(source_columns) != len(target_columns)
-            ):
+            target_table = str(foreign_key.get("referenced_table") or "").strip()
+            if not target_table or not source_columns or len(source_columns) != len(target_columns):
                 continue
             evidence.append(
                 {
@@ -1552,8 +1525,7 @@ def declared_relationship_evidence(
                         "columns": source_columns,
                     },
                     "target": {
-                        "schema": foreign_key.get("referenced_schema")
-                        or table_schema,
+                        "schema": foreign_key.get("referenced_schema") or table_schema,
                         "table": target_table,
                         "columns": target_columns,
                     },
@@ -1676,9 +1648,7 @@ def _relationship_drafts(
                     fallback="Related records",
                 )
                 business_name = f"{left_name} and {right_name} relationship"
-                description = (
-                    f"{left_name} can be related to {right_name}; ReceiptBI will verify it before use."
-                )
+                description = f"{left_name} can be related to {right_name}; ReceiptBI will verify it before use."
                 questions = [f"How do {left_name} results vary by {right_name}?"]
             definition = RelationshipDefinition(
                 kind="relationship",
@@ -2019,14 +1989,16 @@ async def generate_semantic_recommendations(
         )
     )
     if mode == "full":
-        drafts.extend([
-            draft
-            for table in tables
-            for draft in (
-                _derived_metric_drafts(table, batch_id=resolved_batch_id, locale=locale)
-                + _profile_drafts(table, batch_id=resolved_batch_id, locale=locale)
-            )
-        ])
+        drafts.extend(
+            [
+                draft
+                for table in tables
+                for draft in (
+                    _derived_metric_drafts(table, batch_id=resolved_batch_id, locale=locale)
+                    + _profile_drafts(table, batch_id=resolved_batch_id, locale=locale)
+                )
+            ]
+        )
         drafts.extend(
             _relationship_drafts(
                 context,

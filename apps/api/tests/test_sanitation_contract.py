@@ -42,8 +42,7 @@ def test_legacy_recipe_is_upgraded_to_explicit_v1_contract() -> None:
     canonical = canonicalize_sanitation_operations(_legacy_recipe())
 
     assert all(
-        operation["contract_version"] == SANITATION_CONTRACT_VERSION
-        for operation in canonical
+        operation["contract_version"] == SANITATION_CONTRACT_VERSION for operation in canonical
     )
     by_name = {operation["operation"]: operation for operation in canonical}
     assert by_name["trim_text"]["error_policy"] == "preserve_original"
@@ -143,9 +142,7 @@ def test_preflight_rejects_invalid_recipe_before_touching_source_or_output(
 def test_preflight_persists_only_canonical_versioned_operations(tmp_path: Path) -> None:
     source = tmp_path / "orders.csv"
     source.write_text(
-        "order_id,amount,order_date\n"
-        " 001 , ￥12.50 ,2026-07-01\n"
-        " 002 , ￥10.00 ,2026-07-02\n",
+        "order_id,amount,order_date\n 001 , ￥12.50 ,2026-07-01\n 002 , ￥10.00 ,2026-07-02\n",
         encoding="utf-8",
     )
 
@@ -156,8 +153,7 @@ def test_preflight_persists_only_canonical_versioned_operations(tmp_path: Path) 
     field_operations = {
         (operation["operation"], operation.get("column")): operation
         for operation in result.operations
-        if operation["operation"]
-        in {"trim_text", "normalize_currency", "normalize_datetime"}
+        if operation["operation"] in {"trim_text", "normalize_currency", "normalize_datetime"}
     }
     assert field_operations[("normalize_currency", "amount")]["error_policy"] == "set_null"
     assert field_operations[("normalize_datetime", "order_date")]["error_policy"] == "set_null"

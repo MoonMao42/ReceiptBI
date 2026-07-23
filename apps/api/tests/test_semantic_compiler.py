@@ -21,9 +21,7 @@ def _profile(logical_name: str, columns: list[tuple[str, str]]) -> dict:
     return {
         "logical_name": logical_name,
         "is_current": True,
-        "schema": {
-            "columns": [{"name": name, "type": data_type} for name, data_type in columns]
-        },
+        "schema": {"columns": [{"name": name, "type": data_type} for name, data_type in columns]},
     }
 
 
@@ -423,9 +421,7 @@ async def test_relationship_compiler_binds_an_explicit_candidate_for_trial_only(
     )
     assert ambiguous.definition is None
     assert ambiguous.execution_state == "definition_only"
-    assert ambiguous.execution_details["reason_code"] == (
-        "AMBIGUOUS_RELATIONSHIP_CORRECTION"
-    )
+    assert ambiguous.execution_details["reason_code"] == ("AMBIGUOUS_RELATIONSHIP_CORRECTION")
 
 
 @pytest.mark.asyncio

@@ -104,9 +104,7 @@ async def _selected_preflight_strategy(
                 if isinstance(strategy, dict):
                     strategy = {
                         **strategy,
-                        "rule_key": canonicalize_decision_key(
-                            str(strategy.get("rule_key") or "")
-                        ),
+                        "rule_key": canonicalize_decision_key(str(strategy.get("rule_key") or "")),
                     }
                 matches.append(
                     validate_business_rule_strategy_definition(
@@ -244,8 +242,7 @@ async def _chat_stream_response(
                 settings_data=settings_data,
                 project_id=request_config.project_id,
                 semantic_validation_selection=[
-                    item.model_dump(mode="json")
-                    for item in (semantic_validation_selection or [])
+                    item.model_dump(mode="json") for item in (semantic_validation_selection or [])
                 ],
             )
 
@@ -623,9 +620,7 @@ async def confirm_business_definition(
     """Persist a typed business answer and prepare the same run for continuation."""
 
     run_result = await db.execute(
-        select(AnalysisRun)
-        .where(AnalysisRun.id == request.analysis_run_id)
-        .with_for_update()
+        select(AnalysisRun).where(AnalysisRun.id == request.analysis_run_id).with_for_update()
     )
     run = run_result.scalar_one_or_none()
     if run is None:
@@ -675,10 +670,7 @@ async def confirm_business_definition(
     if run.stage == "confirmation_received" and isinstance(existing_receipt, dict):
         receipt_key = str(existing_receipt.get("key") or "").strip()
         if (
-            (
-                receipt_key == report_key
-                or canonicalize_decision_key(receipt_key) == expected_key
-            )
+            (receipt_key == report_key or canonicalize_decision_key(receipt_key) == expected_key)
             and existing_receipt.get("selected_value") == request.selected_option
             and checkpoint.get("confirmation_receipt_status") == "pending"
         ):
@@ -699,9 +691,7 @@ async def confirm_business_definition(
         )
 
     semantic_result = await db.execute(
-        select(SemanticEntry)
-        .where(SemanticEntry.project_id == run.project_id)
-        .with_for_update()
+        select(SemanticEntry).where(SemanticEntry.project_id == run.project_id).with_for_update()
     )
     semantic_entries = list(semantic_result.scalars())
     try:
@@ -778,8 +768,7 @@ async def confirm_business_definition(
             and refreshed.state == "waiting_confirmation"
             and refreshed.stage == "confirmation_received"
             and isinstance(refreshed_receipt, dict)
-            and canonicalize_decision_key(str(refreshed_receipt.get("key") or ""))
-            == expected_key
+            and canonicalize_decision_key(str(refreshed_receipt.get("key") or "")) == expected_key
             and refreshed_receipt.get("selected_value") == request.selected_option
             and refreshed_checkpoint.get("confirmation_receipt_status") == "pending"
         ):
@@ -893,8 +882,7 @@ async def confirm_business_definition(
         elif not entry_is_current_lock:
             previous_revision_id = entry.active_revision_id
             if entry.key != expected_key and not any(
-                item.id != entry.id and item.key == expected_key
-                for item in semantic_entries
+                item.id != entry.id and item.key == expected_key for item in semantic_entries
             ):
                 entry.key = expected_key
             entry.value = request.selected_option

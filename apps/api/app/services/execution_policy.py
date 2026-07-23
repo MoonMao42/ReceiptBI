@@ -160,15 +160,11 @@ class ExecutionPolicy:
 
     def require_python(self, operation: str) -> None:
         if not self.python_enabled:
-            raise ExecutionPolicyError(
-                f"Python 能力已关闭，不能执行{operation}。"
-            )
+            raise ExecutionPolicyError(f"Python 能力已关闭，不能执行{operation}。")
 
     def require_auto_repair(self, operation: str) -> None:
         if not self.auto_repair_enabled:
-            raise ExecutionPolicyError(
-                f"自动修复已关闭，不能执行{operation}。"
-            )
+            raise ExecutionPolicyError(f"自动修复已关闭，不能执行{operation}。")
 
     def validate_result_boundary(self, result_data: Mapping[str, Any]) -> None:
         """Reject Python-derived payloads that bypassed the advertised tool set."""
@@ -182,13 +178,10 @@ class ExecutionPolicy:
             for item in tool_history
         )
         has_python_payload = any(
-            bool(result_data.get(key))
-            for key in ("python", "python_output", "python_images")
+            bool(result_data.get(key)) for key in ("python", "python_output", "python_images")
         )
         if has_python_receipt or has_python_payload:
-            raise ExecutionPolicyError(
-                "Python 能力已关闭，拒绝写入 Python 或依赖安装产生的结果。"
-            )
+            raise ExecutionPolicyError("Python 能力已关闭，拒绝写入 Python 或依赖安装产生的结果。")
 
     def public_event_data(
         self,

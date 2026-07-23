@@ -75,8 +75,7 @@ def prove_metric_application_lineage(
                 and str(step.get("metric_output_column") or "") == output_column
                 and bool(step.get("metric_policy_satisfied"))
                 and str(step.get("required_metric_column") or "") == base_column
-                and str(step.get("required_metric_definition_hash") or "")
-                == definition_hash
+                and str(step.get("required_metric_definition_hash") or "") == definition_hash
             )
             if action_kind == "metric_formula":
                 valid = valid and (
@@ -112,8 +111,7 @@ def prove_metric_application_lineage(
             source_state = dependency_states[0]
             valid = (
                 str(step.get("required_metric_column") or "") == base_column
-                and str(step.get("required_metric_definition_hash") or "")
-                == definition_hash
+                and str(step.get("required_metric_definition_hash") or "") == definition_hash
                 and str(step.get("metric_output_column") or "")
                 == str(source_state["metric_output_column"])
                 and bool(step.get("metric_policy_satisfied"))
@@ -132,8 +130,7 @@ def prove_metric_application_lineage(
             valid = (
                 step.get("action_kind") in {"value_filter", "identity"}
                 and str(step.get("required_metric_column") or "") == base_column
-                and str(step.get("required_metric_definition_hash") or "")
-                == definition_hash
+                and str(step.get("required_metric_definition_hash") or "") == definition_hash
                 and str(step.get("metric_output_column") or "")
                 == str(source_state["metric_output_column"])
                 and bool(step.get("metric_policy_satisfied"))

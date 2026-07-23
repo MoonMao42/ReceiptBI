@@ -119,12 +119,8 @@ async def test_recommendation_api_persists_batch_provenance_and_page_order(
     assert data["items"]
     assert all(item["state"] == "candidate" for item in data["items"])
     assert all(item["validity"] == "unverified" for item in data["items"])
-    presentations = [
-        item for item in data["items"] if item["entry_type"] == "scope_presentation"
-    ]
-    executable = [
-        item for item in data["items"] if item["entry_type"] != "scope_presentation"
-    ]
+    presentations = [item for item in data["items"] if item["entry_type"] == "scope_presentation"]
+    executable = [item for item in data["items"] if item["entry_type"] != "scope_presentation"]
     assert presentations
     assert all(item["execution_state"] == "definition_only" for item in presentations)
     assert all("remember" in item["allowed_actions"] for item in presentations)
@@ -132,10 +128,7 @@ async def test_recommendation_api_persists_batch_provenance_and_page_order(
     assert all(item["execution_state"] == "needs_validation" for item in executable)
     assert all(item["recommendation_batch_id"] == data["batch_id"] for item in data["items"])
     assert all("queue_validation" in item["allowed_actions"] for item in executable)
-    assert (
-        int(await db_session.scalar(select(func.count()).select_from(AnalysisRun)) or 0)
-        == 0
-    )
+    assert int(await db_session.scalar(select(func.count()).select_from(AnalysisRun)) or 0) == 0
 
     page = await client.get(
         f"/api/v1/projects/{project.id}/knowledge/page",
@@ -209,18 +202,16 @@ async def test_duplicate_recommendations_refresh_only_untouched_candidates(
     second_by_key = {item["key"]: item for item in second["items"]}
     assert second["batch_id"] != first["batch_id"]
     assert set(second_by_key) == set(first_by_key)
-    assert all(
-        second_by_key[key]["id"] == first_by_key[key]["id"] for key in first_by_key
-    )
+    assert all(second_by_key[key]["id"] == first_by_key[key]["id"] for key in first_by_key)
     assert all(
         second_by_key[key]["revision_number"] == first_by_key[key]["revision_number"] + 1
         for key in first_by_key
     )
     assert int(
         await db_session.scalar(
-            select(func.count()).select_from(SemanticEntry).where(
-                SemanticEntry.project_id == project.id
-            )
+            select(func.count())
+            .select_from(SemanticEntry)
+            .where(SemanticEntry.project_id == project.id)
         )
         or 0
     ) == len(first_by_key)
@@ -357,7 +348,10 @@ async def test_model_enhancement_is_reported_only_after_valid_complete_output(
     assert data["generated_by"] == "ai"
     assert all(item["definition"]["business_name"].startswith("AI ") for item in data["items"])
     assert all(
-        any(evidence.get("kind") == "model_presentation_enhancement" for evidence in item["evidence"])
+        any(
+            evidence.get("kind") == "model_presentation_enhancement"
+            for evidence in item["evidence"]
+        )
         for item in data["items"]
     )
 
@@ -375,8 +369,7 @@ async def test_recommendation_can_close_through_independent_validation_job(
     metric = next(
         item
         for item in recommendation.json()["data"]["items"]
-        if item["entry_type"] == "metric"
-        and item["definition"]["kind"] == "aggregate_metric"
+        if item["entry_type"] == "metric" and item["definition"]["kind"] == "aggregate_metric"
     )
 
     queued = await client.post(
@@ -394,23 +387,16 @@ async def test_recommendation_can_close_through_independent_validation_job(
 
     assert queued.status_code == 200, queued.text
     job_id = queued.json()["data"]["validation_job_id"]
-    job = await client.get(
-        f"/api/v1/projects/{project.id}/knowledge/validation-jobs/{job_id}"
-    )
+    job = await client.get(f"/api/v1/projects/{project.id}/knowledge/validation-jobs/{job_id}")
     assert job.status_code == 200, job.text
     job_data = job.json()["data"]
     assert job_data["status"] == "completed"
     assert job_data["progress"]["verified"] == 1
     assert job_data["items"][0]["code"] == "semantic_validation_verified"
 
-    stored = await client.get(
-        f"/api/v1/projects/{project.id}/knowledge/{metric['id']}"
-    )
+    stored = await client.get(f"/api/v1/projects/{project.id}/knowledge/{metric['id']}")
     assert stored.status_code == 200, stored.text
     stored_data = stored.json()["data"]
     assert stored_data["execution_state"] == "verified"
     assert "remember" in stored_data["allowed_actions"]
-    assert (
-        int(await db_session.scalar(select(func.count()).select_from(AnalysisRun)) or 0)
-        == 0
-    )
+    assert int(await db_session.scalar(select(func.count()).select_from(AnalysisRun)) or 0) == 0

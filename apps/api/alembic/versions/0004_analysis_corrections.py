@@ -38,7 +38,9 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.ForeignKeyConstraint(["analysis_run_id"], ["analysis_runs.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["semantic_entry_id"], ["semantic_entries.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["semantic_entry_id"], ["semantic_entries.id"], ondelete="SET NULL"
+        ),
         sa.UniqueConstraint(
             "project_id",
             "analysis_run_id",
@@ -46,9 +48,7 @@ def upgrade() -> None:
             name="uq_analysis_correction_run_fingerprint",
         ),
     )
-    op.create_index(
-        "ix_analysis_corrections_project_id", "analysis_corrections", ["project_id"]
-    )
+    op.create_index("ix_analysis_corrections_project_id", "analysis_corrections", ["project_id"])
     op.create_index(
         "ix_analysis_corrections_analysis_run_id",
         "analysis_corrections",

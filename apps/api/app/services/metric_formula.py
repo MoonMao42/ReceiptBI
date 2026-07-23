@@ -76,8 +76,7 @@ def _stable_hash(value: Any) -> str:
 
 def _rows_hash(rows: Sequence[Mapping[str, Any]]) -> str:
     serialized = sorted(
-        json.dumps(dict(row), sort_keys=True, ensure_ascii=False, default=str)
-        for row in rows
+        json.dumps(dict(row), sort_keys=True, ensure_ascii=False, default=str) for row in rows
     )
     return hashlib.sha256("\n".join(serialized).encode("utf-8")).hexdigest()
 
@@ -235,9 +234,7 @@ def validate_metric_formula_action(action: Any) -> MetricFormulaAction:
         "output_column": output_column,
         "expression": expression,
         "evaluation_order": "row_then_aggregate",
-        "null_policy": cast(
-            Literal["propagate", "zero", "error"], action.get("null_policy")
-        ),
+        "null_policy": cast(Literal["propagate", "zero", "error"], action.get("null_policy")),
         "divide_by_zero": cast(Literal["error", "null"], action.get("divide_by_zero")),
     }
 
@@ -492,9 +489,7 @@ def aggregate_decimal_metric(
         key=lambda key: json.dumps(key, ensure_ascii=False, default=str, separators=(",", ":")),
     )
     output: list[dict[str, Any]] = []
-    aggregate_operation: DecimalAggregateOperation = (
-        "average" if operation == "mean" else operation
-    )
+    aggregate_operation: DecimalAggregateOperation = "average" if operation == "mean" else operation
     for key in ordered_keys[:limit]:
         aggregate, _aggregate_evidence = aggregate_decimal_column(
             buckets[key],

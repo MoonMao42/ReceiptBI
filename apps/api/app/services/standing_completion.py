@@ -231,9 +231,7 @@ async def _finalize_standing_run_impl(
     if input_state.attention_reason or input_state.token is None:
         raise StandingCompletionError(
             input_state.attention_reason or "完成调查时项目输入已发生变化",
-            reason_code=(
-                input_state.attention_reason_code or "standing_project_input_unavailable"
-            ),
+            reason_code=(input_state.attention_reason_code or "standing_project_input_unavailable"),
             reason_params=input_state.attention_reason_params,
         )
     if not claimed_token or input_state.token != claimed_token:

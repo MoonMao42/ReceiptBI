@@ -164,9 +164,7 @@ def _column_payloads(
         properties = {"description": str(column.get("description") or "")}
         payload: dict[str, Any] = {
             "name": logical_name,
-            "type": _semantic_type(
-                str(column.get("type") or column.get("dtype") or "varchar")
-            ),
+            "type": _semantic_type(str(column.get("type") or column.get("dtype") or "varchar")),
             "properties": properties,
         }
         if logical_name != physical_name:
@@ -245,8 +243,7 @@ def build_manifest(
         if (
             relationship.get("validity") != "active"
             or definition.get("normalization") != "exact"
-            or cardinality
-            not in {"one_to_one", "one_to_many", "many_to_one", "many_to_many"}
+            or cardinality not in {"one_to_one", "one_to_many", "many_to_one", "many_to_many"}
         ):
             continue
         left = definition["left"]
@@ -317,8 +314,7 @@ def build_manifest(
                     ),
                     "isCalculated": True,
                     "expression": (
-                        f"{_quoted_identifier(target_model)}."
-                        f"{_quoted_identifier(target_name)}"
+                        f"{_quoted_identifier(target_model)}.{_quoted_identifier(target_name)}"
                     ),
                     "properties": {
                         "description": (
@@ -351,14 +347,10 @@ class SemanticEngineAdapter:
         self.diagnostics: list[dict[str, str]] = []
         self.compiled_backends: list[str] = []
         self.compiled_relationship_keys: list[str] = []
-        self.internal_relationship_keys: list[str] = sorted(
-            project.executable_relationships
-        )
+        self.internal_relationship_keys: list[str] = sorted(project.executable_relationships)
         self.status = "internal"
         backend_sources: dict[str, list[dict[str, Any]]] = {}
-        file_sources = [
-            source for source in project.sources if source.get("kind") == "file"
-        ]
+        file_sources = [source for source in project.sources if source.get("kind") == "file"]
         if file_sources:
             backend_sources["files"] = file_sources
         for source in project.sources:
@@ -427,9 +419,7 @@ class SemanticEngineAdapter:
         if not self._sessions:
             return
         self.status = (
-            "wren-core"
-            if len(self._sessions) == len(backend_manifests)
-            else "wren-core-partial"
+            "wren-core" if len(self._sessions) == len(backend_manifests) else "wren-core-partial"
         )
         primary_backend = "files" if "files" in self._manifests else self.compiled_backends[0]
         manifest_path = self.project_dir / "target" / "mdl.json"
@@ -481,8 +471,7 @@ class SemanticEngineAdapter:
                     f"{model['name']}.{column['name']}"
                     for model in manifest["models"]
                     for column in model["columns"]
-                    if (column.get("properties") or {}).get("relationshipKey")
-                    == relationship_key
+                    if (column.get("properties") or {}).get("relationshipKey") == relationship_key
                     and column.get("isCalculated")
                 ]
                 raise ValueError(

@@ -16,10 +16,7 @@ from app.db.tables import Base, Project, SemanticEntry, SemanticEntryRevision
 
 def _migration_module() -> ModuleType:
     path = (
-        Path(__file__).resolve().parents[1]
-        / "alembic"
-        / "versions"
-        / "0014_candidate_hygiene.py"
+        Path(__file__).resolve().parents[1] / "alembic" / "versions" / "0014_candidate_hygiene.py"
     )
     spec = importlib.util.spec_from_file_location("candidate_hygiene_migration", path)
     assert spec is not None and spec.loader is not None
@@ -262,38 +259,42 @@ def test_candidate_hygiene_migration_is_bounded_governed_and_repeat_safe(
             ).mappings()
         )
         assert sum(bool(row["is_active"]) for row in same_group_rows) <= migration._PER_COLUMN_CAP
-        assert any(
-            not row["is_active"] and row["validity"] == "stale"
-            for row in same_group_rows
-        )
+        assert any(not row["is_active"] and row["validity"] == "stale" for row in same_group_rows)
 
         for entry_id in protected.values():
-            row = connection.execute(
-                sa.select(SemanticEntry).where(SemanticEntry.id == entry_id)
-            ).mappings().one()
-            assert row["revision_number"] == 1
-        assert connection.execute(
-            sa.select(SemanticEntry.is_active).where(
-                SemanticEntry.id == protected["ignored"]
+            row = (
+                connection.execute(sa.select(SemanticEntry).where(SemanticEntry.id == entry_id))
+                .mappings()
+                .one()
             )
-        ).scalar_one() is False
+            assert row["revision_number"] == 1
+        assert (
+            connection.execute(
+                sa.select(SemanticEntry.is_active).where(SemanticEntry.id == protected["ignored"])
+            ).scalar_one()
+            is False
+        )
 
         revisions_after_first = connection.execute(
             sa.select(sa.func.count()).select_from(SemanticEntryRevision)
         ).scalar_one()
         heads_after_first = dict(
-            connection.execute(
-                sa.select(SemanticEntry.id, SemanticEntry.active_revision_id)
-            ).all()
+            connection.execute(sa.select(SemanticEntry.id, SemanticEntry.active_revision_id)).all()
         )
         migration.upgrade()
-        assert connection.execute(
-            sa.select(sa.func.count()).select_from(SemanticEntryRevision)
-        ).scalar_one() == revisions_after_first
-        assert dict(
+        assert (
             connection.execute(
-                sa.select(SemanticEntry.id, SemanticEntry.active_revision_id)
-            ).all()
-        ) == heads_after_first
+                sa.select(sa.func.count()).select_from(SemanticEntryRevision)
+            ).scalar_one()
+            == revisions_after_first
+        )
+        assert (
+            dict(
+                connection.execute(
+                    sa.select(SemanticEntry.id, SemanticEntry.active_revision_id)
+                ).all()
+            )
+            == heads_after_first
+        )
 
     engine.dispose()

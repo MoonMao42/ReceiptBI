@@ -151,9 +151,7 @@ def categorize_model_error(message: str) -> str:
         return "timeout"
     if any(token in normalized for token in ("connection", "dns", "refused", "unreachable")):
         return "connection"
-    if "invalid url" in normalized or (
-        "404" in normalized and "/chat/completions" in normalized
-    ):
+    if "invalid url" in normalized or ("404" in normalized and "/chat/completions" in normalized):
         return "model_endpoint"
     if any(
         token in normalized for token in ("404", "not found", "model_not_found", "unknown model")

@@ -217,9 +217,7 @@ async def test_delete_analysis_run_keeps_shared_conversation_and_sibling_run(
     db_session.add_all([deleted_artifact, sibling_artifact])
     await db_session.commit()
 
-    response = await client.delete(
-        f"/api/v1/projects/{project.id}/analysis-runs/{deleted_run.id}"
-    )
+    response = await client.delete(f"/api/v1/projects/{project.id}/analysis-runs/{deleted_run.id}")
 
     assert response.status_code == 200
     assert await db_session.get(Conversation, conversation_id) is not None

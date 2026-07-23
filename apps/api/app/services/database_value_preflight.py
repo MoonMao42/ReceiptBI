@@ -342,9 +342,7 @@ def run_database_value_preflight(
             for item in list(catalog_entry.get("columns") or [])
             if isinstance(item, dict) and item.get("name")
         ]
-        selected_columns = raw_columns[
-            : min(limits.max_columns_per_table, remaining_columns)
-        ]
+        selected_columns = raw_columns[: min(limits.max_columns_per_table, remaining_columns)]
         if len(selected_columns) < len(raw_columns):
             issues.append(
                 _issue(
@@ -458,9 +456,7 @@ def run_database_value_preflight(
             "relations_loaded": total_tables,
             "relations_truncated": bounded_catalog.relations_truncated,
             "unread_relations_at_least": bounded_catalog.unread_relations_at_least,
-            "columns_loaded": sum(
-                len(table.get("columns") or []) for table in catalog
-            ),
+            "columns_loaded": sum(len(table.get("columns") or []) for table in catalog),
             "columns_truncated": bounded_catalog.columns_truncated,
             "unread_columns_at_least": bounded_catalog.unread_columns_at_least,
         },
@@ -590,9 +586,7 @@ def profile_selected_database_relation(
         columns,
         rows,
         sample_truncated=(
-            query_result.truncated
-            or query_result.rows_count > limits.profile_rows
-            or byte_limited
+            query_result.truncated or query_result.rows_count > limits.profile_rows or byte_limited
         ),
         sampled_bytes=sampled_bytes,
         profile_row_limit=limits.profile_rows,
@@ -625,8 +619,7 @@ def _profile_table(
         sample_truncated=sample_truncated,
     )
     catalog_grain_signatures = {
-        tuple(str(column) for column in item.get("columns") or [])
-        for item in candidate_grain
+        tuple(str(column) for column in item.get("columns") or []) for item in candidate_grain
     }
     for column in columns:
         name = str(column["name"])
@@ -776,8 +769,7 @@ def _foreign_key_relationship_evidence(
 
     evidence: list[dict[str, Any]] = []
     table_lookup = {
-        (str(table.get("schema") or ""), str(table.get("name") or "")): table
-        for table in catalog
+        (str(table.get("schema") or ""), str(table.get("name") or "")): table for table in catalog
     }
     for table in catalog:
         if table.get("constraint_metadata_status") != "available":
@@ -791,9 +783,7 @@ def _foreign_key_relationship_evidence(
             if not isinstance(foreign_key, dict):
                 continue
             columns = [
-                str(column)
-                for column in foreign_key.get("columns") or []
-                if column is not None
+                str(column) for column in foreign_key.get("columns") or [] if column is not None
             ]
             referenced_columns = [
                 str(column)

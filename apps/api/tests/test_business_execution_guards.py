@@ -535,9 +535,7 @@ async def test_required_relationship_candidate_can_trial_and_complete_only_after
 
     join = next(item for item in runtime.deps.tool_history if item.get("kind") == "join")
     receipt = next(
-        item
-        for item in runtime.deps.tool_history
-        if item.get("kind") == "correction_application"
+        item for item in runtime.deps.tool_history if item.get("kind") == "correction_application"
     )
     assert join["candidate_relationship_key"] == relationship_key
     assert join["definition_hash"] == definition_hash
@@ -892,18 +890,14 @@ async def test_metric_formula_is_materialized_and_aggregated_with_decimal(
         for item in runtime.deps.tool_history
         if item.get("kind") == "business_rule_application"
     )
-    aggregate = next(
-        item for item in runtime.deps.tool_history if item.get("kind") == "aggregate"
-    )
+    aggregate = next(item for item in runtime.deps.tool_history if item.get("kind") == "aggregate")
     assert application["action_kind"] == "metric_formula"
     assert application["definition_hash"] == stable_payload_hash(definition)
     assert aggregate["required_metric_definition_hash"] == application["definition_hash"]
     assert aggregate["numeric_backend"] == "decimal"
     assert aggregate["decimal_aggregate_evidence"]["kind"] == "decimal_aggregate"
     formula_step = next(
-        item
-        for item in runtime.deps.replay_journal
-        if item.get("op") == "apply_confirmed_rule"
+        item for item in runtime.deps.replay_journal if item.get("op") == "apply_confirmed_rule"
     )
     assert formula_step["action"] == definition["action"]
     assert formula_step["formula_hash"] == application["formula_hash"]
@@ -1054,9 +1048,7 @@ async def test_metric_formula_checkpoint_replay_rejects_semantic_hash_drift(
     monkeypatch.setattr(
         analyst_runtime,
         "build_pydantic_model",
-        lambda _config: FunctionModel(
-            lambda _messages, _info: ModelResponse(parts=[])
-        ),
+        lambda _config: FunctionModel(lambda _messages, _info: ModelResponse(parts=[])),
     )
     monkeypatch.setattr(
         analyst_runtime,

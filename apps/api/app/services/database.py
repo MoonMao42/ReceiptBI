@@ -274,9 +274,7 @@ class DatabaseManager:
         """
 
         if not 1 <= max_rows <= MAX_DATABASE_PROFILE_SAMPLE_ROWS:
-            raise ValueError(
-                f"数据库画像单表最多读取 {MAX_DATABASE_PROFILE_SAMPLE_ROWS} 行"
-            )
+            raise ValueError(f"数据库画像单表最多读取 {MAX_DATABASE_PROFILE_SAMPLE_ROWS} 行")
         if timeout_seconds <= 0:
             raise ValueError("数据库画像查询超时必须大于 0")
         if cancellation_event is not None and cancellation_event.is_set():

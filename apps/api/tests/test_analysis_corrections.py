@@ -483,9 +483,7 @@ async def test_relationship_correction_reuses_only_one_relationship_key_from_the
     )
 
     assert response.status_code == 200, response.text
-    assert response.json()["data"]["target_key"] == (
-        "relationship_candidate:store_id:abc"
-    )
+    assert response.json()["data"]["target_key"] == ("relationship_candidate:store_id:abc")
 
 
 @pytest.mark.asyncio
@@ -561,11 +559,7 @@ async def test_project_correction_is_stable_reused_and_reversible(client: AsyncC
 
     project_id = UUID(project["id"])
     context = await load_project_context(db_session, project_id)
-    learned = [
-        item
-        for item in context.confirmed_knowledge
-        if item["key"] == "metric:revenue"
-    ]
+    learned = [item for item in context.confirmed_knowledge if item["key"] == "metric:revenue"]
     assert len(learned) == 1
     assert learned[0]["value"] == payload["text"]
 
@@ -580,10 +574,7 @@ async def test_project_correction_is_stable_reused_and_reversible(client: AsyncC
     }
 
     context_after = await load_project_context(db_session, project_id)
-    assert not any(
-        item["key"] == "metric:revenue"
-        for item in context_after.confirmed_knowledge
-    )
+    assert not any(item["key"] == "metric:revenue" for item in context_after.confirmed_knowledge)
 
 
 @pytest.mark.asyncio
@@ -622,11 +613,7 @@ async def test_project_correction_can_be_reviewed_edited_and_demoted(
     assert learned["state"] == "promoted"
 
     context = await load_project_context(db_session, UUID(project["id"]))
-    user_rules = [
-        item
-        for item in context.confirmed_knowledge
-        if item["key"] == "metric:revenue"
-    ]
+    user_rules = [item for item in context.confirmed_knowledge if item["key"] == "metric:revenue"]
     assert [item["value"] for item in user_rules] == ["收入按实付金额计算。"]
 
     demoted = await client.put(
@@ -644,10 +631,7 @@ async def test_project_correction_can_be_reviewed_edited_and_demoted(
     assert demoted.json()["data"]["semantic_entry_id"] is None
 
     context_after = await load_project_context(db_session, UUID(project["id"]))
-    assert not any(
-        item["key"] == "metric:revenue"
-        for item in context_after.confirmed_knowledge
-    )
+    assert not any(item["key"] == "metric:revenue" for item in context_after.confirmed_knowledge)
 
 
 @pytest.mark.asyncio
@@ -783,7 +767,9 @@ async def test_report_correction_reuses_the_run_canonical_business_key(
     assert [item["value"] for item in learned] == ["退款订单不计入收入。"]
 
     knowledge = await client.get(f"/api/v1/projects/{project['id']}/knowledge")
-    entry = next(item for item in knowledge.json()["data"] if item["key"] == "revenue_refund_policy")
+    entry = next(
+        item for item in knowledge.json()["data"] if item["key"] == "revenue_refund_policy"
+    )
     stopped = await client.put(
         f"/api/v1/projects/{project['id']}/knowledge/{entry['id']}",
         json={"validity": "stale", "source": "user"},
@@ -792,8 +778,7 @@ async def test_report_correction_reuses_the_run_canonical_business_key(
 
     inactive_context = await load_project_context(db_session, UUID(project["id"]))
     assert not any(
-        item["key"] == "revenue_refund_policy"
-        for item in inactive_context.confirmed_knowledge
+        item["key"] == "revenue_refund_policy" for item in inactive_context.confirmed_knowledge
     )
 
 

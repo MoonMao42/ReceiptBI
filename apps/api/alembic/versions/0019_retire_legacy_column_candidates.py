@@ -101,8 +101,7 @@ def _is_legacy_column_candidate(row: Mapping[str, Any]) -> bool:
         return False
     definition = row.get("definition")
     return definition is None or (
-        isinstance(definition, dict)
-        and definition.get("kind") in {"column_metric", "grain_key"}
+        isinstance(definition, dict) and definition.get("kind") in {"column_metric", "grain_key"}
     )
 
 
@@ -110,19 +109,12 @@ def _is_legacy_name_match_relationship(row: Mapping[str, Any]) -> bool:
     evidence = row.get("evidence")
     if not isinstance(evidence, list):
         return False
-    kinds = {
-        str(item.get("kind") or "")
-        for item in evidence
-        if isinstance(item, dict)
-    }
+    kinds = {str(item.get("kind") or "") for item in evidence if isinstance(item, dict)}
     return "matching_column_names" in kinds and "declared_foreign_key" not in kinds
 
 
 def _snapshot(row: Mapping[str, Any], updates: Mapping[str, Any]) -> dict[str, Any]:
-    snapshot = {
-        field: updates.get(field, row.get(field))
-        for field in _SNAPSHOT_FIELDS
-    }
+    snapshot = {field: updates.get(field, row.get(field)) for field in _SNAPSHOT_FIELDS}
     if snapshot.get("scope_id") is not None:
         snapshot["scope_id"] = str(snapshot["scope_id"])
     return snapshot
@@ -293,9 +285,8 @@ def upgrade() -> None:
     )
     for row in relationship_candidates:
         entry_id = _id(row["id"])
-        if (
-            entry_id in relationship_user_governed_ids
-            or not _is_legacy_name_match_relationship(row)
+        if entry_id in relationship_user_governed_ids or not _is_legacy_name_match_relationship(
+            row
         ):
             continue
         _retire_candidate(

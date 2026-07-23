@@ -153,10 +153,7 @@ def _runtime_with_truncated_sample(
             ],
         ),
     )
-    rows = [
-        {"row_number": index + 1, "quality_issue": index % 10 == 0}
-        for index in range(100)
-    ]
+    rows = [{"row_number": index + 1, "quality_issue": index % 10 == 0} for index in range(100)]
     metadata = {
         "materialized_rows": len(rows),
         "request_limit": 100,
@@ -319,10 +316,7 @@ async def test_output_validator_rejects_full_metrics_from_truncated_result(
     runtime = _runtime_with_truncated_sample(monkeypatch, model)
     with capture_run_messages() as messages:
         events = [
-            event
-            async for event in runtime.execute(
-                query="计算全部订单总额、门店排名和各门店占比"
-            )
+            event async for event in runtime.execute(query="计算全部订单总额、门店排名和各门店占比")
         ]
 
     result = next(event for event in events if event.type == SSEEventType.RESULT)
@@ -331,9 +325,8 @@ async def test_output_validator_rejects_full_metrics_from_truncated_result(
     assert result.data["report"]["status"] == "needs_data"
     assert any(
         getattr(part, "part_kind", None) == "retry-prompt"
-        and "最终结果来自被截断的数据，请先在来源查询中完成汇总" in str(
-            getattr(part, "content", "")
-        )
+        and "最终结果来自被截断的数据，请先在来源查询中完成汇总"
+        in str(getattr(part, "content", ""))
         for message in messages
         for part in message.parts
     )

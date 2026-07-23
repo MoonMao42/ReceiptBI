@@ -9,19 +9,25 @@ def test_progress_messages_follow_requested_language_and_hide_unknown_steps():
 
 
 def test_backend_messages_format_locale_specific_templates():
-    assert t(
-        "analysis.fallback_table_shape",
-        "en",
-        rows=1,
-        columns=2,
-        row_unit="row",
-        column_unit="columns",
-    ) == "The verified table contains 1 row and 2 columns."
-    assert t(
-        "analysis.fallback_table_shape",
-        "zh",
-        rows=1,
-        columns=2,
-        row_unit="row",
-        column_unit="columns",
-    ) == "已验证的表格包含 1 行、2 列。"
+    assert (
+        t(
+            "analysis.fallback_table_shape",
+            "en",
+            rows=1,
+            columns=2,
+            row_unit="row",
+            column_unit="columns",
+        )
+        == "The verified table contains 1 row and 2 columns."
+    )
+    assert (
+        t(
+            "analysis.fallback_table_shape",
+            "zh",
+            rows=1,
+            columns=2,
+            row_unit="row",
+            column_unit="columns",
+        )
+        == "已验证的表格包含 1 行、2 列。"
+    )

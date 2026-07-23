@@ -220,10 +220,7 @@ def _is_system_demo_project(row: Mapping[str, Any]) -> bool:
     ):
         return True
     origin = str(
-        extra_data.get("origin")
-        or extra_data.get("source")
-        or extra_data.get("project_kind")
-        or ""
+        extra_data.get("origin") or extra_data.get("source") or extra_data.get("project_kind") or ""
     ).casefold()
     owner = str(extra_data.get("created_by") or extra_data.get("owner") or "").casefold()
     return origin in {"demo", "sample", "system_demo", "sample_database"} and (
@@ -232,7 +229,9 @@ def _is_system_demo_project(row: Mapping[str, Any]) -> bool:
 
 
 def _delete_system_demo_project(bind: sa.Connection, project_id: object) -> None:
-    bind.execute(analysis_corrections.delete().where(analysis_corrections.c.project_id == project_id))
+    bind.execute(
+        analysis_corrections.delete().where(analysis_corrections.c.project_id == project_id)
+    )
     bind.execute(artifacts.delete().where(artifacts.c.project_id == project_id))
     bind.execute(analysis_runs.delete().where(analysis_runs.c.project_id == project_id))
     entry_ids = list(
@@ -245,9 +244,7 @@ def _delete_system_demo_project(bind: sa.Connection, project_id: object) -> None
 
     recipe_ids = list(
         bind.execute(
-            sa.select(sanitation_recipes.c.id).where(
-                sanitation_recipes.c.project_id == project_id
-            )
+            sa.select(sanitation_recipes.c.id).where(sanitation_recipes.c.project_id == project_id)
         ).scalars()
     )
     for recipe_id in recipe_ids:
@@ -267,9 +264,7 @@ def _normalized_uuid_text(value: object) -> str:
 def _evidence_references_demo(value: Any, demo_source_ids: set[str]) -> bool:
     if isinstance(value, str):
         normalized_name = value.strip().casefold()
-        if normalized_name == "sample database" or normalized_name.startswith(
-            "sample database."
-        ):
+        if normalized_name == "sample database" or normalized_name.startswith("sample database."):
             return True
         normalized = _normalized_uuid_text(value)
         return bool(normalized) and normalized in demo_source_ids
@@ -290,9 +285,7 @@ def _delete_semantic_entry_history(bind: sa.Connection, entry_id: object) -> Non
     )
     for revision_id in revision_ids:
         bind.execute(
-            semantic_entry_revisions.delete().where(
-                semantic_entry_revisions.c.id == revision_id
-            )
+            semantic_entry_revisions.delete().where(semantic_entry_revisions.c.id == revision_id)
         )
     bind.execute(semantic_entries.delete().where(semantic_entries.c.id == entry_id))
 
@@ -444,14 +437,18 @@ def _remove_demo_state(bind: sa.Connection, demo_ids: set[str]) -> None:
         ).first()
         if has_other_sources:
             continue
-        project_row = bind.execute(
-            sa.select(
-                projects.c.id,
-                projects.c.name,
-                projects.c.description,
-                projects.c.extra_data,
-            ).where(projects.c.id == project_id)
-        ).mappings().first()
+        project_row = (
+            bind.execute(
+                sa.select(
+                    projects.c.id,
+                    projects.c.name,
+                    projects.c.description,
+                    projects.c.extra_data,
+                ).where(projects.c.id == project_id)
+            )
+            .mappings()
+            .first()
+        )
         if project_row is not None and _is_system_demo_project(project_row):
             _delete_system_demo_project(bind, project_id)
 

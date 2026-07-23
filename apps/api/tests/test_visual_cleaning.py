@@ -83,9 +83,12 @@ def test_visual_cleaning_contract_accepts_only_bounded_safe_operations() -> None
     assert canonical[0]["count"] == 0
     assert canonical[1]["value"] == 0
     assert all(item["contract_version"] == 1 for item in canonical)
-    assert canonicalize_visual_sanitation_operations(
-        [{"operation": "fill_missing", "column": "amount", "value": 0.0}]
-    )[0]["value"] == 0.0
+    assert (
+        canonicalize_visual_sanitation_operations(
+            [{"operation": "fill_missing", "column": "amount", "value": 0.0}]
+        )[0]["value"]
+        == 0.0
+    )
 
     with pytest.raises(SanitationContractError):
         canonicalize_visual_sanitation_operations([{"operation": "select_sheet", "sheet": "订单"}])
@@ -116,9 +119,7 @@ def test_visual_cleaning_metadata_is_read_only_for_its_exact_recipe_head() -> No
         profile_data={
             "visual_cleaning": {
                 "active_revision_id": str(matching_revision_id),
-                "operations": [
-                    {"operation": "fill_missing", "column": "amount", "value": 0}
-                ],
+                "operations": [{"operation": "fill_missing", "column": "amount", "value": 0}],
             }
         },
     )

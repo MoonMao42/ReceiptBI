@@ -135,14 +135,10 @@ def _validate_directory_chain(
         for cursor in directories:
             cursor_stat = cursor.lstat()
             if stat.S_ISLNK(cursor_stat.st_mode) or not stat.S_ISDIR(cursor_stat.st_mode):
-                raise LegacyModelImportError(
-                    "Legacy model snapshot path cannot contain symlinks."
-                )
+                raise LegacyModelImportError("Legacy model snapshot path cannot contain symlinks.")
             if os.name != "nt" and require_private:
                 if cursor_stat.st_mode & _PRIVATE_ACCESS_MASK:
-                    raise LegacyModelImportError(
-                        "Legacy model snapshot directory is not private."
-                    )
+                    raise LegacyModelImportError("Legacy model snapshot directory is not private.")
                 if hasattr(os, "getuid") and cursor_stat.st_uid != os.getuid():
                     raise LegacyModelImportError(
                         "Legacy model snapshot directory has an unsafe owner."
@@ -204,9 +200,8 @@ def _is_snapshot_temporary_name(name: str, snapshot_name: str) -> bool:
     if not name.startswith(prefix) or not name.endswith(_TEMPORARY_SUFFIX):
         return False
     random_name = name[len(prefix) : -len(_TEMPORARY_SUFFIX)]
-    return (
-        len(random_name) == _TEMPORARY_NAME_LENGTH
-        and set(random_name).issubset(_TEMPORARY_NAME_CHARACTERS)
+    return len(random_name) == _TEMPORARY_NAME_LENGTH and set(random_name).issubset(
+        _TEMPORARY_NAME_CHARACTERS
     )
 
 
@@ -299,7 +294,9 @@ def _validate_standalone_snapshot(snapshot_path: Path, *, allowed_root: Path) ->
             journal_mode = connection.execute("PRAGMA journal_mode").fetchone()
             quick_check = connection.execute("PRAGMA quick_check").fetchall()
     except sqlite3.Error:
-        raise LegacyModelImportError("Legacy model snapshot is not a valid SQLite database.") from None
+        raise LegacyModelImportError(
+            "Legacy model snapshot is not a valid SQLite database."
+        ) from None
 
     if not journal_mode or str(journal_mode[0]).lower() != "delete":
         raise LegacyModelImportError("Legacy model snapshot is not standalone.")
@@ -398,9 +395,7 @@ def _cleanup_temporary_snapshot(temporary: Path) -> None:
 def _create_online_snapshot(source_path: Path, temporary: Path) -> None:
     try:
         with closing(_open_source_read_only(source_path)) as source:
-            with closing(
-                sqlite3.connect(f"{temporary.as_uri()}?mode=rw", uri=True)
-            ) as destination:
+            with closing(sqlite3.connect(f"{temporary.as_uri()}?mode=rw", uri=True)) as destination:
                 source.backup(destination, pages=256, sleep=0.05)
                 journal_mode = destination.execute("PRAGMA journal_mode = DELETE").fetchone()
                 if not journal_mode or str(journal_mode[0]).lower() != "delete":
@@ -415,9 +410,7 @@ def _create_online_snapshot(source_path: Path, temporary: Path) -> None:
     except LegacyModelImportError:
         raise
     except (OSError, sqlite3.Error):
-        raise LegacyModelImportError(
-            "Legacy model snapshot could not be created safely."
-        ) from None
+        raise LegacyModelImportError("Legacy model snapshot could not be created safely.") from None
 
 
 def prepare_legacy_model_snapshot(

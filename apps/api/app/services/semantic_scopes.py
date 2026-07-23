@@ -69,8 +69,7 @@ def _is_pending_file_replacement(source: ProjectDataSource) -> bool:
     issues = profile.get("issues")
     return isinstance(issues, list) and any(
         isinstance(item, Mapping)
-        and str(item.get("code") or "")
-        in {"recipe_replay_drift", "recipe_input_changed"}
+        and str(item.get("code") or "") in {"recipe_replay_drift", "recipe_input_changed"}
         for item in issues
     )
 
@@ -154,15 +153,11 @@ def _table_candidates(source: ProjectDataSource) -> list[dict[str, Any]]:
             **previous,
             **table,
             "description": (
-                table.get("description")
-                or table.get("comment")
-                or previous.get("description")
+                table.get("description") or table.get("comment") or previous.get("description")
             ),
             "columns": list(table.get("columns") or previous.get("columns") or []),
             "profile_status": (
-                "profiled"
-                if table.get("columns") or previous.get("columns")
-                else "catalog_only"
+                "profiled" if table.get("columns") or previous.get("columns") else "catalog_only"
             ),
         }
     return [merged[key] for key in order]
@@ -215,8 +210,7 @@ def _time_roles(
         item
         for item in (profile.get("preanalysis") or {}).get("tables") or []
         if isinstance(item, Mapping)
-        and _normalized(str(item.get("table") or item.get("name") or ""))
-        == _normalized(table_name)
+        and _normalized(str(item.get("table") or item.get("name") or "")) == _normalized(table_name)
     ]
     if len(portraits) != 1:
         return []
@@ -291,9 +285,7 @@ def _temporal_context_facts(
     month = facts.get("month")
     period = f"{year} 年{f' {month} 月' if month else ''}"
     topic = str(facts.get("business_topic") or "").strip()
-    facts["period_label"] = (
-        f"{period}{topic}数据" if topic else f"{period}数据 · 业务主题待确认"
-    )
+    facts["period_label"] = f"{period}{topic}数据" if topic else f"{period}数据 · 业务主题待确认"
     return facts
 
 
@@ -305,9 +297,7 @@ def _resolve_table(source: ProjectDataSource, requested: str) -> dict[str, Any]:
         if requested_key in {_normalized(name) for name in _table_names(table)}
     ]
     if len(matches) != 1:
-        raise SemanticScopeResolutionError(
-            f"数据源“{source.name}”中无法唯一确认表“{requested}”"
-        )
+        raise SemanticScopeResolutionError(f"数据源“{source.name}”中无法唯一确认表“{requested}”")
     return matches[0]
 
 
@@ -401,10 +391,7 @@ def resolve_definition_scope(
         resolved.append((source, _canonical_table_name(table)))
 
     source_ids = {source.id for source, _table in resolved}
-    table_keys = {
-        (source.id, _normalized(table_or_view))
-        for source, table_or_view in resolved
-    }
+    table_keys = {(source.id, _normalized(table_or_view)) for source, table_or_view in resolved}
     if len(source_ids) == 1 and len(table_keys) == 1:
         source, table_or_view = resolved[0]
         return ResolvedDefinitionScope(
@@ -494,7 +481,9 @@ async def ensure_source_scope(
         "status": source.status,
         **_temporal_context_facts(source),
     }
-    description = _source_description(source) or str(facts.get("period_label") or "").strip() or None
+    description = (
+        _source_description(source) or str(facts.get("period_label") or "").strip() or None
+    )
     if node is None:
         node = SemanticScopeNode(
             project_id=root.project_id,
@@ -549,14 +538,11 @@ async def ensure_table_scope(
         "schema": table.get("schema"),
         "table_kind": table.get("kind"),
         "column_count": len(table.get("columns") or []),
-        "profile_status": table.get("profile_status") or (
-            "profiled" if table.get("columns") else "catalog_only"
-        ),
+        "profile_status": table.get("profile_status")
+        or ("profiled" if table.get("columns") else "catalog_only"),
         **_temporal_context_facts(source, table),
     }
-    business_name = str(
-        table.get("business_name") or table.get("name") or table_or_view
-    ).strip()
+    business_name = str(table.get("business_name") or table.get("name") or table_or_view).strip()
     description = (
         str(table.get("description") or "").strip()
         or str(facts.get("period_label") or "").strip()
@@ -681,9 +667,7 @@ async def ensure_semantic_scope_tree(
                 # sources.  Ambiguous sources receive no scope node and their
                 # semantic definitions remain non-executable with diagnostics.
                 continue
-            raise SemanticScopeResolutionError(
-                "当前数据源的逻辑名称缺失或重复，不能猜测层级作用域"
-            )
+            raise SemanticScopeResolutionError("当前数据源的逻辑名称缺失或重复，不能猜测层级作用域")
         source_node = await ensure_source_scope(db, root, source)
         active_keys.add(source_node.stable_key)
         tables = _table_candidates(source)
@@ -733,8 +717,7 @@ async def _node_for_resolved_scope(
             node
             for node in nodes
             if node.kind == "source"
-            and str((node.context_facts or {}).get("source_id") or "")
-            == str(resolved.source.id)
+            and str((node.context_facts or {}).get("source_id") or "") == str(resolved.source.id)
         ]
     elif (
         resolved.kind == "table"
@@ -745,10 +728,8 @@ async def _node_for_resolved_scope(
             node
             for node in nodes
             if node.kind == "table"
-            and str((node.context_facts or {}).get("source_id") or "")
-            == str(resolved.source.id)
-            and _normalized(str(node.table_or_view or ""))
-            == _normalized(resolved.table_or_view)
+            and str((node.context_facts or {}).get("source_id") or "") == str(resolved.source.id)
+            and _normalized(str(node.table_or_view or "")) == _normalized(resolved.table_or_view)
         ]
     else:
         matches = []
@@ -778,9 +759,7 @@ async def resolve_semantic_entry_scope(
             if requested_scope_id is not None
             else None
         )
-        if requested_scope_id is not None and (
-            requested is None or requested.kind != "project"
-        ):
+        if requested_scope_id is not None and (requested is None or requested.kind != "project"):
             raise SemanticScopeResolutionError(
                 "尚未匹配到当前物理数据的候选定义只能暂存在项目根作用域"
             )
@@ -834,10 +813,7 @@ def semantic_scope_path_from_nodes(
         current = by_id.get(current.parent_id) if current.parent_id else None
     if not path or path[-1].kind != "project":
         raise SemanticScopeResolutionError("语义作用域缺少项目根节点")
-    return [
-        SemanticScopePathItem.model_validate(item)
-        for item in reversed(path)
-    ]
+    return [SemanticScopePathItem.model_validate(item) for item in reversed(path)]
 
 
 async def semantic_scope_path(
@@ -891,9 +867,7 @@ async def reconcile_unscoped_semantic_entries(
         project_id,
         tolerate_ambiguous_sources=tolerate_ambiguous_sources,
     )
-    root = next(
-        node for node in nodes if node.kind == "project" and node.parent_id is None
-    )
+    root = next(node for node in nodes if node.kind == "project" and node.parent_id is None)
     sources = await _current_sources(db, project_id)
     result = await db.execute(
         select(SemanticEntry)
@@ -901,10 +875,7 @@ async def reconcile_unscoped_semantic_entries(
             SemanticEntry.project_id == project_id,
             or_(
                 SemanticEntry.scope_id.is_(None),
-                (
-                    (SemanticEntry.scope_id == root.id)
-                    & (SemanticEntry.state == "candidate")
-                ),
+                ((SemanticEntry.scope_id == root.id) & (SemanticEntry.state == "candidate")),
             ),
         )
         .order_by(SemanticEntry.id)
@@ -1032,5 +1003,7 @@ def semantic_scope_runtime_payload(
         "scope_source_logical_name": node.source_logical_name,
         "scope_table_or_view": node.table_or_view,
         "scope_context_facts": dict(node.context_facts or {}),
-        "scope_path": [item.model_dump(mode="json") for item in semantic_scope_path_from_nodes(node, nodes)],
+        "scope_path": [
+            item.model_dump(mode="json") for item in semantic_scope_path_from_nodes(node, nodes)
+        ],
     }

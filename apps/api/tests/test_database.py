@@ -261,9 +261,7 @@ class TestSQLiteManager:
                 conn.execute("INSERT INTO events VALUES (2)")
 
         missing = tmp_path / "missing.db"
-        missing_manager = DatabaseManager(
-            DatabaseConfig(driver="sqlite", database=str(missing))
-        )
+        missing_manager = DatabaseManager(DatabaseConfig(driver="sqlite", database=str(missing)))
         with pytest.raises(FileNotFoundError, match="does not exist"):
             with missing_manager.connect():
                 pass

@@ -474,8 +474,7 @@ async def prepare_standing_run(
                 "state": "needs_attention",
                 "attention_reason": attention,
                 "attention_reason_code": (
-                    input_state.attention_reason_code
-                    or "standing_project_input_unavailable"
+                    input_state.attention_reason_code or "standing_project_input_unavailable"
                 ),
                 "attention_reason_params": input_state.attention_reason_params or {},
                 "in_flight": None,

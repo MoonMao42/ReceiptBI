@@ -247,6 +247,7 @@ _LEGACY_SEED_METADATA: Final[sa.MetaData] = _legacy_seed_metadata()
 def _create_legacy_seed_tables(connection: Connection) -> None:
     _LEGACY_SEED_METADATA.create_all(connection)
 
+
 _GENERATIONS: Final[tuple[SchemaGeneration, ...]] = (
     SchemaGeneration(
         revision="0002_zero_config_analyst",
@@ -392,9 +393,7 @@ _GENERATIONS: Final[tuple[SchemaGeneration, ...]] = (
     ),
     SchemaGeneration(
         revision="0015_editable_reports",
-        required_tables=frozenset(
-            {"report_documents", "report_pages", "report_blocks"}
-        ),
+        required_tables=frozenset({"report_documents", "report_pages", "report_blocks"}),
         required_columns=(
             (
                 "report_documents",
@@ -444,9 +443,7 @@ _GENERATIONS: Final[tuple[SchemaGeneration, ...]] = (
     ),
     SchemaGeneration(
         revision="0017_semantic_validation_jobs",
-        required_tables=frozenset(
-            {"semantic_validation_jobs", "semantic_validation_job_items"}
-        ),
+        required_tables=frozenset({"semantic_validation_jobs", "semantic_validation_job_items"}),
         required_columns=(
             (
                 "semantic_entries",
@@ -509,9 +506,7 @@ _GENERATIONS: Final[tuple[SchemaGeneration, ...]] = (
     ),
     SchemaGeneration(
         revision="0021_semantic_inventory_jobs",
-        required_tables=frozenset(
-            {"semantic_inventory_jobs", "semantic_inventory_job_items"}
-        ),
+        required_tables=frozenset({"semantic_inventory_jobs", "semantic_inventory_job_items"}),
         required_columns=(
             (
                 "semantic_inventory_jobs",
@@ -661,9 +656,7 @@ def _infer_revision(schema: dict[str, frozenset[str]]) -> str:
     retired_tables = set(_RETIRED_LEGACY_TABLE_COLUMNS)
     present_retired = set(schema) & retired_tables
     if present_retired not in (set(), retired_tables):
-        raise UnsafeLocalSchemaError(
-            "本地数据库包含部分退役设置表，拒绝猜测迁移版本"
-        )
+        raise UnsafeLocalSchemaError("本地数据库包含部分退役设置表，拒绝猜测迁移版本")
     for table in present_retired:
         missing_columns = _RETIRED_LEGACY_TABLE_COLUMNS[table] - schema[table]
         if missing_columns:
@@ -793,14 +786,10 @@ async def migrate_local_sqlite_to_head(
         try:
             migrated_to = await connection.run_sync(_bootstrap_sync, location)
             await connection.commit()
-            violations = (
-                await connection.exec_driver_sql("PRAGMA foreign_key_check")
-            ).all()
+            violations = (await connection.exec_driver_sql("PRAGMA foreign_key_check")).all()
             await connection.commit()
             if violations:
-                raise UnsafeLocalSchemaError(
-                    "数据库迁移后存在失效的关联，拒绝启动"
-                )
+                raise UnsafeLocalSchemaError("数据库迁移后存在失效的关联，拒绝启动")
             return migrated_to
         finally:
             if connection.in_transaction():

@@ -8,9 +8,7 @@ from pathlib import Path
 from app.core.config import get_settings
 
 
-def test_desktop_env_file_is_loaded_from_explicit_runtime_path(
-    tmp_path: Path, monkeypatch
-):
+def test_desktop_env_file_is_loaded_from_explicit_runtime_path(tmp_path: Path, monkeypatch):
     encryption_key = base64.urlsafe_b64encode(b"q" * 32).decode()
     env_file = tmp_path / "desktop.env"
     env_file.write_text(

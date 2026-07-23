@@ -117,9 +117,7 @@ async def delete_conversation(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="对话不存在")
 
     run_ids = select(AnalysisRun.id).where(AnalysisRun.conversation_id == conversation_id)
-    await db.execute(
-        delete(ArtifactRecord).where(ArtifactRecord.analysis_run_id.in_(run_ids))
-    )
+    await db.execute(delete(ArtifactRecord).where(ArtifactRecord.analysis_run_id.in_(run_ids)))
     await db.execute(delete(AnalysisRun).where(AnalysisRun.conversation_id == conversation_id))
     await db.delete(conversation)
     await db.commit()

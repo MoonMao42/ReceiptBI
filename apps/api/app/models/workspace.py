@@ -206,9 +206,9 @@ class DimensionDefinition(BaseModel):
         max_length=5,
         exclude_if=lambda value: not value,
     )
-    time_granularities: list[
-        Literal["year", "quarter", "month", "week", "day"]
-    ] = Field(default_factory=list, max_length=5)
+    time_granularities: list[Literal["year", "quarter", "month", "week", "day"]] = Field(
+        default_factory=list, max_length=5
+    )
     timezone: str | None = Field(default=None, min_length=1, max_length=100)
 
     @model_validator(mode="after")
@@ -981,12 +981,8 @@ SemanticInventoryJobStatus = Literal[
     "cancelled",
     "failed",
 ]
-SemanticInventoryItemStatus = Literal[
-    "queued", "running", "succeeded", "failed", "cancelled"
-]
-SemanticInventoryItemPhase = Literal[
-    "structure", "sample", "recommend", "complete"
-]
+SemanticInventoryItemStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
+SemanticInventoryItemPhase = Literal["structure", "sample", "recommend", "complete"]
 SemanticInventoryTableName = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=512),
@@ -1057,9 +1053,7 @@ class SemanticInventoryJobResponse(BaseModel):
     candidate_count: int = Field(default=0, ge=0)
     reviewable_count: int = Field(default=0, ge=0)
     next_review_item: SemanticInventoryJobItemResponse | None = None
-    failed_item_preview: list[SemanticInventoryJobItemResponse] = Field(
-        default_factory=list
-    )
+    failed_item_preview: list[SemanticInventoryJobItemResponse] = Field(default_factory=list)
     tables: list[str] = Field(default_factory=list)
     progress: SemanticInventoryJobProgress
     items: list[SemanticInventoryJobItemResponse] = Field(default_factory=list)
@@ -1083,9 +1077,7 @@ class SemanticInventoryJobItemPageResponse(BaseModel):
 
 
 SemanticValidationJobStatus = Literal["queued", "running", "completed", "failed"]
-SemanticValidationItemStatus = Literal[
-    "queued", "running", "verified", "blocked", "failed"
-]
+SemanticValidationItemStatus = Literal["queued", "running", "verified", "blocked", "failed"]
 
 
 class SemanticValidationProgress(BaseModel):
@@ -1776,10 +1768,7 @@ class StandingAnalysisResponse(BaseModel):
         if self.attention_reason_code is None and self.attention_reason_params:
             raise ValueError("attention reason params require a reason code")
         if any(
-            not key.strip()
-            or len(key) > 80
-            or not value.strip()
-            or len(value) > 255
+            not key.strip() or len(key) > 80 or not value.strip() or len(value) > 255
             for key, value in self.attention_reason_params.items()
         ):
             raise ValueError("attention reason params must be non-empty and bounded")

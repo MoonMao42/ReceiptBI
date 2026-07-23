@@ -55,9 +55,13 @@ def _fingerprint_from_contract(contract: dict[str, Any], *, label: str) -> str |
 
 
 def _is_sqlite_busy(db: AsyncSession, exc: OperationalError) -> bool:
-    return db.bind is not None and db.bind.dialect.name == "sqlite" and any(
-        marker in str(exc).casefold()
-        for marker in ("database is locked", "database table is locked", "sqlite_busy")
+    return (
+        db.bind is not None
+        and db.bind.dialect.name == "sqlite"
+        and any(
+            marker in str(exc).casefold()
+            for marker in ("database is locked", "database table is locked", "sqlite_busy")
+        )
     )
 
 

@@ -67,9 +67,7 @@ def _file_source(path: Path) -> dict:
 
 def _table_scope_fields(source: dict, *, scope_id: str = "scope:table") -> dict:
     logical_name = str(
-        (source.get("profile") or {}).get("logical_name")
-        or source.get("name")
-        or ""
+        (source.get("profile") or {}).get("logical_name") or source.get("name") or ""
     )
     if source.get("kind") == "file":
         table_or_view = logical_name
@@ -174,9 +172,7 @@ async def test_source_then_table_semantics_expose_ancestors_without_sibling_entr
         "business_name": "销售项目",
         "description": "项目级通用口径。",
         "context_facts": {},
-        "path": [
-            {"id": "scope:project", "kind": "project", "business_name": "销售项目"}
-        ],
+        "path": [{"id": "scope:project", "kind": "project", "business_name": "销售项目"}],
     }
     source_scope = {
         "id": "scope:source",
@@ -275,13 +271,10 @@ async def test_source_then_table_semantics_expose_ancestors_without_sibling_entr
                 for message in messages
                 if isinstance(message, ModelRequest)
                 for part in message.parts
-                if isinstance(part, ToolReturnPart)
-                and part.tool_name == "inspect_source_semantics"
+                if isinstance(part, ToolReturnPart) and part.tool_name == "inspect_source_semantics"
             )
             assert isinstance(returned.content, dict)
-            assert [item["id"] for item in returned.content["semantics"]] == [
-                "semantic:source"
-            ]
+            assert [item["id"] for item in returned.content["semantics"]] == ["semantic:source"]
             assert {item["table_or_view"] for item in returned.content["tables"]} == {
                 "main.sales_2024",
                 "main.customers",
@@ -300,13 +293,10 @@ async def test_source_then_table_semantics_expose_ancestors_without_sibling_entr
                 for message in messages
                 if isinstance(message, ModelRequest)
                 for part in message.parts
-                if isinstance(part, ToolReturnPart)
-                and part.tool_name == "inspect_table_semantics"
+                if isinstance(part, ToolReturnPart) and part.tool_name == "inspect_table_semantics"
             )
             assert isinstance(returned.content, dict)
-            assert [item["id"] for item in returned.content["semantics"]] == [
-                "semantic:sales"
-            ]
+            assert [item["id"] for item in returned.content["semantics"]] == ["semantic:sales"]
             assert returned.content["ancestor_context"][-1]["description"] == (
                 "包含各年度销售与客户资料。"
             )
@@ -373,9 +363,7 @@ def test_structured_query_compiles_real_schema_and_executes_file(tmp_path: Path)
         sort=[StructuredQuerySort(field="销售额", direction="desc")],
         limit=100,
     )
-    rows, truncated, available = _query_project_file_rows(
-        [source], sql, tmp_path / "project"
-    )
+    rows, truncated, available = _query_project_file_rows([source], sql, tmp_path / "project")
 
     assert plan["table"] == "online_orders"
     assert plan["table_or_view"] == "online_orders"
@@ -810,9 +798,7 @@ def test_structured_query_rejects_unsafe_mysql_literals(unsafe_value: str):
             table=None,
             dimensions=["store_name"],
             metrics=[],
-            filters=[
-                StructuredQueryFilter(column="store_name", operator="eq", value=unsafe_value)
-            ],
+            filters=[StructuredQueryFilter(column="store_name", operator="eq", value=unsafe_value)],
             sort=[],
             limit=50,
         )
@@ -919,9 +905,7 @@ async def test_agent_structured_query_is_executed_validated_and_bound_to_report(
                                     "alias": "销售额",
                                 }
                             ],
-                            "filters": [
-                                {"column": "退款状态", "operator": "eq", "value": "否"}
-                            ],
+                            "filters": [{"column": "退款状态", "operator": "eq", "value": "否"}],
                             "sort": [{"field": "销售额", "direction": "desc"}],
                             "limit": 100,
                         },
@@ -982,9 +966,7 @@ async def test_agent_structured_query_is_executed_validated_and_bound_to_report(
         "structured_query",
         "validation",
     ]
-    assert runtime.deps.dataframes["category_sales"] == [
-        {"商品品类": "办公用品", "销售额": 62.0}
-    ]
+    assert runtime.deps.dataframes["category_sales"] == [{"商品品类": "办公用品", "销售额": 62.0}]
     assert runtime.deps.replay_journal[0]["op"] == "query_source_data"
     assert runtime.deps.result_metadata["category_sales"]["source_id"] == "orders-source"
     assert runtime.deps.result_metadata["category_sales"]["table_or_view"] == "online_orders"
@@ -1001,6 +983,7 @@ async def test_agent_structured_query_is_executed_validated_and_bound_to_report(
     assert result.data["report"]["visualization"]["data"] == [
         {"商品品类": "办公用品", "销售额": 62.0}
     ]
+
 
 @pytest.mark.asyncio
 async def test_confirmed_verified_aggregate_metric_is_server_bound_and_receipted(
@@ -1055,9 +1038,7 @@ async def test_confirmed_verified_aggregate_metric_is_server_bound_and_receipted
             "synonyms": ["不应出现在订单表"],
         },
     }
-    sibling_knowledge["definition_hash"] = stable_payload_hash(
-        sibling_knowledge["definition"]
-    )
+    sibling_knowledge["definition_hash"] = stable_payload_hash(sibling_knowledge["definition"])
     scope_receipt = "scope-receipt-paid-amount"
     calls = 0
     opened_semantics: list[dict] = []
@@ -1080,8 +1061,7 @@ async def test_confirmed_verified_aggregate_metric_is_server_bound_and_receipted
                 for message in messages
                 if isinstance(message, ModelRequest)
                 for part in message.parts
-                if isinstance(part, ToolReturnPart)
-                and part.tool_name == "inspect_table_semantics"
+                if isinstance(part, ToolReturnPart) and part.tool_name == "inspect_table_semantics"
             )
             assert isinstance(tool_return.content, dict)
             opened_semantics.extend(tool_return.content["semantics"])
@@ -1164,12 +1144,13 @@ async def test_confirmed_verified_aggregate_metric_is_server_bound_and_receipted
         "实际支付金额",
     ]
     assert runtime.deps.tool_history[1]["semantic_metric"] == receipt
-    assert runtime.deps.result_metadata["paid_amount"]["semantic_scope_receipt"][
-        "receipt"
-    ] == scope_receipt
-    scope_context = runtime.deps.result_metadata["paid_amount"][
-        "semantic_scope_receipt"
-    ]["scope_context_facts"]
+    assert (
+        runtime.deps.result_metadata["paid_amount"]["semantic_scope_receipt"]["receipt"]
+        == scope_receipt
+    )
+    scope_context = runtime.deps.result_metadata["paid_amount"]["semantic_scope_receipt"][
+        "scope_context_facts"
+    ]
     assert scope_context == {
         "year": 2024,
         "period_evidence": "preanalysis_time_range",
@@ -1177,9 +1158,10 @@ async def test_confirmed_verified_aggregate_metric_is_server_bound_and_receipted
         "business_topic_status": "explicit",
     }
     assert runtime.deps.tool_history[0]["scope_context_facts"] == scope_context
-    assert runtime.deps.replay_journal[0]["semantic_scope_receipt"][
-        "scope_context_facts"
-    ] == scope_context
+    assert (
+        runtime.deps.replay_journal[0]["semantic_scope_receipt"]["scope_context_facts"]
+        == scope_context
+    )
     assert runtime.deps.replay_journal[0]["semantic_metric"] == receipt
 
 
@@ -1221,9 +1203,7 @@ def test_aggregate_metric_binding_rejects_unconfirmed_or_unverified_definition(
 
 def test_confirmed_time_dimension_compiles_year_as_half_open_range():
     source = _file_source(Path("orders.parquet"))
-    source["profile"]["schema"]["columns"].append(
-        {"name": "下单日期", "dtype": "datetime64[us]"}
-    )
+    source["profile"]["schema"]["columns"].append({"name": "下单日期", "dtype": "datetime64[us]"})
     binding = stable_field_binding_candidates(source, "下单日期")[0]
     definition = {
         "version": 1,
@@ -1462,9 +1442,7 @@ async def test_confirmed_year_department_and_sales_semantics_execute_together(
         {"部门": "华北部", metric_alias: 8.0},
     ]
     metadata = runtime.deps.result_metadata["department_sales_2023"]
-    assert [item["dimension_key"] for item in metadata["semantic_dimensions"]] == [
-        department_key
-    ]
+    assert [item["dimension_key"] for item in metadata["semantic_dimensions"]] == [department_key]
     assert metadata["semantic_dimension_filters"][0]["dimension_key"] == date_key
     assert metadata["semantic_dimension_filters"][0]["operator"] == "year_eq"
     assert metadata["semantic_metric"]["metric_key"] == metric_key
@@ -1577,8 +1555,8 @@ async def test_confirmed_derived_metric_uses_governed_formula_with_year_and_depa
         sources=[source],
         confirmed_knowledge=knowledge,
     )
-    _resolved_entry, _resolved_source, _metric, receipt = (
-        _resolve_confirmed_derived_metric(context, profit_key)
+    _resolved_entry, _resolved_source, _metric, receipt = _resolve_confirmed_derived_metric(
+        context, profit_key
     )
     assert receipt["formula_hash"] == stable_payload_hash(formula)
     metric_alias = receipt["output_alias"]

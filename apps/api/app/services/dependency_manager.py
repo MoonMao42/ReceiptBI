@@ -103,9 +103,7 @@ def _requirement_name(requirement: str) -> str:
     return _canonical_package_name(match.group(1))
 
 
-def _embedded_pip_worker(
-    connection: Any, arguments: list[str], extra_paths: list[str]
-) -> None:
+def _embedded_pip_worker(connection: Any, arguments: list[str], extra_paths: list[str]) -> None:
     """Run bundled pip outside the API process so it can be terminated."""
 
     try:
@@ -210,9 +208,7 @@ class ProjectDependencyManager:
         if self.manifest_path.exists():
             try:
                 return list(
-                    json.loads(self.manifest_path.read_text(encoding="utf-8")).get(
-                        "requested", []
-                    )
+                    json.loads(self.manifest_path.read_text(encoding="utf-8")).get("requested", [])
                 )
             except (OSError, ValueError, TypeError):
                 pass
@@ -353,18 +349,14 @@ class ProjectDependencyManager:
                 key=str.lower,
             )
             if source_only:
-                raise RuntimeError(
-                    f"桌面版只允许安装预编译 wheel：{', '.join(source_only)}"
-                )
+                raise RuntimeError(f"桌面版只允许安装预编译 wheel：{', '.join(source_only)}")
 
     @staticmethod
     def _distribution_import_names(distribution: Distribution) -> list[str]:
         candidates: set[str] = set()
         top_level = distribution.read_text("top_level.txt") or ""
         candidates.update(
-            line.strip()
-            for line in top_level.splitlines()
-            if line.strip().isidentifier()
+            line.strip() for line in top_level.splitlines() if line.strip().isidentifier()
         )
         if not candidates:
             for file in distribution.files or ():
@@ -498,14 +490,10 @@ class ProjectDependencyManager:
             return await self._install_with_embedded_pip(
                 arguments, timeout, extra_paths=extra_paths
             )
-        return await self._install_with_subprocess(
-            arguments, timeout, extra_paths=extra_paths
-        )
+        return await self._install_with_subprocess(arguments, timeout, extra_paths=extra_paths)
 
     @classmethod
-    async def _smoke_test(
-        cls, target: Path, packages: list[str], timeout: float = 30
-    ) -> None:
+    async def _smoke_test(cls, target: Path, packages: list[str], timeout: float = 30) -> None:
         modules = cls._discover_import_names(target, packages)
         result = await cls._run_spawned_worker(
             _import_smoke_worker,

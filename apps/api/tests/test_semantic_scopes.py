@@ -205,10 +205,7 @@ async def test_relation_index_builds_all_table_scopes_and_catalog_only_recommend
         status="ready",
         profile_data={
             "logical_name": "完整经营仓库",
-            "tables": [
-                {**relations[index], "columns": _columns()}
-                for index in range(2)
-            ],
+            "tables": [{**relations[index], "columns": _columns()} for index in range(2)],
             "preanalysis": {
                 "relation_index": {
                     "relations": relations,
@@ -226,9 +223,7 @@ async def test_relation_index_builds_all_table_scopes_and_catalog_only_recommend
     nodes = await ensure_semantic_scope_tree(db_session, project.id)
     table_nodes = [node for node in nodes if node.kind == "table" and node.is_active]
     assert len(table_nodes) == 87
-    catalog_only = next(
-        node for node in table_nodes if node.table_or_view == "main.table_086"
-    )
+    catalog_only = next(node for node in table_nodes if node.table_or_view == "main.table_086")
     assert catalog_only.context_facts["profile_status"] == "catalog_only"
     assert catalog_only.context_facts["column_count"] == 0
 
@@ -246,9 +241,7 @@ async def test_relation_index_builds_all_table_scopes_and_catalog_only_recommend
         "scope_presentation",
         "scope_presentation",
     ]
-    table_presentation = next(
-        item for item in items if item["definition"]["scope_kind"] == "table"
-    )
+    table_presentation = next(item for item in items if item["definition"]["scope_kind"] == "table")
     assert "确认后可继续完善" in table_presentation["definition"]["description"]
     assert "字段尚未画像" not in table_presentation["definition"]["description"]
     assert table_presentation["scope_path"][-1]["table_or_view"] == "main.table_086"
@@ -288,9 +281,10 @@ async def test_same_name_tables_keep_separate_schema_scopes(
     await db_session.flush()
 
     nodes = await ensure_semantic_scope_tree(db_session, project.id)
-    assert {
-        node.table_or_view for node in nodes if node.kind == "table" and node.is_active
-    } == {"public.orders", "archive.orders"}
+    assert {node.table_or_view for node in nodes if node.kind == "table" and node.is_active} == {
+        "public.orders",
+        "archive.orders",
+    }
 
     resolved = resolve_definition_scope(
         [source],
@@ -334,10 +328,7 @@ async def test_relation_index_refresh_expands_scopes_without_replacing_confirmed
         profile_data={
             "logical_name": "经营仓库",
             "profile_marker": "keep-me",
-            "tables": [
-                {**relations[index], "columns": _columns()}
-                for index in range(24)
-            ],
+            "tables": [{**relations[index], "columns": _columns()} for index in range(24)],
             "preanalysis": {
                 "shape": {"tables": 24, "profiled_tables": 24},
                 "candidate_roles": [{"column": "amount", "role": "measure"}],
@@ -349,9 +340,7 @@ async def test_relation_index_refresh_expands_scopes_without_replacing_confirmed
 
     initial_scopes = await client.get(f"/api/v1/projects/{project.id}/semantic-scopes")
     assert initial_scopes.status_code == 200, initial_scopes.text
-    initial_tables = [
-        item for item in initial_scopes.json()["data"] if item["kind"] == "table"
-    ]
+    initial_tables = [item for item in initial_scopes.json()["data"] if item["kind"] == "table"]
     assert len(initial_tables) == 24
     original_target = next(
         item for item in initial_tables if item["table_or_view"] == "main.table_005"
@@ -434,18 +423,13 @@ async def test_relation_index_refresh_expands_scopes_without_replacing_confirmed
     }
     assert source.profile_data["relation_index"] == refreshed_payload["relation_index"]
     assert (
-        source.profile_data["preanalysis"]["relation_index"]
-        == refreshed_payload["relation_index"]
+        source.profile_data["preanalysis"]["relation_index"] == refreshed_payload["relation_index"]
     )
 
     ensured_nodes = await ensure_semantic_scope_tree(db_session, project.id)
-    ensured_tables = [
-        node for node in ensured_nodes if node.kind == "table" and node.is_active
-    ]
+    ensured_tables = [node for node in ensured_nodes if node.kind == "table" and node.is_active]
     assert len(ensured_tables) == 87
-    ensured_target = next(
-        node for node in ensured_tables if node.table_or_view == "main.table_005"
-    )
+    ensured_target = next(node for node in ensured_tables if node.table_or_view == "main.table_005")
     assert str(ensured_target.id) == original_target["id"]
     assert ensured_target.business_name == "已确认销售表"
     assert ensured_target.description == "经过人工确认的销售业务范围。"
@@ -453,9 +437,7 @@ async def test_relation_index_refresh_expands_scopes_without_replacing_confirmed
 
     listed_scopes = await client.get(f"/api/v1/projects/{project.id}/semantic-scopes")
     assert listed_scopes.status_code == 200, listed_scopes.text
-    listed_tables = [
-        item for item in listed_scopes.json()["data"] if item["kind"] == "table"
-    ]
+    listed_tables = [item for item in listed_scopes.json()["data"] if item["kind"] == "table"]
     assert len(listed_tables) == 87
     listed_target = next(
         item for item in listed_tables if item["table_or_view"] == "main.table_005"
@@ -464,9 +446,7 @@ async def test_relation_index_refresh_expands_scopes_without_replacing_confirmed
     assert listed_target["business_name"] == "已确认销售表"
     assert listed_target["synonyms"] == ["table_005", "销售明细"]
     assert listed_target["direct_entry_count"] == 2
-    catalog_only = next(
-        item for item in listed_tables if item["table_or_view"] == "main.table_086"
-    )
+    catalog_only = next(item for item in listed_tables if item["table_or_view"] == "main.table_086")
     assert catalog_only["context_facts"]["profile_status"] == "catalog_only"
 
 
@@ -510,8 +490,7 @@ async def test_adopted_scope_presentation_overlays_scope_without_execution_valid
     unchanged_scope = next(
         item
         for item in before_adoption.json()["data"]
-        if item["kind"] == "table"
-        and item["table_or_view"] == "catalog_items_2024"
+        if item["kind"] == "table" and item["table_or_view"] == "catalog_items_2024"
     )
     assert unchanged_scope["business_name"] == "catalog_items_2024"
 
@@ -552,8 +531,7 @@ async def test_adopted_scope_presentation_overlays_scope_without_execution_valid
     table_scope = next(
         item
         for item in scopes.json()["data"]
-        if item["kind"] == "table"
-        and item["table_or_view"] == "catalog_items_2024"
+        if item["kind"] == "table" and item["table_or_view"] == "catalog_items_2024"
     )
     assert table_scope["business_name"] == "2024 年商品信息"
     assert table_scope["description"] == "记录 2024 年商品主数据及其业务属性。"
@@ -572,9 +550,7 @@ async def test_adopted_scope_presentation_overlays_scope_without_execution_valid
 
     context = await load_project_context(db_session, project.id)
     stored = next(
-        item
-        for item in context.confirmed_knowledge
-        if item["type"] == "scope_presentation"
+        item for item in context.confirmed_knowledge if item["type"] == "scope_presentation"
     )
     assert stored["definition"]["synonyms"] == [
         "catalog_items_2024",
@@ -677,9 +653,7 @@ async def test_logical_scope_survives_physical_source_replacement(
     await db_session.flush()
 
     second_nodes = await ensure_semantic_scope_tree(db_session, project.id)
-    second_table = next(
-        node for node in second_nodes if node.kind == "table" and node.is_active
-    )
+    second_table = next(node for node in second_nodes if node.kind == "table" and node.is_active)
     assert second_table.id == first_id
     assert second_table.stable_key == first_key
     assert second_table.context_facts["source_id"] == str(replacement.id)

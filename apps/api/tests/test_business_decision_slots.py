@@ -40,10 +40,7 @@ def test_material_refund_revenue_wording_maps_to_the_known_slot(question: str):
 )
 def test_unrelated_refund_questions_are_not_merged(question: str):
     assert infer_decision_slot(question) is None
-    assert (
-        canonicalize_decision_key("refund_question", question=question)
-        == "refund_question"
-    )
+    assert canonicalize_decision_key("refund_question", question=question) == "refund_question"
 
 
 def test_unknown_keys_are_preserved_instead_of_fuzzily_rewritten():

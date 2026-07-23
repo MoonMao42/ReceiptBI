@@ -61,8 +61,7 @@ async def _invalidate_linked_sources_after_scope_change(
         previous_issues = [
             dict(item)
             for item in profile.get("issues") or []
-            if isinstance(item, dict)
-            and item.get("code") != "database_connection_scope_changed"
+            if isinstance(item, dict) and item.get("code") != "database_connection_scope_changed"
         ]
         profile["is_current"] = False
         profile["activation_state"] = "pending_confirmation"

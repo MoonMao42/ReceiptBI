@@ -237,9 +237,7 @@ async def _seed_system_capture_baseline(
                 "table_or_view": "orders",
                 "query_scope": "aggregated",
                 "dimensions": ["region"],
-                "metrics": [
-                    {"operation": "sum", "column": "revenue", "alias": "revenue"}
-                ],
+                "metrics": [{"operation": "sum", "column": "revenue", "alias": "revenue"}],
                 "filters": [],
                 "sort": [{"field": "revenue", "direction": "desc"}],
                 "limit": 100,

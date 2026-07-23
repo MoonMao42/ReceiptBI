@@ -575,9 +575,7 @@ def _preanalysis_brief(
             "unique": int(series.nunique(dropna=True)),
         }
         if role == "identifier" and len(non_null):
-            profile["uniqueness"] = round(
-                float(series.nunique(dropna=True)) / len(non_null), 6
-            )
+            profile["uniqueness"] = round(float(series.nunique(dropna=True)) / len(non_null), 6)
         elif role == "time":
             converted = pd.to_datetime(series, errors="coerce")
             if converted.notna().any():

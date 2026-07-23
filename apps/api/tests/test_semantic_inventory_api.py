@@ -138,9 +138,7 @@ async def test_inventory_routes_require_a_click_and_keep_qualified_display_name(
     assert job is not None
     job.details = {**dict(job.details or {}), "source_recommendation_count": 1}
     item_result = await db_session.execute(
-        select(SemanticInventoryJobItem).where(
-            SemanticInventoryJobItem.job_id == job.id
-        )
+        select(SemanticInventoryJobItem).where(SemanticInventoryJobItem.job_id == job.id)
     )
     stored_item = item_result.scalar_one()
     stored_item.status = "succeeded"

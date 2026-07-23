@@ -47,9 +47,7 @@ def _create_pre_retirement_schema(sync_connection) -> None:
     with operations.batch_alter_table(
         "semantic_entries",
         recreate="always",
-        naming_convention={
-            "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s"
-        },
+        naming_convention={"fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s"},
     ) as batch_op:
         batch_op.drop_index("ix_semantic_entries_scope_id")
         batch_op.drop_constraint(
@@ -60,9 +58,7 @@ def _create_pre_retirement_schema(sync_connection) -> None:
     operations.drop_table("semantic_scope_nodes")
     sync_connection.exec_driver_sql("DROP TABLE semantic_validation_job_items")
     sync_connection.exec_driver_sql("DROP TABLE semantic_validation_jobs")
-    sync_connection.exec_driver_sql(
-        "DROP INDEX ix_semantic_entries_recommendation_batch_id"
-    )
+    sync_connection.exec_driver_sql("DROP INDEX ix_semantic_entries_recommendation_batch_id")
     sync_connection.exec_driver_sql(
         "ALTER TABLE semantic_entries DROP COLUMN recommendation_batch_id"
     )
@@ -83,7 +79,9 @@ async def _create_packaged_seed(engine: AsyncEngine) -> str:
     def create(sync_connection):
         _create_legacy_seed_tables(sync_connection)
         sync_connection.execute(
-            _LEGACY_SEED_METADATA.tables["connections"].insert().values(
+            _LEGACY_SEED_METADATA.tables["connections"]
+            .insert()
+            .values(
                 id=connection_id,
                 name="Sample Database",
                 driver="sqlite",
@@ -172,7 +170,9 @@ async def _create_versioned_0011_legacy_settings(engine: AsyncEngine) -> dict[st
             ],
         )
         sync_connection.execute(
-            legacy["app_settings"].insert().values(
+            legacy["app_settings"]
+            .insert()
+            .values(
                 id=1,
                 default_connection_id=ids["demo_connection"],
                 context_rounds=5,
@@ -293,7 +293,9 @@ async def _create_versioned_0011_legacy_settings(engine: AsyncEngine) -> dict[st
             ],
         )
         sync_connection.execute(
-            current["conversations"].insert().values(
+            current["conversations"]
+            .insert()
+            .values(
                 id=ids["conversation"],
                 connection_id=ids["demo_connection"],
                 title="保留的用户会话",
@@ -304,18 +306,20 @@ async def _create_versioned_0011_legacy_settings(engine: AsyncEngine) -> dict[st
             )
         )
         sync_connection.execute(
-            current["messages"].insert().values(
+            current["messages"]
+            .insert()
+            .values(
                 id=ids["message"],
                 conversation_id=ids["conversation"],
                 role="assistant",
                 content="已完成",
-                extra_data={
-                    "files": ["/Users/example/.querygpt-desktop/artifacts/chart.png"]
-                },
+                extra_data={"files": ["/Users/example/.querygpt-desktop/artifacts/chart.png"]},
             )
         )
         sync_connection.execute(
-            current["semantic_entries"].insert().values(
+            current["semantic_entries"]
+            .insert()
+            .values(
                 id=ids["existing_entry"],
                 project_id=ids["user_project"],
                 key=f"legacy_term:{ids['collision_term']}",
@@ -468,7 +472,9 @@ async def _create_versioned_0011_legacy_settings(engine: AsyncEngine) -> dict[st
             ],
         )
         sync_connection.execute(
-            legacy["table_relationships"].insert().values(
+            legacy["table_relationships"]
+            .insert()
+            .values(
                 id=ids["relationship"],
                 connection_id=ids["user_connection"],
                 source_table="orders",
@@ -482,7 +488,9 @@ async def _create_versioned_0011_legacy_settings(engine: AsyncEngine) -> dict[st
             )
         )
         sync_connection.execute(
-            legacy["prompts"].insert().values(
+            legacy["prompts"]
+            .insert()
+            .values(
                 id=ids["prompt"],
                 name="Legacy analyst",
                 content="Always use SQL + Python + chart",
@@ -963,9 +971,7 @@ async def test_empty_database_bootstraps_head_and_repeated_start_is_idempotent(t
                     },
                     {
                         column["name"]
-                        for column in inspect(sync).get_columns(
-                            "semantic_inventory_job_items"
-                        )
+                        for column in inspect(sync).get_columns("semantic_inventory_job_items")
                     },
                 )
             )
@@ -1141,9 +1147,7 @@ async def test_0012_migrates_legacy_knowledge_and_retires_only_exact_demo_state(
             assert "shape" in source_snapshot
 
             conversation = await connection.execute(
-                text(
-                    "SELECT connection_id, extra_data FROM conversations WHERE id = :id"
-                ),
+                text("SELECT connection_id, extra_data FROM conversations WHERE id = :id"),
                 {"id": db_id("conversation")},
             )
             conversation_connection_id, conversation_extra = conversation.one()

@@ -79,9 +79,7 @@ def upgrade() -> None:
         *_timestamps(),
     )
     op.create_index("ix_preflight_reports_project_id", "preflight_reports", ["project_id"])
-    op.create_index(
-        "ix_preflight_reports_data_source_id", "preflight_reports", ["data_source_id"]
-    )
+    op.create_index("ix_preflight_reports_data_source_id", "preflight_reports", ["data_source_id"])
 
     op.create_table(
         "sanitation_recipes",
@@ -131,9 +129,7 @@ def upgrade() -> None:
         sa.Column("checkpoint", sa.JSON(), server_default="{}", nullable=False),
         sa.Column("error", sa.Text()),
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(
-            ["conversation_id"], ["conversations.id"], ondelete="SET NULL"
-        ),
+        sa.ForeignKeyConstraint(["conversation_id"], ["conversations.id"], ondelete="SET NULL"),
         *_timestamps(),
     )
     op.create_index("ix_analysis_runs_project_id", "analysis_runs", ["project_id"])

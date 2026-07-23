@@ -19,7 +19,7 @@ from app.services.sqlite_trusted_executor import SIDECAR_ENV
 def _create_profile_database(path: Path, *, rows: int = 300) -> None:
     with sqlite3.connect(path) as conn:
         conn.execute(
-            '''
+            """
             CREATE TABLE "order-items" (
                 order_id TEXT,
                 order_date TEXT,
@@ -29,7 +29,7 @@ def _create_profile_database(path: Path, *, rows: int = 300) -> None:
                 freeform_note TEXT,
                 "select" TEXT
             )
-            '''
+            """
         )
         conn.executemany(
             'INSERT INTO "order-items" VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -244,9 +244,7 @@ def test_catalog_budget_is_applied_before_full_schema_materialization(
     assert catalog.unread_relations_at_least == 1
     assert catalog.columns_truncated is True
     assert catalog.unread_columns_at_least == 2
-    assert all(
-        table["column_metadata_status"] == "truncated" for table in catalog.tables
-    )
+    assert all(table["column_metadata_status"] == "truncated" for table in catalog.tables)
 
     result = run_database_value_preflight(
         manager,

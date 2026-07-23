@@ -19,9 +19,7 @@ def _dependencies(step: dict[str, Any]) -> list[str]:
         if value:
             values.append(value)
     values.extend(
-        str(value).strip()
-        for value in step.get("input_results") or []
-        if str(value).strip()
+        str(value).strip() for value in step.get("input_results") or [] if str(value).strip()
     )
     return values
 
@@ -75,9 +73,7 @@ def _relationship_evidence_matches(
     rule_key: str,
     definition_hash: str,
 ) -> bool:
-    evidence_key = str(
-        item.get("candidate_relationship_key") or item.get("relationship_key") or ""
-    )
+    evidence_key = str(item.get("candidate_relationship_key") or item.get("relationship_key") or "")
     return evidence_key == rule_key and str(item.get("definition_hash") or "") == definition_hash
 
 
@@ -97,8 +93,7 @@ def is_reusable_full_relationship_evidence(item: dict[str, Any]) -> bool:
         and ref.get("query_scope") == "full"
     ]
     endpoints = {
-        (str(ref.get("source_id") or ""), str(ref.get("table_or_view") or ""))
-        for ref in valid_refs
+        (str(ref.get("source_id") or ""), str(ref.get("table_or_view") or "")) for ref in valid_refs
     }
     return (
         item.get("evidence_origin") == "system"
@@ -162,8 +157,7 @@ def _build_relationship_receipt(
         (
             item
             for item in reversed(tool_history[:join_index])
-            if item.get("kind")
-            in {"relationship_validation", "relationship_application"}
+            if item.get("kind") in {"relationship_validation", "relationship_application"}
             and _relationship_evidence_matches(
                 item,
                 rule_key=rule_key,
@@ -182,9 +176,11 @@ def _build_relationship_receipt(
 
     validation_index = _last_index(
         tool_history,
-        lambda item: item.get("kind") == "validation"
-        and str(item.get("result_name") or "") == final_result
-        and bool(item.get("result_hash")),
+        lambda item: (
+            item.get("kind") == "validation"
+            and str(item.get("result_name") or "") == final_result
+            and bool(item.get("result_hash"))
+        ),
     )
     if validation_index is None or validation_index <= join_index:
         raise CorrectionCompletionError("最终结果需要在应用关联修正后重新核对")
@@ -278,9 +274,11 @@ def build_correction_application_receipt(
     application_index = _last_index(tool_history, lambda item: item is application)
     validation_index = _last_index(
         tool_history,
-        lambda item: item.get("kind") == "validation"
-        and str(item.get("result_name") or "") == final_result
-        and bool(item.get("result_hash")),
+        lambda item: (
+            item.get("kind") == "validation"
+            and str(item.get("result_name") or "") == final_result
+            and bool(item.get("result_hash"))
+        ),
     )
     if validation_index is None or (
         application_index is not None and validation_index <= application_index
@@ -313,8 +311,7 @@ def build_correction_application_receipt(
                 or excluded_rows != 0
                 or not application.get("input_hash")
                 or application.get("input_hash") == application.get("output_hash")
-                or re.fullmatch(r"[0-9a-f]{64}", str(application.get("formula_hash") or ""))
-                is None
+                or re.fullmatch(r"[0-9a-f]{64}", str(application.get("formula_hash") or "")) is None
             ):
                 raise CorrectionCompletionError("已修正的指标公式没有形成可靠派生结果")
         final_metric_state = prove_metric_application_lineage(
@@ -327,8 +324,7 @@ def build_correction_application_receipt(
             if action_kind == "metric_formula" and any(
                 item.get("kind") == "aggregate"
                 and item.get("operation") in {"sum", "mean", "min", "max"}
-                and str(item.get("required_metric_definition_hash") or "")
-                == definition_hash
+                and str(item.get("required_metric_definition_hash") or "") == definition_hash
                 and item.get("numeric_backend") != "decimal"
                 and _is_ancestor(
                     tool_history,

@@ -43,9 +43,7 @@ def _is_user_governed(
     user_revision_entry_ids: set[UUID],
 ) -> bool:
     is_scope_presentation = entry.entry_type == "scope_presentation"
-    expected_execution_state = (
-        "definition_only" if is_scope_presentation else "needs_validation"
-    )
+    expected_execution_state = "definition_only" if is_scope_presentation else "needs_validation"
     if (
         entry.id in user_revision_entry_ids
         or entry.state in {"confirmed", "locked"}
@@ -257,9 +255,7 @@ async def persist_semantic_recommendation_batch(
             entry_type=item.entry_type,
         )
         execution_state = (
-            "definition_only"
-            if item.entry_type == "scope_presentation"
-            else "needs_validation"
+            "definition_only" if item.entry_type == "scope_presentation" else "needs_validation"
         )
         definition = item.model_dump(mode="json").get("definition")
         if existing is not None:

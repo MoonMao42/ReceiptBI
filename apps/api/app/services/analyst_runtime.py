@@ -161,9 +161,7 @@ def _localized_preflight_confirmation(
     presentation_code = str(payload.get("presentation_code") or "").strip()
     facts = payload.get("presentation_facts")
     presentation_facts = (
-        {str(name): str(value) for name, value in facts.items()}
-        if isinstance(facts, dict)
-        else {}
+        {str(name): str(value) for name, value in facts.items()} if isinstance(facts, dict) else {}
     )
     raw_options = [str(option) for option in payload.get("options") or []]
 
@@ -182,9 +180,9 @@ def _localized_preflight_confirmation(
         presentation_code = "preflight.excel_sheet_selection"
         selected_sheet = presentation_facts.get("selected_sheet", "").strip()
         if selected_sheet:
-            payload["question"] = t(
-                "analysis.preflight_excel_question_selected", language
-            ).format(sheet=selected_sheet)
+            payload["question"] = t("analysis.preflight_excel_question_selected", language).format(
+                sheet=selected_sheet
+            )
         else:
             payload["question"] = t("analysis.preflight_excel_question", language)
         payload["reason"] = t("analysis.preflight_excel_reason", language)
@@ -1412,15 +1410,12 @@ def _match_table_identity(requested: str, available: list[str], *, label: str) -
         bare_matches = [
             item
             for item in unique_available
-            if _canonical_schema_name(item.rsplit(".", 1)[-1])
-            == _canonical_schema_name(candidate)
+            if _canonical_schema_name(item.rsplit(".", 1)[-1]) == _canonical_schema_name(candidate)
         ]
         if len(bare_matches) == 1:
             return bare_matches[0]
         if len(bare_matches) > 1:
-            raise ValueError(
-                f"{label}“{requested}”存在于多个 Schema，请使用完整的 Schema.表名"
-            )
+            raise ValueError(f"{label}“{requested}”存在于多个 Schema，请使用完整的 Schema.表名")
     preview = "、".join(unique_available[:20])
     raise ValueError(f"找不到{label}“{requested}”；可用名称：{preview or '无'}")
 
@@ -1444,9 +1439,7 @@ def _configured_connection_schema(
         return str(options.get("schema") or "public").strip()
     if config_driver == "mysql":
         return str(
-            connection_config.get("database")
-            or connection_config.get("database_name")
-            or ""
+            connection_config.get("database") or connection_config.get("database_name") or ""
         ).strip()
     if config_driver == "sqlite":
         return "main"
@@ -1668,9 +1661,7 @@ def _resolve_runtime_semantic_table(
     if not configured_schema:
         raise ValueError("该数据表包含 Schema，但当前连接缺少可验证的 Schema 配置")
     if configured_schema.casefold() != schema.casefold():
-        raise ValueError(
-            f"数据表属于 Schema“{schema}”，当前连接仅允许 Schema“{configured_schema}”"
-        )
+        raise ValueError(f"数据表属于 Schema“{schema}”，当前连接仅允许 Schema“{configured_schema}”")
     return physical_table, semantic_table
 
 
@@ -1730,9 +1721,7 @@ def _scope_ancestor_context(
         current_id = str(scope.get("id") or "")
         path_ids = [item for item in path_ids if item != current_id]
     scopes_by_id = {
-        str(item.get("id") or ""): item
-        for item in project.semantic_scopes
-        if item.get("id")
+        str(item.get("id") or ""): item for item in project.semantic_scopes if item.get("id")
     }
     return [
         _semantic_scope_public_payload(scopes_by_id[scope_id])
@@ -1877,9 +1866,7 @@ def _resolve_confirmed_derived_metric(
 
     normalized_key = metric_key.strip()
     matches = [
-        item
-        for item in project.confirmed_knowledge
-        if str(item.get("key") or "") == normalized_key
+        item for item in project.confirmed_knowledge if str(item.get("key") or "") == normalized_key
     ]
     if len(matches) != 1:
         raise ValueError("找不到唯一的已确认指标定义")
@@ -1929,10 +1916,7 @@ def _resolve_confirmed_derived_metric(
     source_ids = {str(source.get("id") or "") for source in resolved_sources}
     if len(source_ids) != 1:
         raise ValueError("当前仅支持同一数据源内的派生指标，请拆分或补充已验证关系")
-    tables = {
-        str(binding.get("table_or_view") or "").strip().casefold()
-        for binding in bindings
-    }
+    tables = {str(binding.get("table_or_view") or "").strip().casefold() for binding in bindings}
     if len(tables) != 1:
         raise ValueError("当前仅支持同一表内的派生指标，请先治理跨表关系")
 
@@ -1989,9 +1973,7 @@ def _resolve_confirmed_dimension(
 
     normalized_key = dimension_key.strip()
     matches = [
-        item
-        for item in project.confirmed_knowledge
-        if str(item.get("key") or "") == normalized_key
+        item for item in project.confirmed_knowledge if str(item.get("key") or "") == normalized_key
     ]
     if len(matches) != 1:
         raise ValueError("找不到唯一的已确认维度定义")
@@ -2126,9 +2108,7 @@ def _enforce_connection_semantic_query(
             "数据库分析只能使用项目理解中已确认的指标和维度；请先打开对应表并确认业务定义"
         )
     if dimensions or metrics or filters or sort:
-        raise ValueError(
-            "数据库分析不能混入模型临时选择的字段、计算、筛选或排序；请使用已确认语义"
-        )
+        raise ValueError("数据库分析不能混入模型临时选择的字段、计算、筛选或排序；请使用已确认语义")
 
 
 def _reject_ordinary_database_sql(project: ProjectRuntimeContext) -> None:
@@ -2222,9 +2202,7 @@ def _compile_structured_query(
                 )
                 if not _structured_column_is_numeric(column_profile):
                     profile_type = str(
-                        column_profile.get("type")
-                        or column_profile.get("dtype")
-                        or "unknown"
+                        column_profile.get("type") or column_profile.get("dtype") or "unknown"
                     )
                     raise ValueError(
                         f"派生指标字段“{resolved_column}”必须是预检明确识别的数值字段；"
@@ -3161,8 +3139,7 @@ class PydanticAnalystRuntime:
         if missing_modules:
             if not self.execution_policy.auto_repair_enabled:
                 raise RuntimeError(
-                    "当前已关闭自动修复，Python 环境缺少模块："
-                    + "、".join(missing_modules)
+                    "当前已关闭自动修复，Python 环境缺少模块：" + "、".join(missing_modules)
                 )
             try:
                 await self.deps.dependency_manager.install(missing_modules)
@@ -3642,17 +3619,13 @@ class PydanticAnalystRuntime:
 
             source = _resolve_semantic_source(ctx.deps.project.sources, source_id)
             logical_name = str(
-                (source.get("profile") or {}).get("logical_name")
-                or source.get("name")
-                or ""
+                (source.get("profile") or {}).get("logical_name") or source.get("name") or ""
             )
             scope_matches = [
                 item
                 for item in ctx.deps.project.semantic_scopes
                 if item.get("kind") == "source"
-                and _canonical_schema_name(
-                    str(item.get("source_logical_name") or "")
-                )
+                and _canonical_schema_name(str(item.get("source_logical_name") or ""))
                 == _canonical_schema_name(logical_name)
             ]
             exact_source_matches = [
@@ -3675,8 +3648,7 @@ class PydanticAnalystRuntime:
                     item
                     for item in ctx.deps.project.semantic_scopes
                     if item.get("kind") == "table"
-                    and str(item.get("parent_id") or "")
-                    == str(source_scope.get("id") or "")
+                    and str(item.get("parent_id") or "") == str(source_scope.get("id") or "")
                 ),
                 key=lambda item: (
                     str(item.get("business_name") or "").casefold(),
@@ -3691,12 +3663,8 @@ class PydanticAnalystRuntime:
                     source_scope,
                     include_current=False,
                 ),
-                "semantics": [
-                    _semantic_entry_public_payload(item) for item in direct_semantics
-                ],
-                "tables": [
-                    _semantic_scope_public_payload(item) for item in table_scopes
-                ],
+                "semantics": [_semantic_entry_public_payload(item) for item in direct_semantics],
+                "tables": [_semantic_scope_public_payload(item) for item in table_scopes],
             }
 
         @agent.tool
@@ -3719,17 +3687,13 @@ class PydanticAnalystRuntime:
                 connection_config,
             )
             logical_name = str(
-                (source.get("profile") or {}).get("logical_name")
-                or source.get("name")
-                or ""
+                (source.get("profile") or {}).get("logical_name") or source.get("name") or ""
             )
             scope_matches = [
                 item
                 for item in ctx.deps.project.semantic_scopes
                 if item.get("kind") == "table"
-                and _canonical_schema_name(
-                    str(item.get("source_logical_name") or "")
-                )
+                and _canonical_schema_name(str(item.get("source_logical_name") or ""))
                 == _canonical_schema_name(logical_name)
                 and _table_identity_equal(item.get("table_or_view"), scope_table)
             ]
@@ -3742,15 +3706,12 @@ class PydanticAnalystRuntime:
                 if item.get("state") in {"confirmed", "locked"}
                 and item.get("validity") != "stale"
                 and item.get("scope_kind") == "table"
-                and _canonical_schema_name(
-                    str(item.get("scope_source_logical_name") or "")
-                )
+                and _canonical_schema_name(str(item.get("scope_source_logical_name") or ""))
                 == _canonical_schema_name(logical_name)
                 and _table_identity_equal(item.get("scope_table_or_view"), scope_table)
                 and (
                     table_scope is None
-                    or str(item.get("scope_id") or "")
-                    == str(table_scope.get("id") or "")
+                    or str(item.get("scope_id") or "") == str(table_scope.get("id") or "")
                 )
             ]
             scope_ids = {
@@ -3840,15 +3801,10 @@ class PydanticAnalystRuntime:
             opened_scope_receipt: dict[str, Any] | None = None
             try:
                 governed_request = bool(
-                    semantic_metric_key
-                    or semantic_dimension_keys
-                    or semantic_dimension_filters
+                    semantic_metric_key or semantic_dimension_keys or semantic_dimension_filters
                 )
                 if governed_request and (
-                    selected_dimensions
-                    or selected_metrics
-                    or selected_filters
-                    or selected_sort
+                    selected_dimensions or selected_metrics or selected_filters or selected_sort
                 ):
                     raise ValueError(
                         "使用已确认语义时不能混入模型自选的 dimensions、metrics、filters 或 sort"
@@ -3913,22 +3869,18 @@ class PydanticAnalystRuntime:
                     if normalized_key in seen_dimension_keys:
                         raise ValueError("semantic_dimension_keys 不能包含重复维度")
                     seen_dimension_keys.add(normalized_key)
-                    entry, bound_source, bound_column, receipt = (
-                        _resolve_confirmed_dimension(
-                            ctx.deps.project,
-                            normalized_key,
-                        )
+                    entry, bound_source, bound_column, receipt = _resolve_confirmed_dimension(
+                        ctx.deps.project,
+                        normalized_key,
                     )
                     bind_governed_scope(entry, bound_source, receipt, label="已确认维度")
                     selected_dimensions.append(bound_column)
                     semantic_dimension_receipts.append(receipt)
 
                 for semantic_filter in semantic_dimension_filters or []:
-                    entry, bound_source, bound_column, receipt = (
-                        _resolve_confirmed_dimension(
-                            ctx.deps.project,
-                            semantic_filter.dimension_key,
-                        )
+                    entry, bound_source, bound_column, receipt = _resolve_confirmed_dimension(
+                        ctx.deps.project,
+                        semantic_filter.dimension_key,
                     )
                     bind_governed_scope(
                         entry,
@@ -5621,8 +5573,7 @@ class PydanticAnalystRuntime:
 
         @capability_tool(
             enabled=(
-                self.execution_policy.python_enabled
-                and self.execution_policy.auto_repair_enabled
+                self.execution_policy.python_enabled and self.execution_policy.auto_repair_enabled
             ),
             timeout=240,
         )

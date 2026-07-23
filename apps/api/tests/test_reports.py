@@ -386,9 +386,7 @@ async def test_create_list_and_get_report_with_manual_and_artifact_blocks(
     assert artifact_block["analysis_run_id"] == str(run.id)
     assert artifact_block["source_available"] is True
     assert artifact_block["source_ref"]["artifact_id"] == str(artifact.id)
-    assert artifact_block["source_ref"]["snapshot"]["payload"] == {
-        "series": [100, 120, 140]
-    }
+    assert artifact_block["source_ref"]["snapshot"]["payload"] == {"series": [100, 120, 140]}
 
     listing = await client.get(f"/api/v1/projects/{project.id}/reports")
     assert listing.status_code == 200
@@ -407,9 +405,7 @@ async def test_create_list_and_get_report_with_manual_and_artifact_blocks(
         }
     ]
 
-    detail = await client.get(
-        f"/api/v1/projects/{project.id}/reports/{document['id']}"
-    )
+    detail = await client.get(f"/api/v1/projects/{project.id}/reports/{document['id']}")
     assert detail.status_code == 200
     assert detail.json()["data"] == document
     stored_artifact = await db_session.get(ArtifactRecord, artifact.id)
@@ -499,9 +495,7 @@ async def test_full_document_update_upserts_pages_and_blocks_with_version_guard(
     assert document["pages"][0]["version"] == 2
     assert document["pages"][0]["blocks"][1]["id"] == block["id"]
     assert document["pages"][0]["blocks"][1]["version"] == 2
-    assert document["pages"][0]["blocks"][1]["content"] == {
-        "text": "用户修改后的内容"
-    }
+    assert document["pages"][0]["blocks"][1]["content"] == {"text": "用户修改后的内容"}
 
     # Bypass the in-memory fast-fail: the database CAS must still reject the
     # second writer that presents the same expected version.
@@ -511,9 +505,7 @@ async def test_full_document_update_upserts_pages_and_blocks_with_version_guard(
         json={"expected_version": 1, "title": "过期覆盖"},
     )
     assert stale.status_code == 409
-    detail = await client.get(
-        f"/api/v1/projects/{project.id}/reports/{initial['id']}"
-    )
+    detail = await client.get(f"/api/v1/projects/{project.id}/reports/{initial['id']}")
     assert detail.json()["data"]["title"] == "正式经营报告"
 
 
@@ -580,9 +572,7 @@ async def test_delete_report_cascades_editable_tree_but_keeps_analysis_artifact(
     )
     report_id = created.json()["data"]["id"]
 
-    deleted = await client.delete(
-        f"/api/v1/projects/{project.id}/reports/{report_id}"
-    )
+    deleted = await client.delete(f"/api/v1/projects/{project.id}/reports/{report_id}")
 
     assert deleted.status_code == 200
     assert deleted.json()["data"] == {"id": report_id, "deleted": True}
@@ -688,14 +678,10 @@ async def test_patch_rejects_null_for_non_nullable_report_fields(
     assert invalid_report.status_code == 422
     assert invalid_page.status_code == 422
     assert invalid_block.status_code == 422
-    detail = await client.get(
-        f"/api/v1/projects/{project.id}/reports/{report['id']}"
-    )
+    detail = await client.get(f"/api/v1/projects/{project.id}/reports/{report['id']}")
     assert detail.json()["data"]["title"] == "保持有效"
     assert detail.json()["data"]["pages"][0]["config"] == {}
-    assert detail.json()["data"]["pages"][0]["blocks"][0]["content"] == {
-        "text": "不会被空值覆盖"
-    }
+    assert detail.json()["data"]["pages"][0]["blocks"][0]["content"] == {"text": "不会被空值覆盖"}
 
 
 @pytest.mark.asyncio
@@ -760,14 +746,10 @@ async def test_page_and_block_patch_use_database_compare_and_swap(
     )
     assert stale_block_write.status_code == 409
 
-    detail = await client.get(
-        f"/api/v1/projects/{project.id}/reports/{report['id']}"
-    )
+    detail = await client.get(f"/api/v1/projects/{project.id}/reports/{report['id']}")
     current = detail.json()["data"]
     assert current["pages"][0]["title"] == "第一个写入者"
-    assert current["pages"][0]["blocks"][0]["content"] == {
-        "text": "第一个区块写入者"
-    }
+    assert current["pages"][0]["blocks"][0]["content"] == {"text": "第一个区块写入者"}
 
 
 @pytest.mark.asyncio
@@ -809,9 +791,7 @@ async def test_source_snapshot_survives_analysis_cleanup_and_remains_editable(
     await db_session.execute(delete(AnalysisRun).where(AnalysisRun.id == run.id))
     await db_session.commit()
 
-    detail = await client.get(
-        f"/api/v1/projects/{project.id}/reports/{document['id']}"
-    )
+    detail = await client.get(f"/api/v1/projects/{project.id}/reports/{document['id']}")
     detached = detail.json()["data"]
     detached_page = detached["pages"][0]
     detached_block = detached_page["blocks"][0]
@@ -820,12 +800,8 @@ async def test_source_snapshot_survives_analysis_cleanup_and_remains_editable(
     assert detached_block["source_available"] is False
     assert detached_block["source_ref"] == original_ref
     assert detached_block["source_ref"]["artifact_id"] == str(artifact.id)
-    assert detached_block["source_ref"]["snapshot"]["payload"] == {
-        "series": [100, 120, 140]
-    }
-    assert detached_block["content"] == {
-        "caption": "已经固定到报表的静态说明"
-    }
+    assert detached_block["source_ref"]["snapshot"]["payload"] == {"series": [100, 120, 140]}
+    assert detached_block["content"] == {"caption": "已经固定到报表的静态说明"}
 
     edited = await client.patch(
         f"/api/v1/projects/{project.id}/reports/{document['id']}",
@@ -1214,10 +1190,7 @@ async def test_full_sync_preserves_server_refresh_binding_and_ignores_client_ove
     assert synchronized.status_code == 200, synchronized.text
     synchronized_block = synchronized.json()["data"]["pages"][0]["blocks"][0]
     assert synchronized_block["source_ref"]["refresh_binding"] == trusted_binding
-    assert (
-        synchronized_block["source_ref"]["refresh_binding"]["playbook_id"]
-        == playbook.id
-    )
+    assert synchronized_block["source_ref"]["refresh_binding"]["playbook_id"] == playbook.id
     assert synchronized_block["content"]["note"] == "只修改报表内容"
 
 
@@ -1383,9 +1356,7 @@ async def test_refresh_rejects_bound_playbook_drift_without_mutating_snapshot(
         query=playbook.query,
         limit=50,
     )
-    project.extra_data = {
-        "analysis_playbooks": [changed.model_dump(mode="json")]
-    }
+    project.extra_data = {"analysis_playbooks": [changed.model_dump(mode="json")]}
     await db_session.commit()
     old_content = dict(block.content)
 
@@ -1538,9 +1509,7 @@ async def test_export_report_xlsx_is_safe_and_contains_structured_business_data(
     assert created.status_code == 201, created.text
     report_id = created.json()["data"]["id"]
 
-    response = await client.get(
-        f"/api/v1/projects/{project.id}/reports/{report_id}/export.xlsx"
-    )
+    response = await client.get(f"/api/v1/projects/{project.id}/reports/{report_id}/export.xlsx")
 
     assert response.status_code == 200, response.text
     assert response.headers["content-type"].startswith(

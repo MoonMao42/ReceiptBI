@@ -230,39 +230,53 @@ def test_migration_retires_only_untouched_raw_candidates_and_is_repeat_safe(
         migration.upgrade()
 
         for entry_id in retired:
-            row = connection.execute(
-                sa.select(SemanticEntry).where(SemanticEntry.id == entry_id)
-            ).mappings().one()
+            row = (
+                connection.execute(sa.select(SemanticEntry).where(SemanticEntry.id == entry_id))
+                .mappings()
+                .one()
+            )
             assert row["is_active"] is False
             assert row["validity"] == "stale"
             assert row["execution_state"] == "blocked"
             assert row["revision_number"] == 2
-            revision = connection.execute(
-                sa.select(SemanticEntryRevision).where(
-                    SemanticEntryRevision.id == row["active_revision_id"]
+            revision = (
+                connection.execute(
+                    sa.select(SemanticEntryRevision).where(
+                        SemanticEntryRevision.id == row["active_revision_id"]
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
             assert revision["mutation_kind"] == "legacy_candidate_retired"
 
         for entry_id in retired_relationships:
-            row = connection.execute(
-                sa.select(SemanticEntry).where(SemanticEntry.id == entry_id)
-            ).mappings().one()
+            row = (
+                connection.execute(sa.select(SemanticEntry).where(SemanticEntry.id == entry_id))
+                .mappings()
+                .one()
+            )
             assert row["is_active"] is False
             assert row["validity"] == "stale"
             assert row["execution_state"] == "blocked"
             assert row["revision_number"] == 2
-            revision = connection.execute(
-                sa.select(SemanticEntryRevision).where(
-                    SemanticEntryRevision.id == row["active_revision_id"]
+            revision = (
+                connection.execute(
+                    sa.select(SemanticEntryRevision).where(
+                        SemanticEntryRevision.id == row["active_revision_id"]
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
             assert revision["mutation_kind"] == "legacy_relationship_retired"
 
         for entry_id in protected:
-            row = connection.execute(
-                sa.select(SemanticEntry).where(SemanticEntry.id == entry_id)
-            ).mappings().one()
+            row = (
+                connection.execute(sa.select(SemanticEntry).where(SemanticEntry.id == entry_id))
+                .mappings()
+                .one()
+            )
             assert row["is_active"] is True
             assert row["revision_number"] == 1
 
@@ -270,8 +284,9 @@ def test_migration_retires_only_untouched_raw_candidates_and_is_repeat_safe(
             sa.select(sa.func.count()).select_from(SemanticEntryRevision)
         )
         migration.upgrade()
-        assert connection.scalar(
-            sa.select(sa.func.count()).select_from(SemanticEntryRevision)
-        ) == revisions_after_first
+        assert (
+            connection.scalar(sa.select(sa.func.count()).select_from(SemanticEntryRevision))
+            == revisions_after_first
+        )
 
     engine.dispose()
