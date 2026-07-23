@@ -11,8 +11,9 @@
  */
 
 import { execSync } from 'node:child_process';
-import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname, relative } from 'node:path';
+import { assertNoBundledRuntimeData } from './packaging-policy.js';
 
 const ROOT = resolve(__dirname, '../../..');
 const API_DIR = join(ROOT, 'apps/api');
@@ -76,7 +77,6 @@ async function main() {
   console.log('=== Building Python Backend ===\n');
 
   mkdirSync(BUILD_DIR, { recursive: true });
-  mkdirSync(BACKEND_OUT, { recursive: true });
 
   // 1. 生成 requirements.txt
   console.log('[1/5] Generating requirements.txt...');
@@ -245,8 +245,6 @@ inventory_path.write_text(
 
   const assetsSrc = join(API_DIR, 'app', 'assets');
   const assetsExist = existsSync(assetsSrc);
-  const dataSrc = join(API_DIR, 'data');
-  const dataExist = existsSync(dataSrc);
   const alembicSrc = join(API_DIR, 'alembic');
   const alembicIni = join(API_DIR, 'alembic.ini');
   if (!existsSync(join(alembicSrc, 'versions')) || !existsSync(alembicIni)) {
@@ -297,7 +295,6 @@ a = Analysis(
     binaries=[],
     datas=[
 ${assetsExist ? `        ('${assetsSrc.replace(/\\/g, '\\\\')}', 'app\\\\assets'),` : ''}
-${dataExist ? `        ('${dataSrc.replace(/\\/g, '\\\\')}', 'data'),` : ''}
         ('${alembicSrc.replace(/\\/g, '\\\\')}', 'alembic'),
         ('${alembicIni.replace(/\\/g, '\\\\')}', '.'),
     ] + _extra_datas,
@@ -342,29 +339,31 @@ coll = COLLECT(
 
   writeFileSync(specPath, spec);
 
-  run(`${python} -m PyInstaller -y ${specPath}`, { stdio: 'inherit' });
+  run(`${python} -m PyInstaller --clean -y ${specPath}`, { stdio: 'inherit' });
+  assertNoBundledRuntimeData(outDir, 'PyInstaller output');
 
   // 5. 复制输出到 backend/
   console.log('\n[5/5] Copying to apps/desktop/backend/...');
+  const backendStaging = join(BUILD_DIR, 'backend-staging');
+  if (existsSync(backendStaging)) rmSync(backendStaging, { recursive: true });
+  mkdirSync(backendStaging, { recursive: true });
 
   // 先在原始输出目录修复绝对符号链接（此时绝对路径仍然有效，existsSync 能正确判断目标类型）
   if (process.platform !== 'win32') {
     fixSymlinks(outDir);
   }
 
-  if (existsSync(BACKEND_OUT)) rmSync(BACKEND_OUT, { recursive: true });
-
   if (process.platform === 'win32') {
-    cpSync(outDir, BACKEND_OUT, { recursive: true });
+    cpSync(outDir, backendStaging, { recursive: true });
   } else {
     // cp -a 保留符号链接原样，不会触发 ENOTSUP
-    run(`cp -a "${outDir}/." "${BACKEND_OUT}/"`, { cwd: ROOT });
+    run(`cp -a "${outDir}/." "${backendStaging}/"`, { cwd: ROOT });
   }
 
   // 复制 .env.example
   const envExample = join(API_DIR, '.env.example');
   if (existsSync(envExample)) {
-    copyFileSync(envExample, join(BACKEND_OUT, '.env.example'));
+    copyFileSync(envExample, join(backendStaging, '.env.example'));
   }
 
   // The packaged desktop is the trusted execution environment. Build the
@@ -380,9 +379,13 @@ coll = COLLECT(
   if (!existsSync(sqliteSidecarSource)) {
     throw new Error(`Trusted SQLite sidecar was not built: ${sqliteSidecarSource}`);
   }
-  const sqliteSidecarDestination = join(BACKEND_OUT, SQLITE_SIDECAR_NAME);
+  const sqliteSidecarDestination = join(backendStaging, SQLITE_SIDECAR_NAME);
   copyFileSync(sqliteSidecarSource, sqliteSidecarDestination);
   if (process.platform !== 'win32') chmodSync(sqliteSidecarDestination, 0o755);
+
+  assertNoBundledRuntimeData(backendStaging, 'desktop backend resources');
+  if (existsSync(BACKEND_OUT)) rmSync(BACKEND_OUT, { recursive: true });
+  renameSync(backendStaging, BACKEND_OUT);
 
   console.log(`\n✓ Backend built at: ${BACKEND_OUT}`);
   console.log(`  (Next step: run scripts/build-next.ts to build the frontend)`);

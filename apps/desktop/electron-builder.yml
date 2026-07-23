@@ -20,10 +20,27 @@ extraResources:
     to: backend
     filter:
       - "**/*"
+      - "!_internal/data${/*}"
+      - "!data${/*}"
+      - "!**/projects${/*}"
+      - "!**/backups${/*}"
+      - "!**/.python${/*}"
+      - "!**/.env"
+      - "!**/.env.*"
+      - "!**/*.{db,sqlite,sqlite3}"
+      - "!**/*.{db,sqlite,sqlite3}-{journal,shm,wal}"
+      - "!**/*.{ddb,duckdb}"
+      - "!**/*.{ddb,duckdb}.wal"
   - from: next
     to: next
     filter:
       - "**/*"
+      - "!**/.env"
+      - "!**/.env.*"
+      - "!**/*.{db,sqlite,sqlite3}"
+      - "!**/*.{db,sqlite,sqlite3}-{journal,shm,wal}"
+      - "!**/*.{ddb,duckdb}"
+      - "!**/*.{ddb,duckdb}.wal"
 
 # macOS
 mac:

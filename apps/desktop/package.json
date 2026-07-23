@@ -15,6 +15,7 @@
     "test:logger": "tsx --test tests/logger.test.ts",
     "test:migration": "tsx --test tests/data-migration.test.ts tests/cold-data-migration.test.ts tests/legacy-model-migration.test.ts",
     "test:legacy-model-migration": "tsx --test tests/legacy-model-migration.test.ts",
+    "test:packaging-policy": "tsx --test tests/packaging-policy.test.ts",
     "test:startup-reliability": "tsx --test tests/startup-reliability.test.ts",
     "migrate:legacy-data": "tsx scripts/migrate-legacy-data.ts",
     "build": "npm run build:electron",

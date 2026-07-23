@@ -119,6 +119,9 @@ jobs:
       - name: Install desktop dependencies
         run: cd apps/desktop && npm ci
 
+      - name: Test release data policy
+        run: cd apps/desktop && npm run test:packaging-policy
+
       # API venv for the build script's requirements fallback
       - name: Setup API venv
         shell: bash
@@ -216,6 +219,9 @@ jobs:
           fi
 
           echo "Packaged backend: $bundled_backend"
+          npx --prefix apps/desktop tsx \
+            apps/desktop/scripts/verify-packaged-resources.ts \
+            "$(dirname "$bundled_backend")"
           RECEIPTBI_EXPECTED_ARCH="$EXPECTED_ARCH" "$bundled_backend" --self-check
 
           if [ "$RUNNER_OS" = "macOS" ]; then

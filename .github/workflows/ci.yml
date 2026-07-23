@@ -98,15 +98,42 @@ jobs:
           NEXT_PUBLIC_API_URL: http://localhost:8000
           INTERNAL_API_URL: http://localhost:8000
 
+  desktop:
+    name: Desktop release policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/desktop
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test release data policy
+        run: npm run test:packaging-policy
+
+      - name: Compile Electron
+        run: npm run compile:electron
+
   ci-success:
     name: CI Success
-    needs: [backend, frontend]
+    needs: [backend, frontend, desktop]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Verify required jobs
         run: |
-          if [ "${{ needs.backend.result }}" != "success" ] || [ "${{ needs.frontend.result }}" != "success" ]; then
+          if [ "${{ needs.backend.result }}" != "success" ] || [ "${{ needs.frontend.result }}" != "success" ] || [ "${{ needs.desktop.result }}" != "success" ]; then
             echo "At least one CI job failed"
             exit 1
           fi
