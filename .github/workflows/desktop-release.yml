@@ -12,12 +12,18 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: desktop-release-${{ inputs.release_tag || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   create-release:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/desktop-v')
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Validate desktop release version
@@ -168,6 +174,31 @@ jobs:
         run: cd apps/desktop && npx electron-builder ${{ matrix.electron_args }} --publish never --config electron-builder.yml
         shell: bash
 
+      - name: Verify release artifact set
+        shell: bash
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          version=$(node -p "require('./apps/desktop/package.json').version")
+          release_dir="apps/desktop/release"
+
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            artifact_count=$(find "$release_dir" -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' \) | wc -l | tr -d ' ')
+            [ "$artifact_count" -eq 2 ] || {
+              echo "Expected exactly 2 macOS artifacts, found $artifact_count"
+              exit 1
+            }
+            test -f "$release_dir/ReceiptBI-$version-mac-$EXPECTED_ARCH.dmg"
+            test -f "$release_dir/ReceiptBI-$version-mac-$EXPECTED_ARCH.zip"
+          elif [ "$RUNNER_OS" = "Windows" ]; then
+            artifact_count=$(find "$release_dir" -maxdepth 1 -type f -name '*.exe' | wc -l | tr -d ' ')
+            [ "$artifact_count" -eq 1 ] || {
+              echo "Expected exactly 1 Windows artifact, found $artifact_count"
+              exit 1
+            }
+            test -f "$release_dir/ReceiptBI-$version-win-$EXPECTED_ARCH.exe"
+          fi
+
       - name: Verify packaged backend
         shell: bash
         env:
@@ -198,6 +229,56 @@ jobs:
             esac
           fi
 
+      - name: Verify packaged application architecture
+        shell: bash
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            packaged_app=$(find apps/desktop/release -path '*/ReceiptBI.app/Contents/MacOS/ReceiptBI' -type f -print -quit)
+            [ -n "$packaged_app" ] || {
+              echo "Packaged Electron executable was not found"
+              exit 1
+            }
+
+            expected_mach_arch="$EXPECTED_ARCH"
+            [ "$expected_mach_arch" = "x64" ] && expected_mach_arch="x86_64"
+            app_arches=$(lipo -archs "$packaged_app")
+            echo "Packaged Electron architectures: $app_arches"
+            [ "$app_arches" = "$expected_mach_arch" ] || {
+              echo "Packaged Electron executable is not exclusively $expected_mach_arch"
+              exit 1
+            }
+          elif [ "$RUNNER_OS" = "Windows" ]; then
+            packaged_app=$(find apps/desktop/release -path '*/win-unpacked/ReceiptBI.exe' -type f -print -quit)
+            [ -n "$packaged_app" ] || {
+              echo "Packaged Electron executable was not found"
+              exit 1
+            }
+
+            PACKAGED_APP="$packaged_app" python - <<'PY'
+          import os
+          import struct
+          import sys
+
+          path = os.environ["PACKAGED_APP"]
+          with open(path, "rb") as executable:
+              executable.seek(0x3C)
+              pe_offset_bytes = executable.read(4)
+              if len(pe_offset_bytes) != 4:
+                  raise SystemExit("Invalid PE executable: missing PE offset")
+              pe_offset = struct.unpack("<I", pe_offset_bytes)[0]
+              executable.seek(pe_offset)
+              if executable.read(4) != b"PE\0\0":
+                  raise SystemExit("Invalid PE executable signature")
+              machine = struct.unpack("<H", executable.read(2))[0]
+
+          expected_machine = 0x8664
+          print(f"Packaged Electron PE machine: 0x{machine:04x}")
+          sys.exit(0 if machine == expected_machine else 1)
+          PY
+          fi
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -209,76 +290,142 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      # Upload directly to release via GitHub API (gh CLI truncates large files)
-      - name: Upload to release
-        if: startsWith(github.ref, 'refs/tags/desktop-v') || inputs.release_tag != ''
+  publish-release-assets:
+    needs: build
+    if: needs.build.result == 'success' && (startsWith(github.ref, 'refs/tags/desktop-v') || inputs.release_tag != '')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download verified build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify complete release artifact set
+        shell: bash
+        run: |
+          version=$(node -p "require('./apps/desktop/package.json').version")
+          expected=(
+            "ReceiptBI-$version-mac-arm64.dmg"
+            "ReceiptBI-$version-mac-arm64.zip"
+            "ReceiptBI-$version-mac-x64.dmg"
+            "ReceiptBI-$version-mac-x64.zip"
+            "ReceiptBI-$version-win-x64.exe"
+          )
+
+          artifact_count=$(find release-assets -maxdepth 1 -type f | wc -l | tr -d ' ')
+          [ "$artifact_count" -eq "${#expected[@]}" ] || {
+            echo "Expected ${#expected[@]} release artifacts, found $artifact_count"
+            find release-assets -maxdepth 1 -type f -print
+            exit 1
+          }
+
+          for filename in "${expected[@]}"; do
+            test -s "release-assets/$filename" || {
+              echo "Missing or empty release artifact: $filename"
+              exit 1
+            }
+          done
+
+          (
+            cd release-assets
+            sha256sum "${expected[@]}" | tee SHA256SUMS
+          )
+
+      - name: Replace draft release assets
         shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
-          # Determine which release to upload to
-          if [ -n "${{ inputs.release_tag }}" ]; then
-            RELEASE_TAG="${{ inputs.release_tag }}"
-          else
-            RELEASE_TAG="${{ github.ref_name }}"
-          fi
-          echo "Target release: $RELEASE_TAG"
+          release_json=$(gh release view "$RELEASE_TAG" \
+            --repo "${{ github.repository }}" \
+            --json databaseId,isDraft)
+          release_id=$(printf '%s' "$release_json" | jq -r '.databaseId')
+          is_draft=$(printf '%s' "$release_json" | jq -r '.isDraft')
 
-          RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-            "https://api.github.com/repos/${{ github.repository }}/releases" \
-            | jq -r --arg tag "$RELEASE_TAG" '.[] | select(.tag_name == $tag) | .id' | head -1)
-
-          if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
-            echo "Release not found for tag: $RELEASE_TAG"
+          [ "$is_draft" = "true" ] || {
+            echo "Refusing to replace assets on a published release"
             exit 1
-          fi
-          echo "Release ID: $RELEASE_ID"
+          }
 
-          for file in apps/desktop/release/*.dmg apps/desktop/release/*.zip apps/desktop/release/*.exe; do
+          for file in release-assets/*.dmg release-assets/*.zip release-assets/*.exe; do
             [ -f "$file" ] || continue
             filename=$(basename "$file")
             filesize=$(wc -c < "$file" | tr -d ' ')
+            local_digest="sha256:$(sha256sum "$file" | awk '{print $1}')"
             echo "Uploading $filename ($filesize bytes)..."
 
-            # Delete existing asset if any
-            existing=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-              "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets" \
-              | jq -r ".[] | select(.name == \"$filename\") | .id")
+            assets_json=$(gh api "repos/${{ github.repository }}/releases/$release_id/assets?per_page=100")
+            existing=$(printf '%s' "$assets_json" | jq -r --arg name "$filename" \
+              '.[] | select(.name == $name) | .id')
             if [ -n "$existing" ]; then
-              curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
-                "https://api.github.com/repos/${{ github.repository }}/releases/assets/$existing"
-              echo "  Deleted existing asset"
+              gh api --method DELETE "repos/${{ github.repository }}/releases/assets/$existing"
             fi
 
-            uploaded=false
-            for attempt in 1 2 3; do
-              # Use --upload-file which is designed for reliable binary uploads
-              response=$(curl -s -w "\n%{http_code}" \
-                -H "Authorization: token $GITHUB_TOKEN" \
-                -H "Content-Type: application/octet-stream" \
-                --upload-file "$file" \
-                "https://uploads.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets?name=$filename")
-              http_code=$(echo "$response" | tail -1)
-              body=$(echo "$response" | sed '$d')
-              uploaded_size=$(echo "$body" | jq -r '.size // 0')
+            encoded_name=$(jq -rn --arg value "$filename" '$value | @uri')
+            response_file=$(mktemp)
+            http_code=$(curl --silent --show-error \
+              --output "$response_file" \
+              --write-out '%{http_code}' \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --upload-file "$file" \
+              "https://uploads.github.com/repos/${{ github.repository }}/releases/$release_id/assets?name=$encoded_name")
 
-              if [ "$http_code" = "201" ] && [ "$uploaded_size" = "$filesize" ]; then
-                echo "  OK (verified: $uploaded_size bytes)"
-                uploaded=true
-                break
-              fi
-              echo "  Attempt $attempt: HTTP $http_code, uploaded=$uploaded_size expected=$filesize"
-              # Clean up partial upload
-              new_asset=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-                "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets" \
-                | jq -r ".[] | select(.name == \"$filename\") | .id")
-              [ -n "$new_asset" ] && curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
-                "https://api.github.com/repos/${{ github.repository }}/releases/assets/$new_asset"
-              sleep 10
-            done
+            uploaded_id=$(jq -r '.id // empty' "$response_file")
+            uploaded_size=$(jq -r '.size // 0' "$response_file")
+            uploaded_digest=$(jq -r '.digest // empty' "$response_file")
+            rm -f "$response_file"
 
-            if [ "$uploaded" != "true" ]; then
-              echo "Failed to upload $filename after 3 attempts"
+            if [ "$http_code" != "201" ] || [ "$uploaded_size" != "$filesize" ] || [ "$uploaded_digest" != "$local_digest" ]; then
+              [ -n "$uploaded_id" ] && gh api --method DELETE \
+                "repos/${{ github.repository }}/releases/assets/$uploaded_id"
+              echo "Upload verification failed for $filename"
               exit 1
             fi
+          done
+
+      - name: Verify draft release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          release_json=$(gh release view "$RELEASE_TAG" \
+            --repo "${{ github.repository }}" \
+            --json databaseId)
+          release_id=$(printf '%s' "$release_json" | jq -r '.databaseId')
+          assets_json=$(gh api "repos/${{ github.repository }}/releases/$release_id/assets?per_page=100")
+          version=$(node -p "require('./apps/desktop/package.json').version")
+          expected=(
+            "ReceiptBI-$version-mac-arm64.dmg"
+            "ReceiptBI-$version-mac-arm64.zip"
+            "ReceiptBI-$version-mac-x64.dmg"
+            "ReceiptBI-$version-mac-x64.zip"
+            "ReceiptBI-$version-win-x64.exe"
+          )
+
+          [ "$(printf '%s' "$assets_json" | jq 'length')" -eq "${#expected[@]}" ] || {
+            echo "Draft release does not contain exactly ${#expected[@]} assets"
+            exit 1
+          }
+
+          for filename in "${expected[@]}"; do
+            remote_size=$(printf '%s' "$assets_json" | jq -r --arg name "$filename" \
+              '.[] | select(.name == $name) | .size')
+            remote_digest=$(printf '%s' "$assets_json" | jq -r --arg name "$filename" \
+              '.[] | select(.name == $name) | .digest')
+            local_size=$(wc -c < "release-assets/$filename" | tr -d ' ')
+            local_digest="sha256:$(sha256sum "release-assets/$filename" | awk '{print $1}')"
+
+            [ "$remote_size" = "$local_size" ] && [ "$remote_digest" = "$local_digest" ] || {
+              echo "Final release verification failed for $filename"
+              exit 1
+            }
           done

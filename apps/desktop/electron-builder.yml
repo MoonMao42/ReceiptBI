@@ -29,10 +29,8 @@ extraResources:
 mac:
   category: public.app-category.business
   target:
-    - target: dmg
-      arch: [x64, arm64]
-    - target: zip
-      arch: [x64, arm64]
+    - dmg
+    - zip
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
   icon: resources/icon/icon.icns
   sign: false
@@ -41,8 +39,7 @@ mac:
 # Windows
 win:
   target:
-    - target: nsis
-      arch: [x64]
+    - nsis
   artifactName: ${productName}-${version}-win-${arch}.${ext}
   icon: resources/icon/icon.ico
 
