@@ -5,12 +5,13 @@ import json
 import shutil
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from sqlalchemy import desc, func, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
@@ -625,6 +626,7 @@ async def confirm_business_definition(
     run = run_result.scalar_one_or_none()
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="调查记录不存在")
+    run_id = UUID(str(run.id))
     if run.conversation_id is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -676,8 +678,8 @@ async def confirm_business_definition(
         ):
             return APIResponse.ok(
                 data=BusinessConfirmationResponse(
-                    analysis_run_id=run.id,
-                    resume_run_id=run.id,
+                    analysis_run_id=run_id,
+                    resume_run_id=run_id,
                     project_id=run.project_id,
                     conversation_id=run.conversation_id,
                     key=expected_key,
@@ -731,26 +733,29 @@ async def confirm_business_definition(
 
     claim_failed = False
     try:
-        claim = await db.execute(
-            update(AnalysisRun)
-            .where(
-                AnalysisRun.id == run.id,
-                AnalysisRun.state == "waiting_confirmation",
-                AnalysisRun.stage == "waiting_confirmation",
-            )
-            .values(
-                stage="confirmation_processing",
-                checkpoint={
-                    **checkpoint,
-                    "confirmation_claim": {
-                        "id": uuid4().hex,
-                        "key": expected_key,
-                        "selected_value": request.selected_option,
-                        "claimed_at": datetime.now(UTC).isoformat(),
+        claim = cast(
+            CursorResult[Any],
+            await db.execute(
+                update(AnalysisRun)
+                .where(
+                    AnalysisRun.id == run.id,
+                    AnalysisRun.state == "waiting_confirmation",
+                    AnalysisRun.stage == "waiting_confirmation",
+                )
+                .values(
+                    stage="confirmation_processing",
+                    checkpoint={
+                        **checkpoint,
+                        "confirmation_claim": {
+                            "id": uuid4().hex,
+                            "key": expected_key,
+                            "selected_value": request.selected_option,
+                            "claimed_at": datetime.now(UTC).isoformat(),
+                        },
                     },
-                },
-            )
-            .execution_options(synchronize_session=False)
+                )
+                .execution_options(synchronize_session=False)
+            ),
         )
         claim_failed = claim.rowcount != 1
     except OperationalError:
@@ -763,8 +768,10 @@ async def confirm_business_definition(
         refreshed = refreshed_result.scalar_one_or_none()
         refreshed_checkpoint = dict(refreshed.checkpoint or {}) if refreshed is not None else {}
         refreshed_receipt = refreshed_checkpoint.get("confirmation_receipt")
+        refreshed_conversation_id = refreshed.conversation_id if refreshed is not None else None
         if (
             refreshed is not None
+            and refreshed_conversation_id is not None
             and refreshed.state == "waiting_confirmation"
             and refreshed.stage == "confirmation_received"
             and isinstance(refreshed_receipt, dict)
@@ -772,12 +779,13 @@ async def confirm_business_definition(
             and refreshed_receipt.get("selected_value") == request.selected_option
             and refreshed_checkpoint.get("confirmation_receipt_status") == "pending"
         ):
+            refreshed_run_id = UUID(str(refreshed.id))
             return APIResponse.ok(
                 data=BusinessConfirmationResponse(
-                    analysis_run_id=refreshed.id,
-                    resume_run_id=refreshed.id,
+                    analysis_run_id=refreshed_run_id,
+                    resume_run_id=refreshed_run_id,
                     project_id=refreshed.project_id,
-                    conversation_id=refreshed.conversation_id,
+                    conversation_id=refreshed_conversation_id,
                     key=expected_key,
                     selected_option=request.selected_option,
                 ),
@@ -964,8 +972,8 @@ async def confirm_business_definition(
     await db.refresh(run)
     return APIResponse.ok(
         data=BusinessConfirmationResponse(
-            analysis_run_id=run.id,
-            resume_run_id=run.id,
+            analysis_run_id=run_id,
+            resume_run_id=run_id,
             project_id=run.project_id,
             conversation_id=run.conversation_id,
             key=expected_key,

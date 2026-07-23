@@ -219,7 +219,7 @@ async def update_connection(
     if previous_scope != next_scope:
         await _invalidate_linked_sources_after_scope_change(
             db,
-            connection_id=connection.id,
+            connection_id=connection_id,
         )
 
     await db.commit()

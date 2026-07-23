@@ -17,6 +17,7 @@ from app.core.config import settings
 from app.db import get_db
 from app.db.tables import AppSettings, Model
 from app.models import APIResponse, ModelCreate, ModelResponse, ModelTest
+from app.models.config import ModelAPIFormat, ModelHealthStatus
 from app.services.analyst_runtime import build_pydantic_model
 from app.services.app_settings import get_or_create_app_settings
 from app.services.model_runtime import (
@@ -113,12 +114,13 @@ async def _finish_model_test(
     response_time_ms: int | None = None,
     resolved_provider: str | None = None,
     resolved_base_url: str | None = None,
-    api_format: str | None = None,
+    api_format: ModelAPIFormat | None = None,
     api_key_required: bool = True,
     error_category: str | None = None,
 ) -> APIResponse[ModelTest]:
     checked_at = datetime.now(UTC)
-    model.health_status = "healthy" if success else "unhealthy"
+    health_status: ModelHealthStatus = "healthy" if success else "unhealthy"
+    model.health_status = health_status
     model.last_checked_at = checked_at
     model.last_error_category = None if success else (error_category or "unknown")
     model.last_response_time_ms = response_time_ms if success else None
@@ -134,7 +136,7 @@ async def _finish_model_test(
             api_format=api_format,
             api_key_required=api_key_required,
             error_category=error_category,
-            health_status=model.health_status,
+            health_status=health_status,
             checked_at=checked_at,
         )
     )

@@ -58,7 +58,7 @@ class ActiveQueryRegistry:
         with self._lock:
             conversation_key = str(conversation_id)
             previous = self._current_query.get(conversation_key)
-            if self._queries.get(previous) == _QUERY_ACTIVE:
+            if previous is not None and self._queries.get(previous) == _QUERY_ACTIVE:
                 self._queries[previous] = _QUERY_STOPPED
             query_key = f"{conversation_key}:{uuid4().hex}"
             initial_state = _QUERY_STOPPED if self._shutdown_requested else _QUERY_ACTIVE
@@ -66,7 +66,10 @@ class ActiveQueryRegistry:
             if client_stream_id:
                 client_key = (conversation_key, client_stream_id)
                 previous_client_query = self._client_stream_queries.get(client_key)
-                if self._queries.get(previous_client_query) == _QUERY_ACTIVE:
+                if (
+                    previous_client_query is not None
+                    and self._queries.get(previous_client_query) == _QUERY_ACTIVE
+                ):
                     self._queries[previous_client_query] = _QUERY_STOPPED
                 tombstone = self._client_stream_tombstones.pop(client_key, None)
                 if tombstone is not None:
@@ -419,6 +422,7 @@ def resolve_chat_request(
         settings_data.get("context_rounds", 5) or 5
     )
     locked_model_id = str(conversation.model_id) if conversation.model_id else None
+    effective_model: str | None
     if locked_model_id:
         locked_identifier = str((conversation.extra_data or {}).get("model_identifier") or "")
         if requested_model and requested_model not in {locked_model_id, locked_identifier}:
