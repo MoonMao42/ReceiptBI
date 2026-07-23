@@ -7,7 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/MoonMao42/QueryGPT.git"
+    "url": "https://github.com/MoonMao42/ReceiptBI.git"
   },
   "scripts": {
     "dev": "tsc -p tsconfig.electron.json && electron .",

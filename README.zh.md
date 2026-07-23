@@ -47,8 +47,8 @@ flowchart LR
 ### 1. 克隆仓库
 
 ```bash
-git clone git@github.com:MKY508/QueryGPT.git
-cd QueryGPT
+git clone https://github.com/MoonMao42/ReceiptBI.git
+cd ReceiptBI
 ```
 
 ### 2. 运行

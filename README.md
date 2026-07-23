@@ -47,8 +47,8 @@ flowchart LR
 ### 1. Clone the repo
 
 ```bash
-git clone git@github.com:MoonMao43/QueryGPT.git
-cd QueryGPT
+git clone https://github.com/MoonMao42/ReceiptBI.git
+cd ReceiptBI
 ```
 
 ### 2. Run it

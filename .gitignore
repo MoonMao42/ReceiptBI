@@ -50,3 +50,8 @@ mock-llm.log
 *.whl
 QueryGPT-*.dmg
 .planning/
+
+# Local-only state
+.serena/
+*.pid
+*.tsbuildinfo
