@@ -55,7 +55,7 @@ test("settings workflow and chat smoke test", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("project-work-surface")).toBeVisible();
   await expect(page.getByTestId("chat-input")).toBeVisible();
-  await expect(page.getByRole("button", { name: /数据来源/ })).toBeVisible();
+  await expect(page.getByTestId("chat-data-source-button")).toBeVisible();
   await expect(page.getByTestId("chat-connection-select")).toHaveCount(0);
   const analysisServiceSelector = page.getByTestId("analysis-service-selector");
   await expect(analysisServiceSelector).toBeVisible();

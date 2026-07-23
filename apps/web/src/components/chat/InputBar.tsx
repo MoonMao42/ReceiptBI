@@ -156,6 +156,7 @@ export function InputBar({
                 variant="ghost"
                 size="sm"
                 onClick={onOpenData}
+                data-testid="chat-data-source-button"
                 className="gap-1.5 px-2 text-xs"
               >
                 <Database size={14} />
