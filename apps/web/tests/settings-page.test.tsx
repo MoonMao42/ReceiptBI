@@ -1,11 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { NextIntlClientProvider } from "next-intl";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SettingsPage from "@/app/settings/page";
-
-vi.mock("next-intl", () => ({
-  useLocale: () => "zh",
-  useTranslations: () => (key: string) => ({ title: "设置", about: "关于" })[key] || key,
-}));
+import enMessages from "@/messages/en.json";
+import zhMessages from "@/messages/zh.json";
 
 vi.mock("@/components/settings/ModelSettings", () => ({
   ModelSettings: () => <div data-testid="model-settings">models</div>,
@@ -21,13 +19,24 @@ vi.mock("@/components/settings/PreferencesSettings", () => ({
   ),
 }));
 
+function renderPage(locale: "en" | "zh" = "zh") {
+  return render(
+    <NextIntlClientProvider
+      locale={locale}
+      messages={locale === "zh" ? zhMessages : enMessages}
+    >
+      <SettingsPage />
+    </NextIntlClientProvider>
+  );
+}
+
 describe("SettingsPage", () => {
   beforeEach(() => {
     window.history.replaceState({}, "", "/settings");
   });
 
   it("keeps current settings and removes legacy prompt, schema, semantic and config migration UI", async () => {
-    render(<SettingsPage />);
+    renderPage();
 
     expect(await screen.findByTestId("model-settings")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "分析服务" })).toBeInTheDocument();
@@ -58,7 +67,7 @@ describe("SettingsPage", () => {
   it("does not revive a retired settings panel from an old URL", async () => {
     window.history.replaceState({}, "", "/settings?tab=prompts");
 
-    render(<SettingsPage />);
+    renderPage();
 
     expect(await screen.findByTestId("model-settings")).toBeInTheDocument();
     expect(screen.queryByTestId("preferences-diagnostics")).not.toBeInTheDocument();
@@ -67,10 +76,25 @@ describe("SettingsPage", () => {
   it("opens a requested tab without mounting the default panel first", async () => {
     window.history.replaceState({}, "", "/settings?tab=connections");
 
-    render(<SettingsPage />);
+    renderPage();
 
     expect(await screen.findByTestId("connection-settings")).toBeInTheDocument();
     expect(screen.queryByTestId("model-settings")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "数据连接" })).toBeInTheDocument();
+  });
+
+  it("renders navigation and panel titles from the English settings catalog", async () => {
+    renderPage("en");
+
+    expect(await screen.findByTestId("model-settings")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Analysis service" })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Data connections" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "About" })).toHaveAttribute("href", "/about");
+
+    fireEvent.click(screen.getByTestId("settings-tab-execution"));
+    expect(await screen.findByTestId("preferences-execution")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Execution" })).toBeInTheDocument();
   });
 });

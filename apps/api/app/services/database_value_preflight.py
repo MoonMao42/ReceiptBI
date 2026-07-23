@@ -26,50 +26,19 @@ from app.services.database import (
     DatabaseManager,
     QueryResult,
 )
-from app.services.database_adapters import BoundedSchemaCatalog
+from app.services.database_adapters import (
+    BoundedRelationIndex,
+    BoundedSchemaCatalog,
+    DatabaseQueryCancelledError,
+)
+from app.services.semantic_field_roles import (
+    SEMANTIC_ROLE_INFERENCE_VERSION,
+    infer_semantic_field_role,
+)
 
 PROFILE_ROWS = MAX_DATABASE_PROFILE_SAMPLE_ROWS - 1
+DEFAULT_DATABASE_RELATION_INDEX_LIMIT = 512
 
-_IDENTIFIER_HINTS = (
-    "_id",
-    "id_",
-    "uuid",
-    "guid",
-    "编号",
-    "单号",
-    "编码",
-    "code",
-)
-_TIME_HINTS = (
-    "date",
-    "time",
-    "created",
-    "updated",
-    "timestamp",
-    "日期",
-    "时间",
-    "月份",
-    "年度",
-)
-_MEASURE_HINTS = (
-    "amount",
-    "price",
-    "cost",
-    "revenue",
-    "sales",
-    "profit",
-    "margin",
-    "quantity",
-    "qty",
-    "count",
-    "金额",
-    "价格",
-    "成本",
-    "收入",
-    "销售",
-    "利润",
-    "数量",
-)
 _NUMERIC_TYPE_HINTS = (
     "int",
     "real",
@@ -142,6 +111,7 @@ class DatabaseValuePreflightBudget:
     """Hard limits for one database profiling pass."""
 
     max_tables: int = 24
+    max_relation_index: int = DEFAULT_DATABASE_RELATION_INDEX_LIMIT
     max_columns_per_table: int = 80
     max_total_columns: int = 480
     max_sample_bytes: int = 2 * 1024 * 1024
@@ -152,6 +122,7 @@ class DatabaseValuePreflightBudget:
     def __post_init__(self) -> None:
         integer_limits = {
             "max_tables": self.max_tables,
+            "max_relation_index": self.max_relation_index,
             "max_columns_per_table": self.max_columns_per_table,
             "max_total_columns": self.max_total_columns,
             "max_sample_bytes": self.max_sample_bytes,
@@ -175,6 +146,36 @@ class DatabaseValuePreflightResult:
     catalog_status: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True, slots=True)
+class DatabaseRelationProfileResult:
+    """One selected relation's bounded schema and optional value portrait."""
+
+    catalog_entry: dict[str, Any]
+    portrait: dict[str, Any]
+
+
+def bounded_relation_index_snapshot(
+    relation_index: BoundedRelationIndex,
+) -> dict[str, Any]:
+    """Serialize one bounded metadata directory without claiming an unknown total."""
+
+    relations = [dict(item) for item in relation_index.relations]
+    unread_relations_at_least = max(
+        int(relation_index.unread_relations_at_least),
+        int(relation_index.truncated),
+    )
+    relations_total_at_least = len(relations) + unread_relations_at_least
+    return {
+        "relations": relations,
+        "relations_loaded": len(relations),
+        "relations_total": len(relations) if not relation_index.truncated else None,
+        "relations_total_at_least": relations_total_at_least,
+        "complete": not relation_index.truncated,
+        "truncated": relation_index.truncated,
+        "unread_relations_at_least": unread_relations_at_least,
+    }
+
+
 def run_database_value_preflight(
     manager: DatabaseManager,
     *,
@@ -195,6 +196,18 @@ def run_database_value_preflight(
     failures: list[dict[str, str]] = []
 
     try:
+        relation_index: BoundedRelationIndex | None = None
+        full_catalog: list[dict[str, Any]] | None = None
+        relation_index_reader = getattr(manager, "get_bounded_relation_index", None)
+        if callable(relation_index_reader):
+            try:
+                relation_index = relation_index_reader(
+                    max_relations=limits.max_relation_index,
+                )
+            except Exception:
+                # The deep catalog below remains a truthful bounded fallback for
+                # older drivers or restricted metadata permissions.
+                relation_index = None
         bounded_reader = getattr(manager, "get_bounded_schema_catalog", None)
         if callable(bounded_reader):
             bounded_catalog = bounded_reader(
@@ -218,6 +231,27 @@ def run_database_value_preflight(
             bounded_catalog.tables,
             key=lambda item: str(item.get("name", "")),
         )
+        if relation_index is None:
+            fallback_catalog = full_catalog if full_catalog is not None else catalog
+            fallback_relations = [
+                {
+                    "name": str(item.get("name") or ""),
+                    "schema": item.get("schema"),
+                    "kind": str(item.get("kind") or "unknown"),
+                    "comment": item.get("comment"),
+                }
+                for item in fallback_catalog[: limits.max_relation_index]
+                if str(item.get("name") or "")
+            ]
+            fallback_truncated = (
+                len(fallback_catalog) > limits.max_relation_index
+                or bounded_catalog.relations_truncated
+            )
+            relation_index = BoundedRelationIndex(
+                relations=fallback_relations,
+                truncated=fallback_truncated,
+                unread_relations_at_least=int(fallback_truncated),
+            )
     except Exception as exc:
         failure = _failure(None, "catalog_unavailable", exc)
         return DatabaseValuePreflightResult(
@@ -235,14 +269,16 @@ def run_database_value_preflight(
         )
 
     total_tables = len(catalog)
+    relation_index_data = bounded_relation_index_snapshot(relation_index)
+    indexed_relations_at_least = relation_index_data["relations_total_at_least"]
     relationship_evidence = _foreign_key_relationship_evidence(catalog)
     selected_catalog = catalog
     if bounded_catalog.relations_truncated:
         issues.append(
             _issue(
                 "database_table_budget_reached",
-                f"本次先画像 {len(selected_catalog)} 张表",
-                "至少另有 1 张表未读取目录和值，可按需继续画像。",
+                f"本次先深入画像 {len(selected_catalog)} 张表",
+                "其他表已保留在目录中，可在需要时继续读取字段并画像。",
             )
         )
     if bounded_catalog.columns_truncated:
@@ -415,6 +451,7 @@ def run_database_value_preflight(
     profiled_rows = sum(int(item["sample"]["rows_profiled"]) for item in portraits)
     preanalysis = {
         "generated_by": "deterministic_database_value_preflight",
+        "semantic_role_inference_version": SEMANTIC_ROLE_INFERENCE_VERSION,
         "requires_query_verification": True,
         "read_only": True,
         "catalog": {
@@ -427,8 +464,9 @@ def run_database_value_preflight(
             "columns_truncated": bounded_catalog.columns_truncated,
             "unread_columns_at_least": bounded_catalog.unread_columns_at_least,
         },
+        "relation_index": relation_index_data,
         "shape": {
-            "tables": total_tables,
+            "tables": indexed_relations_at_least,
             "profiled_tables": len(portraits),
             "columns": sum(len(item["candidate_roles"]) for item in portraits),
             "sampled_rows": profiled_rows,
@@ -443,6 +481,7 @@ def run_database_value_preflight(
             "profile_rows_per_table": limits.profile_rows,
             "query_rows_per_table": limits.profile_rows + 1,
             "max_tables": limits.max_tables,
+            "max_relation_index": limits.max_relation_index,
             "max_columns_per_table": limits.max_columns_per_table,
             "max_total_columns": limits.max_total_columns,
             "max_sample_bytes": limits.max_sample_bytes,
@@ -451,6 +490,8 @@ def run_database_value_preflight(
             "elapsed_ms": elapsed_ms,
         },
     }
+    if relation_index.truncated:
+        preanalysis["shape"]["tables_are_lower_bound"] = True
     partial = bool(
         failures
         or issues
@@ -471,6 +512,13 @@ def run_database_value_preflight(
         )
         if partial:
             summary += "，部分表或字段可按需继续"
+    preanalysis["summary_code"] = "database_value_preflight"
+    preanalysis["summary_facts"] = {
+        "profiled_tables": len(portraits),
+        "profiled_columns": sum(len(item["candidate_roles"]) for item in portraits),
+        "status": status,
+        "partial": partial,
+    }
     return DatabaseValuePreflightResult(
         status=status,
         summary=summary,
@@ -478,6 +526,83 @@ def run_database_value_preflight(
         issues=issues,
         catalog=catalog,
         catalog_status=dict(preanalysis["catalog"]),
+    )
+
+
+def profile_selected_database_relation(
+    manager: DatabaseManager,
+    relation: dict[str, Any],
+    *,
+    budget: DatabaseValuePreflightBudget | None = None,
+    cancellation_event: threading.Event | None = None,
+) -> DatabaseRelationProfileResult:
+    """Profile exactly one user-selected relation within the existing hard limits.
+
+    Relation selection comes from the metadata-only relation index.  This helper
+    deliberately does not enumerate the first N catalog tables, which lets a
+    resumable inventory reach catalog-only tables beyond the automatic preflight
+    prefix without widening any row, byte, column, or time budget.
+    """
+
+    limits = budget or DatabaseValuePreflightBudget(
+        max_tables=1,
+        max_total_columns=80,
+    )
+    table_name = str(relation.get("name") or "").strip()
+    if not table_name:
+        raise ValueError("数据库画像必须指定表")
+    if cancellation_event is not None and cancellation_event.is_set():
+        raise DatabaseQueryCancelledError("Database profile was cancelled before execution")
+
+    catalog_entry = manager.get_bounded_relation_schema(
+        table_name,
+        max_columns=min(limits.max_columns_per_table, limits.max_total_columns),
+    )
+    catalog_entry.update(
+        {
+            key: relation.get(key)
+            for key in ("schema", "kind", "comment", "description")
+            if relation.get(key) is not None
+        }
+    )
+    columns = [
+        dict(item)
+        for item in catalog_entry.get("columns") or []
+        if isinstance(item, dict) and item.get("name")
+    ]
+    if not columns:
+        raise ValueError("所选表没有可画像字段")
+
+    query_result = manager.sample_table(
+        table_name,
+        [str(item["name"]) for item in columns],
+        max_rows=limits.profile_rows + 1,
+        timeout_seconds=limits.per_table_timeout_seconds,
+        cancellation_event=cancellation_event,
+    )
+    rows, sampled_bytes, byte_limited = _rows_within_byte_budget(
+        query_result.data[: limits.profile_rows],
+        columns=[str(item["name"]) for item in columns],
+        byte_budget=limits.max_sample_bytes,
+    )
+    portrait = _profile_table(
+        catalog_entry,
+        columns,
+        rows,
+        sample_truncated=(
+            query_result.truncated
+            or query_result.rows_count > limits.profile_rows
+            or byte_limited
+        ),
+        sampled_bytes=sampled_bytes,
+        profile_row_limit=limits.profile_rows,
+        query_result=query_result,
+    )
+    if byte_limited:
+        portrait["partial_reasons"] = ["byte_budget_reached"]
+    return DatabaseRelationProfileResult(
+        catalog_entry=catalog_entry,
+        portrait=portrait,
     )
 
 
@@ -795,29 +920,16 @@ def _profile_column(name: str, declared_type: str, values: list[Any]) -> dict[st
 
 
 def _infer_role(name: str, declared_type: str, values: list[Any]) -> str:
-    lowered = name.casefold()
     normalized_type = declared_type.casefold()
-    if _has_identifier_hint(lowered):
-        return "identifier"
-    if any(hint in normalized_type for hint in _TIME_TYPE_HINTS) or any(
-        hint in lowered for hint in _TIME_HINTS
-    ):
-        return "time"
     numeric_type = any(hint in normalized_type for hint in _NUMERIC_TYPE_HINTS)
     numeric_values = sum(_as_decimal(value) is not None for value in values)
     mostly_numeric = bool(values) and numeric_values / len(values) >= 0.8
-    if (
-        numeric_type
-        or mostly_numeric
-        or any(hint in lowered for hint in _MEASURE_HINTS)
-    ) and "bool" not in normalized_type:
-        return "measure"
-    return "dimension"
-
-
-def _has_identifier_hint(lowered: str) -> bool:
-    return lowered == "id" or lowered.endswith("_key") or any(
-        hint in lowered for hint in _IDENTIFIER_HINTS
+    is_boolean = "bool" in normalized_type
+    return infer_semantic_field_role(
+        name,
+        is_numeric=numeric_type and not is_boolean,
+        is_datetime=any(hint in normalized_type for hint in _TIME_TYPE_HINTS),
+        mostly_numeric=mostly_numeric and not is_boolean,
     )
 
 
@@ -962,8 +1074,24 @@ def _issue(
 def _empty_preanalysis(*, failures: list[dict[str, str]]) -> dict[str, Any]:
     return {
         "generated_by": "deterministic_database_value_preflight",
+        "summary_code": "database_value_preflight",
+        "summary_facts": {
+            "profiled_tables": 0,
+            "profiled_columns": 0,
+            "status": "error",
+            "partial": True,
+        },
         "requires_query_verification": True,
         "read_only": True,
+        "relation_index": {
+            "relations": [],
+            "relations_loaded": 0,
+            "relations_total": None,
+            "relations_total_at_least": 0,
+            "complete": False,
+            "truncated": False,
+            "unread_relations_at_least": 0,
+        },
         "shape": {
             "tables": 0,
             "profiled_tables": 0,

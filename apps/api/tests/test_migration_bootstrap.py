@@ -5,6 +5,8 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
@@ -18,7 +20,7 @@ from app.services.migration_bootstrap import (
     migrate_local_sqlite_to_head,
 )
 
-HEAD = "0015_editable_reports"
+HEAD = "0021_semantic_inventory_jobs"
 
 
 def _engine(path: Path) -> AsyncEngine:
@@ -39,6 +41,31 @@ def _create_pre_retirement_schema(sync_connection) -> None:
     _create_legacy_seed_tables(sync_connection)
     Base.metadata.create_all(sync_connection)
     # Historical fixtures predate the editable report document migration.
+    sync_connection.exec_driver_sql("DROP TABLE semantic_inventory_job_items")
+    sync_connection.exec_driver_sql("DROP TABLE semantic_inventory_jobs")
+    operations = Operations(MigrationContext.configure(sync_connection))
+    with operations.batch_alter_table(
+        "semantic_entries",
+        recreate="always",
+        naming_convention={
+            "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s"
+        },
+    ) as batch_op:
+        batch_op.drop_index("ix_semantic_entries_scope_id")
+        batch_op.drop_constraint(
+            "fk_semantic_entries_scope_id_semantic_scope_nodes",
+            type_="foreignkey",
+        )
+        batch_op.drop_column("scope_id")
+    operations.drop_table("semantic_scope_nodes")
+    sync_connection.exec_driver_sql("DROP TABLE semantic_validation_job_items")
+    sync_connection.exec_driver_sql("DROP TABLE semantic_validation_jobs")
+    sync_connection.exec_driver_sql(
+        "DROP INDEX ix_semantic_entries_recommendation_batch_id"
+    )
+    sync_connection.exec_driver_sql(
+        "ALTER TABLE semantic_entries DROP COLUMN recommendation_batch_id"
+    )
     sync_connection.exec_driver_sql("DROP TABLE report_blocks")
     sync_connection.exec_driver_sql("DROP TABLE report_pages")
     sync_connection.exec_driver_sql("DROP TABLE report_documents")
@@ -122,7 +149,7 @@ async def _create_versioned_0011_legacy_settings(engine: AsyncEngine) -> dict[st
                     "id": ids["user_connection"],
                     "name": "Customer SQLite",
                     "driver": "sqlite",
-                    "database_name": "/Users/alice/.querygpt-desktop/customer.db",
+                    "database_name": "/Users/example/.querygpt-desktop/customer.db",
                     "extra_options": {},
                     "is_default": False,
                 },
@@ -138,7 +165,7 @@ async def _create_versioned_0011_legacy_settings(engine: AsyncEngine) -> dict[st
                     "id": ids["demo_connection"],
                     "name": "Sample Database",
                     "driver": "sqlite",
-                    "database_name": "/Users/alice/.querygpt-desktop/demo.db",
+                    "database_name": "/Users/example/.querygpt-desktop/demo.db",
                     "extra_options": {},
                     "is_default": True,
                 },
@@ -187,8 +214,8 @@ async def _create_versioned_0011_legacy_settings(engine: AsyncEngine) -> dict[st
                     "connection_id": ids["user_connection"],
                     "kind": "connection",
                     "name": "Customer SQLite",
-                    "source_uri": "/Users/alice/.querygpt-desktop/source.db",
-                    "working_uri": "/Users/alice/.querygpt-desktop/work/source.db",
+                    "source_uri": "/Users/example/.querygpt-desktop/source.db",
+                    "working_uri": "/Users/example/.querygpt-desktop/work/source.db",
                     "status": "ready",
                     "profile_data": {
                         "preanalysis": {
@@ -272,7 +299,7 @@ async def _create_versioned_0011_legacy_settings(engine: AsyncEngine) -> dict[st
                 title="保留的用户会话",
                 status="active",
                 extra_data={
-                    "artifact_path": "/Users/alice/.querygpt-desktop/artifacts/report.json"
+                    "artifact_path": "/Users/example/.querygpt-desktop/artifacts/report.json"
                 },
             )
         )
@@ -283,7 +310,7 @@ async def _create_versioned_0011_legacy_settings(engine: AsyncEngine) -> dict[st
                 role="assistant",
                 content="已完成",
                 extra_data={
-                    "files": ["/Users/alice/.querygpt-desktop/artifacts/chart.png"]
+                    "files": ["/Users/example/.querygpt-desktop/artifacts/chart.png"]
                 },
             )
         )
@@ -926,10 +953,20 @@ async def test_empty_database_bootstraps_head_and_repeated_start_is_idempotent(t
         assert await migrate_local_sqlite_to_head(engine, str(engine.url)) == HEAD
         assert await _revision(engine) == HEAD
         async with engine.connect() as connection:
-            tables, settings_columns = await connection.run_sync(
+            tables, settings_columns, job_columns, item_columns = await connection.run_sync(
                 lambda sync: (
                     set(inspect(sync).get_table_names()),
                     {column["name"] for column in inspect(sync).get_columns("app_settings")},
+                    {
+                        column["name"]
+                        for column in inspect(sync).get_columns("semantic_inventory_jobs")
+                    },
+                    {
+                        column["name"]
+                        for column in inspect(sync).get_columns(
+                            "semantic_inventory_job_items"
+                        )
+                    },
                 )
             )
         assert {
@@ -937,9 +974,47 @@ async def test_empty_database_bootstraps_head_and_repeated_start_is_idempotent(t
             "semantic_entries",
             "semantic_entry_revisions",
             "sanitation_recipe_revisions",
+            "semantic_inventory_jobs",
+            "semantic_inventory_job_items",
         } <= tables
         assert {"semantic_terms", "table_relationships", "prompts"}.isdisjoint(tables)
         assert "demo_initialized" not in settings_columns
+        assert {
+            "preprocessing_enabled",
+            "self_analysis_enabled",
+        } <= settings_columns
+        assert {
+            "project_id",
+            "source_id",
+            "depth",
+            "tables",
+            "selection_hash",
+            "lease_expires_at",
+        } <= job_columns
+        assert {
+            "job_id",
+            "ordinal",
+            "table_name",
+            "phase",
+            "attempt_count",
+            "retryable",
+            "profile_result",
+        } <= item_columns
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_partial_semantic_inventory_generation_fails_closed(tmp_path: Path):
+    engine = _engine(tmp_path / "partial-semantic-inventory.db")
+    try:
+        assert await migrate_local_sqlite_to_head(engine, str(engine.url)) == HEAD
+        async with engine.begin() as connection:
+            await connection.execute(text("DROP TABLE semantic_inventory_job_items"))
+
+        with pytest.raises(UnsafeLocalSchemaError, match="不完整.*0021"):
+            await migrate_local_sqlite_to_head(engine, str(engine.url))
+        assert await _revision(engine) == HEAD
     finally:
         await engine.dispose()
 
@@ -995,7 +1070,7 @@ async def test_0012_migrates_legacy_knowledge_and_retires_only_exact_demo_state(
             assert retained_connections.all() == [
                 (
                     "Customer SQLite",
-                    "/Users/alice/.querygpt-desktop/customer.db",
+                    "/Users/example/.querygpt-desktop/customer.db",
                 ),
                 ("Unmapped Warehouse", "/data/customer.sqlite"),
             ]
@@ -1053,8 +1128,8 @@ async def test_0012_migrates_legacy_knowledge_and_retires_only_exact_demo_state(
                 {"id": db_id("user_source")},
             )
             source_uri, working_uri, profile_data = source.one()
-            assert source_uri == "/Users/alice/.receiptbi-desktop/source.db"
-            assert working_uri == "/Users/alice/.receiptbi-desktop/work/source.db"
+            assert source_uri == "/Users/example/.receiptbi-desktop/source.db"
+            assert working_uri == "/Users/example/.receiptbi-desktop/work/source.db"
             assert "available_lenses" not in profile_data
             assert "candidate_grain" in profile_data
             snapshot = await connection.execute(

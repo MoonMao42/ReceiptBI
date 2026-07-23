@@ -31,6 +31,7 @@ from app.db.tables import (
     Project,
     SemanticEntry,
 )
+from app.i18n import get_progress_message, t
 from app.models import SSEEvent
 from app.services.analysis_checkpoint import (
     CheckpointDriftError,
@@ -50,6 +51,7 @@ from app.services.correction_completion import (
 )
 from app.services.engine_diagnostics import build_diagnostic_entry, categorize_sql_error
 from app.services.execution_context import ExecutionContextResolver
+from app.services.execution_policy import ExecutionPolicy
 from app.services.golden_regression import build_golden_contract, find_matching_contract
 from app.services.metric_candidate_learning import learn_verified_aggregate_metric_candidate
 from app.services.model_runtime import (
@@ -84,6 +86,10 @@ class DecisionSlotConflictError(ValueError):
 
 class SemanticValidationSelectionError(ValueError):
     """Raised when a revision-bound batch validation selection has drifted."""
+
+
+class _AnalysisFinalizationStoppedError(RuntimeError):
+    """Stop won the terminal-state claim before a successful result was durable."""
 
 
 def _normalize_semantic_validation_selection(
@@ -610,6 +616,7 @@ class ExecutionService:
         self.language = language
         self.context_rounds = max(context_rounds, 1)
         self.settings_data = settings_data or {}
+        self.execution_policy = ExecutionPolicy.from_settings(self.settings_data)
         self.project_id = project_id
         self.project_scoped = project_id is not None
         self.semantic_validation_selection = _normalize_semantic_validation_selection(
@@ -624,6 +631,42 @@ class ExecutionService:
             settings_data=self.settings_data,
             allow_default_connection_fallback=not self.project_scoped,
         )
+
+    def _public_event(self, event: SSEEvent) -> SSEEvent | None:
+        data = self.execution_policy.public_event_data(event.type.value, event.data)
+        if data is None:
+            return None
+        event.data = data
+        return event
+
+    def _checkpoint_payload(
+        self,
+        run: AnalysisRun,
+        *,
+        tool_history: list[dict[str, Any]] | None = None,
+        updates: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self.execution_policy.checkpoint_payload(
+            run.checkpoint,
+            tool_history=tool_history,
+            updates=updates,
+        )
+
+    def _technical_details(
+        self,
+        details: dict[str, Any],
+        *,
+        tool_history: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        return self.execution_policy.technical_details(
+            details,
+            tool_history=tool_history,
+        )
+
+    def _diagnostic_error(self, error: BaseException) -> str:
+        if self.execution_policy.diagnostics_enabled:
+            return str(error)
+        return type(error).__name__
 
     async def _resolve_semantic_validation_contract(
         self,
@@ -725,7 +768,14 @@ class ExecutionService:
             and semantic_entry.validity in {"active", "unverified"}
             and semantic_entry.execution_state == "needs_validation"
         )
-        executable = standard_executable or relationship_trial
+        expected_active_revision_id = (
+            str(semantic_entry.active_revision_id)
+            if semantic_entry is not None and semantic_entry.active_revision_id is not None
+            else None
+        )
+        executable = bool(
+            expected_active_revision_id and (standard_executable or relationship_trial)
+        )
         return {
             "id": str(correction.id),
             "target_key": correction.target_key,
@@ -733,6 +783,7 @@ class ExecutionService:
             "correction_type": correction.correction_type,
             "source_run_id": str(correction.analysis_run_id),
             "semantic_entry_id": str(semantic_entry.id) if semantic_entry is not None else None,
+            "expected_active_revision_id": expected_active_revision_id,
             "entry_type": semantic_entry.entry_type if semantic_entry is not None else None,
             "definition_hash": stable_payload_hash(definition) if definition else None,
             "execution_state": (
@@ -929,7 +980,7 @@ class ExecutionService:
             }
 
         checkpoint_callback = None
-        if run is not None:
+        if run is not None and self.execution_policy.diagnostics_enabled:
             # PydanticAI can execute independent tool calls from one model turn in
             # parallel. A run has one SQLAlchemy session and one monotonic checkpoint
             # stream, so both the disk write and DB commit must remain serial.
@@ -970,6 +1021,7 @@ class ExecutionService:
         return PydanticAnalystRuntime(
             model_config=inputs.model_config,
             project_context=project_context,
+            execution_policy=self.execution_policy,
             language=inputs.language,
             checkpoint_callback=checkpoint_callback,
             resume_state=resume_state,
@@ -1421,21 +1473,26 @@ class ExecutionService:
         else:
             provider_summary = f"{source_provider} · {api_format}" if source_provider else None
 
-        snapshot = {
+        snapshot: dict[str, Any] = {
             "model_id": model_config.get("model_id"),
             "model_name": model_config.get("display_name"),
-            "model_identifier": model_config.get("model"),
-            "source_provider": source_provider,
-            "resolved_provider": resolved_provider,
-            "provider_summary": provider_summary,
             "connection_id": str(connection.id) if connection else None,
             "connection_name": connection.name if connection else None,
-            "connection_driver": connection.driver if connection else None,
-            "connection_host": connection.host if connection else None,
-            "database_name": connection.database_name if connection else None,
             "context_rounds": self.context_rounds,
-            "api_format": api_format,
         }
+        if self.execution_policy.diagnostics_enabled:
+            snapshot.update(
+                {
+                    "model_identifier": model_config.get("model"),
+                    "source_provider": source_provider,
+                    "resolved_provider": resolved_provider,
+                    "provider_summary": provider_summary,
+                    "connection_driver": connection.driver if connection else None,
+                    "connection_host": connection.host if connection else None,
+                    "database_name": connection.database_name if connection else None,
+                    "api_format": api_format,
+                }
+            )
         if self.project_id:
             snapshot["project_id"] = str(self.project_id)
         return snapshot
@@ -1445,6 +1502,7 @@ class ExecutionService:
         run: AnalysisRun,
         result_data: dict[str, Any],
     ) -> ResultPersistenceOutcome:
+        self.execution_policy.validate_result_boundary(result_data)
         report = dict(result_data.get("report") or {})
         state = result_data.get("analysis_state") or "completed"
         tool_history: list[dict[str, Any]] = []
@@ -1507,10 +1565,7 @@ class ExecutionService:
             run.stage = "needs_attention"
             run.error = summary[:4000]
             run.report = rejected_report
-            run.checkpoint = {
-                **(run.checkpoint or {}),
-                "tool_history": tool_history,
-                "semantic_validation_result": {
+            semantic_validation_result = {
                     "status": "incomplete",
                     "required": total_count,
                     "matched": completed_count,
@@ -1518,11 +1573,17 @@ class ExecutionService:
                         str(item.get("semantic_entry_id") or "")
                         for item in missing_validation_contract
                     ],
-                },
-                "resumable": False,
-                "reason": "semantic_validation_incomplete",
-                "last_error": summary[:4000],
             }
+            run.checkpoint = self._checkpoint_payload(
+                run,
+                tool_history=tool_history,
+                updates={
+                    "semantic_validation_result": semantic_validation_result,
+                    "resumable": False,
+                    "reason": "semantic_validation_incomplete",
+                    "last_error": summary[:4000],
+                },
+            )
             await self.db.execute(
                 delete(ArtifactRecord).where(ArtifactRecord.analysis_run_id == run.id)
             )
@@ -1533,11 +1594,14 @@ class ExecutionService:
                     kind="report",
                     title=report.get("title") or run.query[:120],
                     payload=rejected_report,
-                    technical_details={
-                        "rejection_code": "SEMANTIC_VALIDATION_INCOMPLETE",
-                        "tool_history": tool_history,
-                        "semantic_validation_result": run.checkpoint["semantic_validation_result"],
-                    },
+                    technical_details=self._technical_details(
+                        {
+                            "rejection_code": "SEMANTIC_VALIDATION_INCOMPLETE",
+                            "tool_history": tool_history,
+                            "semantic_validation_result": semantic_validation_result,
+                        },
+                        tool_history=tool_history,
+                    ),
                 )
             )
             await self.db.commit()
@@ -1633,6 +1697,7 @@ class ExecutionService:
                     "version": 1,
                     "kind": "correction_application",
                     "status": "failed",
+                    "summary_code": "correction_failed",
                     "correction_id": str(correction.id) if correction is not None else None,
                     "source_run_id": (
                         str(correction.analysis_run_id) if correction is not None else None
@@ -1655,14 +1720,16 @@ class ExecutionService:
                 run.stage = "needs_attention"
                 run.error = reason[:4000]
                 run.report = rejected_report
-                run.checkpoint = {
-                    **(run.checkpoint or {}),
-                    "tool_history": tool_history,
-                    "correction_application": failed_receipt,
-                    "resumable": False,
-                    "reason": "correction_result_rejected",
-                    "last_error": reason[:4000],
-                }
+                run.checkpoint = self._checkpoint_payload(
+                    run,
+                    tool_history=tool_history,
+                    updates={
+                        "correction_application": failed_receipt,
+                        "resumable": False,
+                        "reason": "correction_result_rejected",
+                        "last_error": reason[:4000],
+                    },
+                )
                 self.db.add(
                     ArtifactRecord(
                         project_id=run.project_id,
@@ -1670,10 +1737,13 @@ class ExecutionService:
                         kind="report",
                         title=report.get("title") or run.query[:120],
                         payload=rejected_report,
-                        technical_details={
-                            "rejection_code": "CORRECTION_RESULT_REJECTED",
-                            "tool_history": tool_history,
-                        },
+                        technical_details=self._technical_details(
+                            {
+                                "rejection_code": "CORRECTION_RESULT_REJECTED",
+                                "tool_history": tool_history,
+                            },
+                            tool_history=tool_history,
+                        ),
                     )
                 )
                 await self.db.commit()
@@ -1745,15 +1815,17 @@ class ExecutionService:
             run.stage = "needs_attention"
             run.error = str(failed_confirmation_application["summary"])[:4000]
             run.report = rejected_report
-            run.checkpoint = {
-                **(run.checkpoint or {}),
-                "tool_history": tool_history,
-                "confirmation_application": failed_confirmation_application,
-                "continuation_kind": "confirmation",
-                "resumable": True,
-                "reason": "confirmation_result_rejected",
-                "last_error": str(failed_confirmation_application["summary"])[:4000],
-            }
+            run.checkpoint = self._checkpoint_payload(
+                run,
+                tool_history=tool_history,
+                updates={
+                    "confirmation_application": failed_confirmation_application,
+                    "continuation_kind": "confirmation",
+                    "resumable": True,
+                    "reason": "confirmation_result_rejected",
+                    "last_error": str(failed_confirmation_application["summary"])[:4000],
+                },
+            )
             await self.db.execute(
                 delete(ArtifactRecord).where(ArtifactRecord.analysis_run_id == run.id)
             )
@@ -1764,11 +1836,14 @@ class ExecutionService:
                     kind="report",
                     title=report.get("title") or run.query[:120],
                     payload=rejected_report,
-                    technical_details={
-                        "rejection_code": "CONFIRMATION_RESULT_REJECTED",
-                        "tool_history": tool_history,
-                        "confirmation_application": failed_confirmation_application,
-                    },
+                    technical_details=self._technical_details(
+                        {
+                            "rejection_code": "CONFIRMATION_RESULT_REJECTED",
+                            "tool_history": tool_history,
+                            "confirmation_application": failed_confirmation_application,
+                        },
+                        tool_history=tool_history,
+                    ),
                 )
             )
             await self.db.commit()
@@ -1793,9 +1868,7 @@ class ExecutionService:
         run.state = state
         run.stage = state
         run.report = report
-        checkpoint = {
-            **(run.checkpoint or {}),
-            "tool_history": tool_history,
+        checkpoint_updates = {
             "semantic_engine": result_data.get("semantic_engine") or "internal",
             "correction_application": correction_receipt,
             "validations": [
@@ -1814,7 +1887,12 @@ class ExecutionService:
         }
         report_fallback = result_data.get("report_fallback")
         if isinstance(report_fallback, dict):
-            checkpoint["report_fallback"] = dict(report_fallback)
+            checkpoint_updates["report_fallback"] = dict(report_fallback)
+        checkpoint = self._checkpoint_payload(
+            run,
+            tool_history=tool_history,
+            updates=checkpoint_updates,
+        )
         checkpoint.pop("continuation_kind", None)
         checkpoint.pop("confirmation_application", None)
         if checkpoint.get("confirmation_receipt_status") == "in_progress":
@@ -1832,17 +1910,23 @@ class ExecutionService:
             logger.info(
                 "Ignored a superseded standing analysis run",
                 analysis_run_id=str(run.id),
-                reason=str(exc),
+                reason=self._diagnostic_error(exc),
             )
         except StandingCompletionError as exc:
             standing_failure = ("STANDING_RESULT_REJECTED", str(exc))
             logger.warning(
                 "Standing analysis baseline was not advanced",
                 analysis_run_id=str(run.id),
-                reason=str(exc),
+                reason=self._diagnostic_error(exc),
             )
             try:
-                await mark_standing_run_needs_attention(self.db, run, str(exc))
+                await mark_standing_run_needs_attention(
+                    self.db,
+                    run,
+                    str(exc),
+                    reason_code=exc.reason_code,
+                    reason_params=exc.reason_params,
+                )
             except (StandingCompletionError, ValueError):
                 logger.exception(
                     "Unable to preserve standing analysis attention state",
@@ -1859,12 +1943,15 @@ class ExecutionService:
             run.stage = "needs_attention"
             run.error = reason[:4000]
             run.report = rejected_report
-            run.checkpoint = {
-                **(run.checkpoint or {}),
-                "resumable": False,
-                "reason": error_code.casefold(),
-                "last_error": reason[:4000],
-            }
+            run.checkpoint = self._checkpoint_payload(
+                run,
+                tool_history=tool_history,
+                updates={
+                    "resumable": False,
+                    "reason": error_code.casefold(),
+                    "last_error": reason[:4000],
+                },
+            )
             self.db.add(
                 ArtifactRecord(
                     project_id=run.project_id,
@@ -1872,10 +1959,13 @@ class ExecutionService:
                     kind="report",
                     title=report.get("title") or run.query[:120],
                     payload=rejected_report,
-                    technical_details={
-                        "rejection_code": error_code,
-                        "tool_history": tool_history,
-                    },
+                    technical_details=self._technical_details(
+                        {
+                            "rejection_code": error_code,
+                            "tool_history": tool_history,
+                        },
+                        tool_history=tool_history,
+                    ),
                 )
             )
             await self.db.commit()
@@ -1895,14 +1985,19 @@ class ExecutionService:
                 kind="report",
                 title=report.get("title") or run.query[:120],
                 payload=report,
-                technical_details={
-                    "sql": result_data.get("sql"),
-                    "python": result_data.get("python"),
-                    "tool_history": result_data.get("tool_history") or [],
-                    "report_fallback": (
-                        dict(report_fallback) if isinstance(report_fallback, dict) else None
-                    ),
-                },
+                technical_details=self._technical_details(
+                    {
+                        "sql": result_data.get("sql"),
+                        "python": result_data.get("python"),
+                        "tool_history": result_data.get("tool_history") or [],
+                        "report_fallback": (
+                            dict(report_fallback)
+                            if isinstance(report_fallback, dict)
+                            else None
+                        ),
+                    },
+                    tool_history=tool_history,
+                ),
             )
         )
         for metric in report.get("metrics") or []:
@@ -2003,7 +2098,10 @@ class ExecutionService:
                     finally:
                         temporary_path.unlink(missing_ok=True)
             except (binascii.Error, OSError, ValueError) as exc:
-                logger.warning("Unable to persist Python chart", error=str(exc))
+                logger.warning(
+                    "Unable to persist Python chart",
+                    error=self._diagnostic_error(exc),
+                )
                 continue
             self.db.add(
                 ArtifactRecord(
@@ -2015,44 +2113,58 @@ class ExecutionService:
                         "format": "png",
                         "relative_path": str(chart_path.relative_to(settings.WORKSPACE_ROOT)),
                     },
-                    technical_details={
-                        "source": "python",
-                        "purpose": (python_step or {}).get("purpose"),
-                        "input_results": (python_step or {}).get("input_results", []),
-                        "input_hashes": (python_step or {}).get("input_hashes", {}),
-                        "source_refs": (python_step or {}).get("source_refs", []),
-                        "code_hash": (python_step or {}).get("code_hash"),
-                        "image_hash": image_hash,
-                    },
+                    technical_details=self._technical_details(
+                        {
+                            "source": "python",
+                            "purpose": (python_step or {}).get("purpose"),
+                            "input_results": (python_step or {}).get("input_results", []),
+                            "input_hashes": (python_step or {}).get("input_hashes", {}),
+                            "source_refs": (python_step or {}).get("source_refs", []),
+                            "code_hash": (python_step or {}).get("code_hash"),
+                            "image_hash": image_hash,
+                        }
+                    ),
                 )
             )
 
         if tool_history:
+            evidence_payload = (
+                {
+                    "validations": [
+                        item
+                        for item in tool_history
+                        if item.get("kind")
+                        in {
+                            "validation",
+                            "relationship_validation",
+                            "relationship_application",
+                            "golden_regression_validation",
+                        }
+                    ],
+                    "correction_applications": [
+                        item
+                        for item in tool_history
+                        if item.get("kind") == "correction_application"
+                    ],
+                }
+                if self.execution_policy.diagnostics_enabled
+                else {
+                    "business_evidence": self.execution_policy.business_evidence(
+                        tool_history
+                    )
+                }
+            )
             self.db.add(
                 ArtifactRecord(
                     project_id=run.project_id,
                     analysis_run_id=run.id,
                     kind="evidence",
                     title="调查依据",
-                    payload={
-                        "validations": [
-                            item
-                            for item in tool_history
-                            if item.get("kind")
-                            in {
-                                "validation",
-                                "relationship_validation",
-                                "relationship_application",
-                                "golden_regression_validation",
-                            }
-                        ],
-                        "correction_applications": [
-                            item
-                            for item in tool_history
-                            if item.get("kind") == "correction_application"
-                        ],
-                    },
-                    technical_details={"tool_history": tool_history},
+                    payload=evidence_payload,
+                    technical_details=self._technical_details(
+                        {"tool_history": tool_history},
+                        tool_history=tool_history,
+                    ),
                 )
             )
         try:
@@ -2069,7 +2181,7 @@ class ExecutionService:
                 "Verified report persisted without optional metric candidate learning",
                 analysis_run_id=str(run.id),
                 error_type=type(exc).__name__,
-                error=str(exc),
+                error=self._diagnostic_error(exc),
             )
         knowledge_proposals = (
             [] if suppress_standing_learning else result_data.get("knowledge_proposals") or []
@@ -2249,7 +2361,12 @@ class ExecutionService:
             ),
             run.query,
         )
-        if state == "completed" and validations and query_step:
+        if (
+            self.execution_policy.diagnostics_enabled
+            and state == "completed"
+            and validations
+            and query_step
+        ):
             executed_sql = str(query_step.get("sql") or query_step.get("compiled_sql") or "")
             digest = hashlib.sha256(f"{contract_query}\n{executed_sql}".encode()).hexdigest()[:20]
             verified_key = f"verified_query:{digest}"
@@ -2309,6 +2426,8 @@ class ExecutionService:
                 )
 
         if (
+            self.execution_policy.diagnostics_enabled
+            and
             state == "completed"
             and has_confirmed_correction
             and validations
@@ -2447,30 +2566,42 @@ class ExecutionService:
         if semantic_transitions:
             tool_history.extend(semantic_transitions)
             result_data["tool_history"] = list(tool_history)
-        run.checkpoint = {
-            **(run.checkpoint or {}),
-            "tool_history": list(tool_history),
-            "semantic_revision_transitions": semantic_transitions,
-            **(
-                {"semantic_validation_result": result_data["semantic_validation_result"]}
-                if isinstance(result_data.get("semantic_validation_result"), dict)
-                else {}
-            ),
-        }
+        run.checkpoint = self._checkpoint_payload(
+            run,
+            tool_history=list(tool_history),
+            updates={
+                "semantic_revision_transitions": semantic_transitions,
+                **(
+                    {"semantic_validation_result": result_data["semantic_validation_result"]}
+                    if isinstance(result_data.get("semantic_validation_result"), dict)
+                    else {}
+                ),
+            },
+        )
         if semantic_transitions:
             artifact_result = await self.db.execute(
                 select(ArtifactRecord).where(ArtifactRecord.analysis_run_id == run.id)
             )
             for artifact in artifact_result.scalars():
                 technical_details = dict(artifact.technical_details or {})
-                if "tool_history" in technical_details:
+                if (
+                    self.execution_policy.diagnostics_enabled
+                    and "tool_history" in technical_details
+                ):
                     technical_details["tool_history"] = list(tool_history)
                     artifact.technical_details = technical_details
                 if artifact.kind == "evidence":
-                    artifact.payload = {
-                        **dict(artifact.payload or {}),
-                        "semantic_revision_transitions": semantic_transitions,
-                    }
+                    if self.execution_policy.diagnostics_enabled:
+                        artifact.payload = {
+                            **dict(artifact.payload or {}),
+                            "semantic_revision_transitions": semantic_transitions,
+                        }
+                    else:
+                        artifact.payload = {
+                            "business_evidence": self.execution_policy.business_evidence(
+                                tool_history
+                            )
+                        }
         await self.db.commit()
         return ResultPersistenceOutcome()
 
@@ -2481,6 +2612,7 @@ class ExecutionService:
         engine: Any,
         error: BaseException,
         confirmation_receipt: dict[str, Any] | None,
+        finalization_guard: Callable[[], bool] | None = None,
     ) -> tuple[dict[str, Any], ResultPersistenceOutcome] | None:
         """Persist a table-only report after a report-schema failure, or fail closed."""
 
@@ -2505,23 +2637,41 @@ class ExecutionService:
         ):
             return None
 
-        column_preview = "、".join(verified.columns[:12])
+        language = self.language if self.language == "en" else "zh"
+        column_preview = (", " if language == "en" else "、").join(verified.columns[:12])
         if len(verified.columns) > 12:
-            column_preview += f"等 {len(verified.columns)} 个字段"
-        findings = [f"已验证的表格包含 {len(verified.rows)} 行、{len(verified.columns)} 列。"]
+            column_preview = t(
+                "analysis.fallback_more_columns",
+                language,
+                columns=column_preview,
+                count=len(verified.columns),
+            )
+        findings = [
+            t(
+                "analysis.fallback_table_shape",
+                language,
+                rows=len(verified.rows),
+                columns=len(verified.columns),
+                row_unit="row" if len(verified.rows) == 1 else "rows",
+                column_unit="column" if len(verified.columns) == 1 else "columns",
+            )
+        ]
         if column_preview:
-            findings.append(f"可核对字段：{column_preview}。")
+            findings.append(
+                t(
+                    "analysis.fallback_columns",
+                    language,
+                    columns=column_preview,
+                )
+            )
         report = {
             "status": "completed",
-            "title": "已验证的数据结果",
-            "summary": (
-                "系统已经保存并核对当前表格结果。模型未能补充业务解释，"
-                "因此这里仅展示可核对的数据证据。"
-            ),
+            "title": t("analysis.fallback_title", language),
+            "summary": t("analysis.fallback_summary", language),
             "primary_result": verified.result_name,
             "findings": findings,
             "metrics": [],
-            "evidence": ["最终表格内容、行数和字段均与本次校验记录一致。"],
+            "evidence": [t("analysis.fallback_evidence", language)],
             "next_actions": [],
             "follow_ups": [],
             "visualization": None,
@@ -2572,8 +2722,12 @@ class ExecutionService:
             ),
             "report_fallback": fallback_marker,
         }
+        if finalization_guard is not None and not finalization_guard():
+            raise _AnalysisFinalizationStoppedError("分析已在结果保存前停止")
         try:
             persistence = await self._persist_project_result(run, result_data)
+        except _AnalysisFinalizationStoppedError:
+            raise
         except Exception:
             await self.db.rollback()
             logger.exception(
@@ -2589,6 +2743,7 @@ class ExecutionService:
         conversation_id: UUID,
         exclude_message_id: UUID | None = None,
         stop_checker: Callable[[], bool] | None = None,
+        finalization_guard: Callable[[], bool] | None = None,
         resume_run_id: UUID | None = None,
         correction_id: UUID | None = None,
     ) -> AsyncGenerator[SSEEvent, None]:
@@ -2604,6 +2759,17 @@ class ExecutionService:
         buffered_terminal_events: list[SSEEvent] = []
         engine: Any | None = None
         confirmation_receipt: dict[str, Any] | None = None
+        finalization_claimed = False
+
+        def claim_finalization() -> bool:
+            nonlocal finalization_claimed
+            if finalization_claimed:
+                return True
+            if finalization_guard is not None and not finalization_guard():
+                return False
+            finalization_claimed = True
+            return True
+
         try:
             inputs = await self._load_execution_inputs(
                 conversation_id=conversation_id,
@@ -2680,6 +2846,10 @@ class ExecutionService:
                     )
                     project_result_data = dict(event.data)
                     buffer_event = True
+                elif event.type.value == "result" and not claim_finalization():
+                    raise _AnalysisFinalizationStoppedError(
+                        "分析已在结果发布前停止"
+                    )
                 if run and event.type.value == "python_image":
                     image = event.data.get("image")
                     if image:
@@ -2689,7 +2859,9 @@ class ExecutionService:
                 if run and buffer_event:
                     buffered_terminal_events.append(event)
                 else:
-                    yield event
+                    public_event = self._public_event(event)
+                    if public_event is not None:
+                        yield public_event
             # Only the runtime's successful Agent.run marks provider health.
             # Some investigations can stop for deterministic confirmation
             # before any model request, so iterator completion alone is not
@@ -2699,6 +2871,10 @@ class ExecutionService:
             if run and project_result_data is not None:
                 project_result_data["python_images"] = project_python_images
                 project_result_data["visualization"] = project_visualization
+                if not claim_finalization():
+                    raise _AnalysisFinalizationStoppedError(
+                        "分析已在结果保存前停止"
+                    )
                 try:
                     persistence = await self._persist_project_result(run, project_result_data)
                 except BaseException:
@@ -2708,7 +2884,9 @@ class ExecutionService:
                     raise
                 if persistence.accepted:
                     for event in buffered_terminal_events:
-                        yield event
+                        public_event = self._public_event(event)
+                        if public_event is not None:
+                            yield public_event
                 else:
                     yield SSEEvent.error(
                         persistence.error_code or "STANDING_RESULT_REJECTED",
@@ -2725,6 +2903,17 @@ class ExecutionService:
             await self._mark_run_needs_attention(run, exc)
             raise
 
+        except _AnalysisFinalizationStoppedError as exc:
+            await self._mark_run_needs_attention(run, exc)
+            yield SSEEvent.error(
+                "CANCELLED",
+                "分析已暂停，已保存的安全步骤可以继续使用",
+                error_category="cancelled",
+                failed_stage="finalization",
+                **self._run_event_context(run),
+            )
+            return
+
         except (OperationalError, ProgrammingError) as exc:
             # SQL errors with categorization
             error_code, category, _ = categorize_sql_error(str(exc))
@@ -2733,7 +2922,7 @@ class ExecutionService:
                 error_code=error_code,
                 error_category=category,
                 conversation_id=str(conversation_id),
-                exception_detail=str(exc),
+                exception_detail=self._diagnostic_error(exc),
             )
             await self._mark_run_needs_attention(run, exc)
             yield SSEEvent.error(
@@ -2749,7 +2938,7 @@ class ExecutionService:
             logger.error(
                 "SQLAlchemy error during execution",
                 conversation_id=str(conversation_id),
-                exception_detail=str(exc),
+                exception_detail=self._diagnostic_error(exc),
                 error_type=type(exc).__name__,
             )
             await self._mark_run_needs_attention(run, exc)
@@ -2824,7 +3013,7 @@ class ExecutionService:
             logger.warning(
                 "Validation error during execution",
                 conversation_id=str(conversation_id),
-                exception_detail=str(exc),
+                exception_detail=self._diagnostic_error(exc),
             )
             await self._mark_run_needs_attention(run, exc)
             yield SSEEvent.error(
@@ -2840,7 +3029,7 @@ class ExecutionService:
                 "Analysis checkpoint cannot be resumed",
                 conversation_id=str(conversation_id),
                 analysis_run_id=str(run.id) if run else None,
-                exception_detail=str(exc),
+                exception_detail=self._diagnostic_error(exc),
             )
             await self._mark_run_needs_attention(run, exc)
             yield SSEEvent.error(
@@ -2863,26 +3052,25 @@ class ExecutionService:
                     **self._run_event_context(run),
                 )
                 return
-            model_error = _public_model_error(exc)
-            if model_error is not None:
-                await self._mark_run_needs_attention(run, exc)
-                code, message, category = model_error
-                await self._record_model_failure_safely(category)
-                yield SSEEvent.error(
-                    code,
-                    message,
-                    error_category=category,
-                    failed_stage="model_request",
-                    **self._run_event_context(run),
-                )
-                return
             try:
                 fallback = await self._try_minimal_verified_report_fallback(
                     run=run,
                     engine=engine,
                     error=exc,
                     confirmation_receipt=confirmation_receipt,
+                    finalization_guard=claim_finalization,
                 )
+            except _AnalysisFinalizationStoppedError as cancellation:
+                await self.db.rollback()
+                await self._mark_run_needs_attention(run, cancellation)
+                yield SSEEvent.error(
+                    "CANCELLED",
+                    "分析已暂停，已保存的安全步骤可以继续使用",
+                    error_category="cancelled",
+                    failed_stage="finalization",
+                    **self._run_event_context(run),
+                )
+                return
             except asyncio.CancelledError as cancellation:
                 await self.db.rollback()
                 await self._mark_run_needs_attention(run, cancellation)
@@ -2898,7 +3086,11 @@ class ExecutionService:
                     )
                     completed_progress = SSEEvent.progress(
                         "completed",
-                        "数据结果已经核对，业务解释未能补充",
+                        get_progress_message(
+                            "business_explanation_unavailable",
+                            self.language,
+                        ),
+                        step="business_explanation_unavailable",
                     )
                     completed_progress.data.update(
                         {
@@ -2933,7 +3125,9 @@ class ExecutionService:
                         project_id=str(run.project_id),
                         resumable=False,
                     )
-                    yield result_event
+                    public_result_event = self._public_event(result_event)
+                    if public_result_event is not None:
+                        yield public_result_event
                 else:
                     yield SSEEvent.error(
                         persistence.error_code or "VERIFIED_RESULT_REJECTED",
@@ -2947,7 +3141,7 @@ class ExecutionService:
             logger.exception(
                 "Runtime error during execution",
                 conversation_id=str(conversation_id),
-                exception_detail=str(exc),
+                exception_detail=self._diagnostic_error(exc),
             )
             await self._mark_run_needs_attention(run, exc)
             model_error = _public_model_error(exc)
@@ -2981,7 +3175,11 @@ class ExecutionService:
                 ),
                 error_category="execution",
                 failed_stage="execution",
-                diagnostics=[diagnostic],
+                **(
+                    {"diagnostics": [diagnostic]}
+                    if self.execution_policy.diagnostics_enabled
+                    else {}
+                ),
                 **self._run_event_context(run),
             )
 
@@ -2991,7 +3189,7 @@ class ExecutionService:
                 "Unexpected error during execution stream",
                 conversation_id=str(conversation_id),
                 error_type=type(exc).__name__,
-                exception_detail=str(exc),
+                exception_detail=self._diagnostic_error(exc),
             )
             await self._mark_run_needs_attention(run, exc)
             model_error = _public_model_error(exc)
@@ -3020,7 +3218,11 @@ class ExecutionService:
                 "分析执行时遇到未预期的问题，请重新调查。",
                 error_category="execution",
                 failed_stage="execution",
-                diagnostics=[diagnostic],
+                **(
+                    {"diagnostics": [diagnostic]}
+                    if self.execution_policy.diagnostics_enabled
+                    else {}
+                ),
                 **self._run_event_context(run),
             )
 
@@ -3067,24 +3269,31 @@ class ExecutionService:
             else:
                 reason = "execution_error"
                 stage = "needs_attention"
-            checkpoint = dict(run.checkpoint or {})
+            checkpoint_updates: dict[str, Any] = {}
             if isinstance(error, (CheckpointError, SemanticValidationSelectionError)):
-                checkpoint["resumable"] = False
-            checkpoint.update(
-                {
-                    "reason": reason,
-                    "last_error": (str(error) or reason)[:4000],
-                }
+                checkpoint_updates["resumable"] = False
+            persisted_error = (
+                (str(error) or reason)[:4000]
+                if self.execution_policy.diagnostics_enabled
+                else reason
+            )
+            checkpoint_updates.update(
+                {"reason": reason, "last_error": persisted_error}
+            )
+            checkpoint = self.execution_policy.checkpoint_payload(
+                run.checkpoint,
+                updates=checkpoint_updates,
             )
             run.state = "needs_attention"
             run.stage = stage
-            run.error = (str(error) or reason)[:4000]
+            run.error = persisted_error
             run.checkpoint = checkpoint
             try:
                 await mark_standing_run_needs_attention(
                     self.db,
                     run,
                     "这次持续分析未能完成，上一版可信结果保持不变",
+                    reason_code="standing_execution_failed",
                 )
             except (StandingCompletionError, ValueError):
                 logger.exception(

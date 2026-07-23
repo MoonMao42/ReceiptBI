@@ -2,9 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useMemo } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import { ArrowRight, ExternalLink, X } from "lucide-react";
 import type { AnalysisArtifact } from "@/lib/types/api";
-import { artifactToReportBlock } from "@/components/reports/report-blocks";
+import {
+  artifactToReportBlock,
+  createReportBlocksCopy,
+} from "@/components/reports/report-blocks";
 import { ReportBlockCard } from "@/components/reports/ReportBlockCard";
 
 interface SavedAnalysisArtifactsProps {
@@ -27,9 +31,17 @@ export function SavedAnalysisArtifacts({
   open,
   onClose,
 }: SavedAnalysisArtifactsProps) {
+  const t = useTranslations("savedArtifacts");
+  const tBlocks = useTranslations("reportBlocks");
+  const locale = useLocale();
+  const blocksCopy = useMemo(
+    () => createReportBlocksCopy((key, values) => tBlocks(key, values)),
+    [tBlocks]
+  );
   const blocks = useMemo(
-    () => artifacts.map((artifact) => artifactToReportBlock(artifact)),
-    [artifacts],
+    () =>
+      artifacts.map((artifact) => artifactToReportBlock(artifact, blocksCopy, locale)),
+    [artifacts, blocksCopy, locale],
   );
   const first = artifacts[0];
 
@@ -67,10 +79,10 @@ export function SavedAnalysisArtifacts({
               id="saved-analysis-title"
               className="truncate text-sm font-semibold text-foreground"
             >
-              本次调查
+              {t("dialogTitle")}
             </h2>
             <p className="mt-0.5 text-[11px] text-muted-foreground">
-              {artifacts.length} 项内容
+              {t("itemsCount", { count: artifacts.length })}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -78,12 +90,12 @@ export function SavedAnalysisArtifacts({
               href={`/projects/${first.project_id}/reports?fromRun=${encodeURIComponent(first.analysis_run_id)}`}
               className="inline-flex h-9 items-center gap-2 bg-primary px-4 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
             >
-              整理成报告
+              {t("compileToReport")}
               <ArrowRight size={14} />
             </Link>
             <button
               type="button"
-              aria-label="关闭本次调查内容"
+              aria-label={t("closeAria")}
               onClick={onClose}
               className="inline-flex h-9 w-9 items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground"
             >
@@ -118,7 +130,7 @@ export function SavedAnalysisArtifacts({
                       rel="noreferrer"
                       className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
                     >
-                      打开文件
+                      {t("openFile")}
                       <ExternalLink size={12} />
                     </a>
                   )}

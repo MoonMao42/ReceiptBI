@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { NextIntlClientProvider } from "next-intl";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AboutPage from "@/app/about/page";
+import messages from "@/messages/zh.json";
 
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
@@ -10,10 +12,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: mocks.push }),
-}));
-
-vi.mock("next-intl", () => ({
-  useLocale: () => "zh",
 }));
 
 vi.mock("@/lib/api/client", () => ({
@@ -38,7 +36,11 @@ describe("AboutPage", () => {
   });
 
   it("shows only basic product information and fixed project links", async () => {
-    render(<AboutPage />);
+    render(
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <AboutPage />
+      </NextIntlClientProvider>
+    );
 
     await waitFor(() => expect(screen.getByText("桌面版 · v1.0")).toBeInTheDocument());
     expect(screen.getByRole("heading", { name: "ReceiptBI" })).toBeInTheDocument();
@@ -47,10 +49,10 @@ describe("AboutPage", () => {
     expect(screen.queryByText("当前真正支持的能力")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /GitHub/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /MIT License/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /反馈与 Issues/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /问题与建议/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /GitHub/ }));
     expect(mocks.open).toHaveBeenCalledWith(
-      "https://github.com/MoonMao42/QueryGPT",
+      "https://github.com/MoonMao42/ReceiptBI",
       "_blank",
       "noopener,noreferrer"
     );

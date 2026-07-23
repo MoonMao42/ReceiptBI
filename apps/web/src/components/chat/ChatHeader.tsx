@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { Check, Database, History, Loader2, Pencil, Settings2, X } from "lucide-react";
 import Link from "next/link";
-import type { Project } from "@/lib/types/api";
+import { useTranslations } from "next-intl";
+import { getUserFacingErrorMessage, type Project } from "@/lib/types/api";
 
 interface ChatHeaderProps {
   onToggleSidebar: () => void;
@@ -16,14 +17,8 @@ interface ChatHeaderProps {
   onRenameProject?: (name: string) => Promise<void>;
 }
 
-function renameErrorMessage(error: unknown): string {
-  if (typeof error === "object" && error && "response" in error) {
-    const response = (error as { response?: { data?: { detail?: unknown } } }).response;
-    if (typeof response?.data?.detail === "string" && response.data.detail.trim()) {
-      return response.data.detail.trim();
-    }
-  }
-  return "项目名称保存失败，请重试";
+function renameErrorMessage(error: unknown, fallback: string): string {
+  return getUserFacingErrorMessage(error, fallback);
 }
 
 export function ChatHeader({
@@ -36,6 +31,7 @@ export function ChatHeader({
   pendingUnderstandingCount = 0,
   onRenameProject,
 }: ChatHeaderProps) {
+  const t = useTranslations("chatHeader");
   const dataReady = readySources > 0;
   const hasPendingUnderstanding = pendingUnderstandingCount > 0;
   const [isEditingName, setIsEditingName] = useState(false);
@@ -68,7 +64,7 @@ export function ChatHeader({
     if (!project || !onRenameProject || isSavingName) return;
     const normalizedName = draftName.trim();
     if (!normalizedName) {
-      setRenameError("项目名称不能为空");
+      setRenameError(t("projectNameEmpty"));
       return;
     }
     if (normalizedName === project.name) {
@@ -85,7 +81,7 @@ export function ChatHeader({
       setDraftName(normalizedName);
       setIsEditingName(false);
     } catch (error) {
-      setRenameError(renameErrorMessage(error));
+      setRenameError(renameErrorMessage(error, t("projectNameSaveFailed")));
     } finally {
       setIsSavingName(false);
     }
@@ -98,7 +94,7 @@ export function ChatHeader({
           <button
             onClick={onToggleSidebar}
             className="p-2 text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
-            aria-label="打开项目导航"
+            aria-label={t("openProjectNavigationAria")}
           >
             <History size={20} />
           </button>
@@ -108,7 +104,7 @@ export function ChatHeader({
               <div className="flex min-w-0 items-center gap-1">
                 <input
                   autoFocus
-                  aria-label="项目名称"
+                  aria-label={t("projectNameAria")}
                   value={draftName}
                   maxLength={120}
                   disabled={isSavingName}
@@ -133,7 +129,7 @@ export function ChatHeader({
                   onClick={() => void saveRename()}
                   disabled={isSavingName}
                   className="p-1 text-primary hover:bg-primary/10 disabled:opacity-50"
-                  aria-label="保存项目名称"
+                  aria-label={t("saveProjectNameAria")}
                 >
                   {isSavingName ? (
                     <Loader2 size={14} className="animate-spin" />
@@ -146,7 +142,7 @@ export function ChatHeader({
                   onClick={cancelRename}
                   disabled={isSavingName}
                   className="p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
-                  aria-label="取消重命名"
+                  aria-label={t("cancelRenameAria")}
                 >
                   <X size={14} />
                 </button>
@@ -156,7 +152,7 @@ export function ChatHeader({
                 type="button"
                 onClick={beginRename}
                 className="group flex max-w-full items-center gap-1.5 text-left text-[13px] font-semibold text-foreground"
-                aria-label={`重命名项目：${project.name}`}
+                aria-label={t("renameProjectAria", { name: project.name })}
               >
                 <span className="truncate">{project.name}</span>
                 <Pencil
@@ -176,7 +172,7 @@ export function ChatHeader({
             ) : dataReady ? (
               <div className="mt-0.5 hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
                 <span className="h-1.5 w-1.5 bg-success" />
-                {readySources} 项数据可用
+                {t("readySources", { count: readySources })}
               </div>
             ) : null}
           </div>
@@ -191,13 +187,13 @@ export function ChatHeader({
             }
             aria-label={
               hasPendingUnderstanding
-                ? `数据，待核对 ${pendingUnderstandingCount}`
-                : `数据${totalSources > 0 ? ` ${totalSources}` : ""}`
+                ? `${t("data")}，${t("pendingReview", { count: pendingUnderstandingCount })}`
+                : `${t("data")}${totalSources > 0 ? ` ${totalSources}` : ""}`
             }
             className="inline-flex items-center gap-2 border border-border bg-card px-2.5 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary/50 hover:bg-primary/[0.04] sm:px-3"
           >
             <Database size={16} className="text-primary" />
-            <span>数据</span>
+            <span>{t("data")}</span>
             {(hasPendingUnderstanding || totalSources > 0) && (
               <span
                 className={
@@ -207,7 +203,7 @@ export function ChatHeader({
                 }
               >
                 {hasPendingUnderstanding
-                  ? `待核对 ${pendingUnderstandingCount}`
+                  ? t("pendingReview", { count: pendingUnderstandingCount })
                   : totalSources}
               </span>
             )}
@@ -215,7 +211,7 @@ export function ChatHeader({
           <Link
             href="/settings"
             className="p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
-            aria-label="设置"
+            aria-label={t("settingsAria")}
           >
             <Settings2 size={18} />
           </Link>

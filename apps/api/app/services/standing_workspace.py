@@ -30,6 +30,7 @@ from app.models.workspace import (
     AnalysisPlaybookStructuredQueryPlan,
     RelationshipDefinition,
     StandingAnalysisResponse,
+    StandingAttentionReasonCode,
     StandingBaselineRef,
     ValidatedResultSnapshot,
 )
@@ -52,6 +53,8 @@ class StandingWorkspaceCorruptError(RuntimeError):
 class StandingInputState:
     token: str | None
     attention_reason: str | None
+    attention_reason_code: StandingAttentionReasonCode | None = None
+    attention_reason_params: dict[str, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +64,19 @@ class CompleteResultArtifact:
     columns: list[str]
     key_columns: list[str]
     numeric_columns: list[str]
+
+
+def _attention(
+    reason: str,
+    code: StandingAttentionReasonCode,
+    **params: str,
+) -> StandingInputState:
+    return StandingInputState(
+        token=None,
+        attention_reason=reason,
+        attention_reason_code=code,
+        attention_reason_params=params,
+    )
 
 
 def canonical_hash(value: Any) -> str:
@@ -181,12 +197,21 @@ async def evaluate_standing_input(
     playbooks = load_analysis_playbooks(project)
     matching_playbooks = [item for item in playbooks if item.id == playbook_id]
     if len(matching_playbooks) != 1:
-        return StandingInputState(None, "对应的可复用分析不存在或不唯一，请重新保存分析方法")
+        return _attention(
+            "对应的可复用分析不存在或不唯一，请重新保存分析方法",
+            "standing_playbook_unavailable",
+        )
     playbook = matching_playbooks[0]
     if playbook.shape_hash != expected_playbook_shape_hash:
-        return StandingInputState(None, "可复用分析的方法结构已变化，需要重新建立持续分析")
+        return _attention(
+            "可复用分析的方法结构已变化，需要重新建立持续分析",
+            "standing_playbook_changed",
+        )
     if not playbook.source_roles:
-        return StandingInputState(None, "可复用分析没有绑定数据来源")
+        return _attention(
+            "可复用分析没有绑定数据来源",
+            "standing_playbook_sources_unbound",
+        )
 
     source_result = await db.execute(
         select(ProjectDataSource).where(
@@ -211,9 +236,10 @@ async def evaluate_standing_input(
             or bool((source.profile_data or {}).get("replacement_of"))
         ]
         if pending:
-            return StandingInputState(
-                None,
+            return _attention(
                 f"{role.logical_name} 有待核对的新数据版本，确认前不会自动继续",
+                "standing_source_pending_confirmation",
+                source=role.logical_name,
             )
         active = [
             source
@@ -221,25 +247,46 @@ async def evaluate_standing_input(
             if (source.profile_data or {}).get("is_current") is not False
         ]
         if len(active) != 1:
-            return StandingInputState(None, f"找不到唯一的当前数据来源：{role.logical_name}")
+            return _attention(
+                f"找不到唯一的当前数据来源：{role.logical_name}",
+                "standing_source_not_unique",
+                source=role.logical_name,
+            )
         source = active[0]
         if baseline_run is not None and _after_analysis(source.updated_at, baseline_run):
-            return StandingInputState(
-                None,
+            return _attention(
                 f"数据来源 {role.logical_name} 在这次调查完成后已经变化，请先重新运行分析",
+                "standing_source_changed_since_baseline",
+                source=role.logical_name,
             )
         profile = dict(source.profile_data or {})
         if source.status != "ready":
-            return StandingInputState(None, f"数据来源 {role.logical_name} 尚未准备好")
+            return _attention(
+                f"数据来源 {role.logical_name} 尚未准备好",
+                "standing_source_not_ready",
+                source=role.logical_name,
+            )
         if source.kind == "file" and not source.working_uri:
-            return StandingInputState(None, f"数据来源 {role.logical_name} 缺少可分析工作副本")
+            return _attention(
+                f"数据来源 {role.logical_name} 缺少可分析工作副本",
+                "standing_source_working_copy_missing",
+                source=role.logical_name,
+            )
         schema_signature = _profile_schema_signature(profile)
         if schema_signature != role.schema_signature:
-            return StandingInputState(None, f"数据来源 {role.logical_name} 的字段结构已经变化")
+            return _attention(
+                f"数据来源 {role.logical_name} 的字段结构已经变化",
+                "standing_source_schema_changed",
+                source=role.logical_name,
+            )
         try:
             profile_version = int(profile.get("version") or 1)
         except (TypeError, ValueError):
-            return StandingInputState(None, f"数据来源 {role.logical_name} 的版本标识无效")
+            return _attention(
+                f"数据来源 {role.logical_name} 的版本标识无效",
+                "standing_source_version_invalid",
+                source=role.logical_name,
+            )
         source_versions[role.logical_name] = canonical_hash(
             {
                 "source_id": str(source.id),
@@ -260,9 +307,10 @@ async def evaluate_standing_input(
             and recipe is not None
             and _after_analysis(recipe.updated_at, baseline_run)
         ):
-            return StandingInputState(
-                None,
+            return _attention(
                 f"数据来源 {role.logical_name} 的整理方法在调查完成后已经变化，请先重新运行分析",
+                "standing_source_recipe_changed_since_baseline",
+                source=role.logical_name,
             )
         recipe_versions[role.logical_name] = canonical_hash(
             {
@@ -288,24 +336,45 @@ async def evaluate_standing_input(
     for key in sorted(required_keys):
         entry = knowledge_by_key.get(key)
         if entry is None or entry.state not in {"confirmed", "locked"}:
-            return StandingInputState(None, f"持续分析依赖的业务定义已缺失：{key}")
+            return _attention(
+                f"持续分析依赖的业务定义已缺失：{key}",
+                "standing_semantic_definition_missing",
+                key=key,
+            )
         if entry.validity != "active":
-            return StandingInputState(None, f"持续分析依赖的业务定义已失效：{key}")
+            return _attention(
+                f"持续分析依赖的业务定义已失效：{key}",
+                "standing_semantic_definition_inactive",
+                key=key,
+            )
         if baseline_run is not None and _after_analysis(entry.updated_at, baseline_run):
-            return StandingInputState(
-                None,
+            return _attention(
                 f"业务定义 {key} 在这次调查完成后已经变化，请先重新运行分析",
+                "standing_semantic_definition_changed_since_baseline",
+                key=key,
             )
         if key in playbook.relationship_keys:
             if entry.entry_type != "relationship" or not isinstance(entry.definition, dict):
-                return StandingInputState(None, f"持续分析依赖的关联定义不可用：{key}")
+                return _attention(
+                    f"持续分析依赖的关联定义不可用：{key}",
+                    "standing_relationship_definition_unavailable",
+                    key=key,
+                )
             expected_hash = relationship_hashes.get(key)
             try:
                 current_hash = _relationship_definition_hash(entry.definition)
             except ValidationError:
-                return StandingInputState(None, f"持续分析依赖的关联定义不可用：{key}")
+                return _attention(
+                    f"持续分析依赖的关联定义不可用：{key}",
+                    "standing_relationship_definition_unavailable",
+                    key=key,
+                )
             if expected_hash and current_hash != expected_hash:
-                return StandingInputState(None, f"持续分析依赖的关联定义已经变化：{key}")
+                return _attention(
+                    f"持续分析依赖的关联定义已经变化：{key}",
+                    "standing_relationship_definition_changed",
+                    key=key,
+                )
         semantic_versions[key] = _semantic_version(entry)
 
     token = canonical_input_token(

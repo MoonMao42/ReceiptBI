@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import os
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from pydantic import SecretStr
@@ -78,6 +79,7 @@ async def test_import_commits_before_health_ack_and_before_legacy_rotation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     events: list[str] = []
+    recovered_validation_job_id = uuid4()
     _configure_desktop_inputs(monkeypatch, tmp_path)
 
     async def migrate(_engine, _database_url: str) -> str:
@@ -98,6 +100,18 @@ async def test_import_commits_before_health_ack_and_before_legacy_rotation(
         events.append("recover")
         return 0
 
+    async def recover_inventory(*_args, **_kwargs):
+        events.append("inventory-recover")
+        return []
+
+    async def recover_validation(*_args, **_kwargs):
+        events.append("validation-recover")
+        return [recovered_validation_job_id]
+
+    def schedule_validation(job_id):
+        assert job_id == recovered_validation_job_id
+        events.append("validation-schedule")
+
     monkeypatch.setattr(main_module, "engine", _Engine())
     monkeypatch.setattr(main_module, "AsyncSessionLocal", lambda: _Session(events))
     monkeypatch.setattr(main_module, "migrate_local_sqlite_to_head", migrate)
@@ -111,9 +125,22 @@ async def test_import_commits_before_health_ack_and_before_legacy_rotation(
     monkeypatch.setattr(main_module, "import_legacy_ts_model", import_model)
     monkeypatch.setattr(main_module, "rotate_legacy_desktop_credentials", rotate)
     monkeypatch.setattr(main_module, "recover_interrupted_analysis_runs", recover)
+    monkeypatch.setattr(main_module, "recover_semantic_inventory_jobs", recover_inventory)
+    monkeypatch.setattr(main_module, "recover_semantic_validation_jobs", recover_validation)
+    monkeypatch.setattr(main_module, "schedule_semantic_validation_job", schedule_validation)
 
     async with main_module.lifespan(main_module.app):
-        assert events == ["alembic", "prepare", "import", "rotate", "recover", "commit"]
+        assert events == [
+            "alembic",
+            "prepare",
+            "import",
+            "rotate",
+            "recover",
+            "inventory-recover",
+            "validation-recover",
+            "commit",
+            "validation-schedule",
+        ]
         assert main_module.app.state.legacy_model_migration == "imported"
         assert main_module.settings.RECEIPTBI_LEGACY_MODEL_SOURCE is None
         assert main_module.settings.RECEIPTBI_LEGACY_MODEL_SNAPSHOT is None
@@ -242,6 +269,14 @@ async def test_existing_snapshot_allows_source_to_be_absent(
         events.append("recover")
         return 0
 
+    async def recover_inventory(*_args, **_kwargs):
+        events.append("inventory-recover")
+        return []
+
+    async def recover_validation(*_args, **_kwargs):
+        events.append("validation-recover")
+        return []
+
     monkeypatch.setattr(main_module, "engine", _Engine())
     monkeypatch.setattr(main_module, "AsyncSessionLocal", lambda: _Session(events))
     monkeypatch.setattr(main_module, "migrate_local_sqlite_to_head", migrate)
@@ -249,9 +284,20 @@ async def test_existing_snapshot_allows_source_to_be_absent(
     monkeypatch.setattr(main_module, "import_legacy_ts_model", import_model)
     monkeypatch.setattr(main_module, "rotate_legacy_desktop_credentials", rotate)
     monkeypatch.setattr(main_module, "recover_interrupted_analysis_runs", recover)
+    monkeypatch.setattr(main_module, "recover_semantic_inventory_jobs", recover_inventory)
+    monkeypatch.setattr(main_module, "recover_semantic_validation_jobs", recover_validation)
 
     async with main_module.lifespan(main_module.app):
-        assert events == ["alembic", "prepare", "import", "rotate", "recover", "commit"]
+        assert events == [
+            "alembic",
+            "prepare",
+            "import",
+            "rotate",
+            "recover",
+            "inventory-recover",
+            "validation-recover",
+            "commit",
+        ]
         assert main_module.app.state.legacy_model_migration == "already_present"
 
 

@@ -98,12 +98,25 @@ def test_messy_excel_preflight_preserves_original_and_creates_working_copy(tmp_p
     assert result.working_path is not None and result.working_path.exists()
     assert result.status == "needs_confirmation"
     assert result.source_snapshot["ready_rows"] == 2
+    assert result.source_snapshot["summary_code"] == "file_preflight"
+    assert result.source_snapshot["summary_facts"] == {
+        "rows": 2,
+        "columns": 6,
+        "automatic_issue_count": 3,
+        "ambiguity_count": 1,
+        "recipe_step_count": 0,
+        "recipe_drift_count": 0,
+    }
     assert {issue["code"] for issue in result.issues} >= {
         "header_offset",
         "duplicate_rows",
         "summary_rows",
     }
     assert result.ambiguities[0]["key"] == "revenue_refund_policy"
+    assert result.ambiguities[0]["presentation_code"] == (
+        "preflight.revenue_refund_policy"
+    )
+    assert result.ambiguities[0]["option_codes"]["扣除退款"] == "exclude_refunds"
     cleaned = pd.read_parquet(result.working_path)
     assert cleaned["实付金额"].tolist() == [32.0, 28.0]
     assert cleaned["日期"].dt.strftime("%Y-%m-%d").tolist() == ["2026-07-01", "2026-07-02"]
@@ -1460,6 +1473,7 @@ def test_candidate_relationship_identity_is_bound_into_golden_regression() -> No
 def test_only_the_current_required_correction_can_select_a_candidate_relationship() -> None:
     candidate = {
         "id": "semantic-relationship",
+        "active_revision_id": "semantic-revision",
         "key": "relationship:orders:stores",
         "state": "candidate",
         "validity": "unverified",
@@ -1474,6 +1488,7 @@ def test_only_the_current_required_correction_can_select_a_candidate_relationshi
             "correction_type": "relationship_rule",
             "target_key": candidate["key"],
             "semantic_entry_id": candidate["id"],
+            "expected_active_revision_id": candidate["active_revision_id"],
             "definition_hash": candidate["definition_hash"],
             "execution_state": "needs_validation",
             "executable": True,
@@ -1482,6 +1497,15 @@ def test_only_the_current_required_correction_can_select_a_candidate_relationshi
 
     assert _required_trial_relationship(context, candidate["key"]) is candidate
     assert _required_trial_relationship(context, "relationship:other") is None
+    original = dict(context.required_correction or {})
+    for field, value in (
+        ("semantic_entry_id", "semantic-other"),
+        ("expected_active_revision_id", "revision-other"),
+        ("definition_hash", "e" * 64),
+        ("target_key", "relationship:other"),
+    ):
+        context.required_correction = {**original, field: value}
+        assert _required_trial_relationship(context, candidate["key"]) is None
     context.required_correction = None
     assert _required_trial_relationship(context, candidate["key"]) is None
 
@@ -2335,8 +2359,8 @@ async def test_project_api_upload_preflight_export_and_import(
     inferred_knowledge = (await client.get(f"/api/v1/projects/{project['id']}/knowledge")).json()[
         "data"
     ]
-    assert any(item["key"].startswith("grain:") for item in inferred_knowledge)
-    assert any(item["key"].startswith("metric_candidate:") for item in inferred_knowledge)
+    assert not any(item["key"].startswith("grain:") for item in inferred_knowledge)
+    assert not any(item["key"].startswith("metric_candidate:") for item in inferred_knowledge)
     stored_source = (await client.get(f"/api/v1/projects/{project['id']}/sources")).json()["data"][
         0
     ]

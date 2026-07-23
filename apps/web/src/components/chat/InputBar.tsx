@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { ArrowUp, Database, Loader2, Paperclip, Square } from "lucide-react";
 import type { ModelSummary } from "@/lib/types/api";
 import { cn } from "@/lib/utils";
@@ -13,6 +14,7 @@ interface InputBarProps {
   onOpenData: () => void;
   onUploadFile: (file: File) => void;
   isLoading: boolean;
+  isStopping?: boolean;
   isUploading: boolean;
   projectName?: string;
   dataReady: boolean;
@@ -37,6 +39,7 @@ export function InputBar({
   onOpenData,
   onUploadFile,
   isLoading,
+  isStopping = false,
   isUploading,
   sourceCount,
   input,
@@ -52,13 +55,14 @@ export function InputBar({
   analysisServiceSelectorOpen,
   onAnalysisServiceSelectorOpenChange,
 }: InputBarProps) {
+  const t = useTranslations("inputBar");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const submit = async () => {
     if (isLoading) {
-      onStop();
+      if (!isStopping) onStop();
       return;
     }
     if (!input.trim() || isSubmitting) return;
@@ -103,7 +107,7 @@ export function InputBar({
         >
           {isDragging && (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-card/95 text-sm font-semibold text-primary">
-              松开后自动整理并加入当前项目
+              {t("dropHint")}
             </div>
           )}
           <textarea
@@ -116,7 +120,7 @@ export function InputBar({
               }
             }}
             data-testid="chat-input"
-            placeholder="输入问题或分析任务"
+            placeholder={t("placeholder")}
             disabled={isLoading}
             rows={2}
             className={cn(
@@ -124,8 +128,8 @@ export function InputBar({
               placement === "surface" ? "min-h-[104px] sm:min-h-[122px]" : "min-h-[52px] sm:min-h-[76px]"
             )}
           />
-          <div className="flex items-center justify-between gap-2 px-2 pb-2 sm:gap-3 sm:px-3 sm:pb-3">
-            <div className="flex min-w-0 items-center gap-1">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-2 pb-2 sm:gap-3 sm:px-3 sm:pb-3">
+            <div className="flex min-w-0 flex-1 items-center gap-1">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -142,11 +146,11 @@ export function InputBar({
                 size="sm"
                 disabled={isUploading}
                 onClick={() => fileInputRef.current?.click()}
-                aria-label={isUploading ? "正在整理文件" : "添加文件"}
+                aria-label={isUploading ? t("uploadingFileLabel") : t("addFileLabel")}
                 className="gap-1.5 px-2 text-xs"
               >
                 {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={14} />}
-                <span className="hidden sm:inline">{isUploading ? "正在整理" : "文件"}</span>
+                <span className="hidden sm:inline">{isUploading ? t("uploading") : t("file")}</span>
               </Button>
               <Button
                 variant="ghost"
@@ -155,9 +159,9 @@ export function InputBar({
                 className="gap-1.5 px-2 text-xs"
               >
                 <Database size={14} />
-                <span className="sm:hidden">数据{sourceCount > 0 ? ` · ${sourceCount}` : ""}</span>
+                <span className="sm:hidden">{t("dataMobile")}{sourceCount > 0 ? ` · ${sourceCount}` : ""}</span>
                 <span className="hidden sm:inline">
-                  数据来源{sourceCount > 0 ? ` · ${sourceCount}` : ""}
+                  {t("dataSourceDesktop")}{sourceCount > 0 ? ` · ${sourceCount}` : ""}
                 </span>
               </Button>
               {analysisServices && onSelectAnalysisService && onManageAnalysisServices && (
@@ -178,11 +182,23 @@ export function InputBar({
               variant={isLoading ? "destructive" : "primary"}
               size="icon"
               onClick={() => void submit()}
-              disabled={!input.trim() && !isLoading}
+              disabled={isStopping || (!input.trim() && !isLoading)}
               data-testid="chat-submit"
-              aria-label={isLoading ? "停止分析" : "开始分析"}
+              aria-label={
+                isStopping
+                  ? t("stoppingAnalysisAria")
+                  : isLoading
+                    ? t("stopAnalysisAria")
+                    : t("startAnalysisAria")
+              }
             >
-              {isLoading ? <Square size={15} fill="currentColor" /> : <ArrowUp size={18} />}
+              {isStopping ? (
+                <Loader2 size={15} className="animate-spin" />
+              ) : isLoading ? (
+                <Square size={15} fill="currentColor" />
+              ) : (
+                <ArrowUp size={18} />
+              )}
             </Button>
           </div>
         </div>

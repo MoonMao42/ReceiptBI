@@ -50,6 +50,7 @@ function mockWorkspaceRefresh(projectId = "project-1") {
 
 describe("project source lifecycle actions", () => {
   beforeEach(() => {
+    document.documentElement.lang = "zh-CN";
     mocks.get.mockReset();
     mocks.post.mockReset();
     mocks.delete.mockReset();
@@ -72,6 +73,33 @@ describe("project source lifecycle actions", () => {
       error: null,
     });
     mockWorkspaceRefresh();
+  });
+
+  it("never starts preflight while adding a file or connection", async () => {
+    await useProjectStore
+      .getState()
+      .uploadFile(new File(["id,amount\n1,10"], "orders.csv", { type: "text/csv" }));
+    await useProjectStore
+      .getState()
+      .attachConnection("connection-1", "经营库");
+
+    expect(mocks.post).toHaveBeenCalledWith(
+      "/api/v1/projects/project-1/sources/files",
+      expect.any(FormData),
+      {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 120000,
+      }
+    );
+    expect(mocks.post).toHaveBeenCalledWith(
+      "/api/v1/projects/project-1/sources/connections",
+      { connection_id: "connection-1", name: "经营库" }
+    );
+    expect(
+      mocks.post.mock.calls.some(([url]) =>
+        String(url).endsWith("/preflight")
+      )
+    ).toBe(false);
   });
 
   it("replays the stored sanitation recipe when reorganizing", async () => {
@@ -132,9 +160,8 @@ describe("project source lifecycle actions", () => {
     await expect(accepting).rejects.toBeDefined();
 
     expect(useProjectStore.getState().sourceAction).toBeNull();
-    expect(useProjectStore.getState().error).toBe(
-      "上一个成功版本已经变化，请重新整理后再确认"
-    );
+    expect(useProjectStore.getState().error).toBe("请求未能完成，请重试。");
+    expect(useProjectStore.getState().error).not.toContain("上一个成功版本");
   });
 
   it("uses undo for the previous trusted version and delete for removal", async () => {
@@ -150,19 +177,21 @@ describe("project source lifecycle actions", () => {
     expect(useProjectStore.getState().sourceAction).toBeNull();
   });
 
-  it("shows the backend business explanation instead of an HTTP-only error", async () => {
+  it("keeps backend and transport detail out of the product surface", async () => {
     mocks.post.mockRejectedValueOnce({
       message: "Request failed with status code 409",
-      response: { data: { detail: "这份数据暂时没有整理成功，可以重新整理或移除来源" } },
+      response: {
+        status: 409,
+        data: { detail: "这份数据暂时没有整理成功，可以重新整理或移除来源" },
+      },
     });
 
     await expect(
       useProjectStore.getState().reorganizeSource("source-1")
     ).rejects.toBeDefined();
 
-    expect(useProjectStore.getState().error).toBe(
-      "这份数据暂时没有整理成功，可以重新整理或移除来源"
-    );
+    expect(useProjectStore.getState().error).toBe("请求未能完成，请重试。");
+    expect(useProjectStore.getState().error).not.toContain("重新整理或移除来源");
   });
 
   it("previews an imported method before binding the exact reviewed state", async () => {

@@ -50,6 +50,7 @@ describe("standing analysis resume", () => {
       conversationLoadError: null,
       abortController: null,
       activeStreamId: null,
+      stopRequestedStreamId: null,
       lastConnectionId: null,
       lastModelId: null,
       lastContextRounds: null,
@@ -219,6 +220,185 @@ describe("standing analysis resume", () => {
       .rejects.toThrow("已有一项调查正在进行");
     expect(mocks.stream).not.toHaveBeenCalled();
     expect(useChatStore.getState().messages).toEqual([]);
+  });
+
+  it("keeps the homepage busy until a stop reaches a terminal event", async () => {
+    let releaseStream!: () => void;
+    const streamGate = new Promise<void>((resolve) => {
+      releaseStream = resolve;
+    });
+    mocks.post.mockResolvedValue({ data: { data: { stopped: true } } });
+    mocks.stream.mockImplementation(() =>
+      (async function* () {
+        await streamGate;
+        yield {
+          type: "error",
+          data: {
+            code: "CANCELLED",
+            message: "分析已停止",
+            error_category: "cancelled",
+            analysis_state: "needs_attention",
+            conversation_id: "active-conversation",
+          },
+        };
+      })()
+    );
+    useChatStore.setState({
+      currentConversationId: "active-conversation",
+      lastProjectId: "project-1",
+    });
+
+    const investigation = useChatStore
+      .getState()
+      .sendMessage("检查订单变化", null, "model-1", 5, "zh", "project-1");
+    const activeStreamId = useChatStore.getState().activeStreamId;
+    expect(activeStreamId).toBeTruthy();
+
+    useChatStore.getState().stopGeneration();
+
+    expect(mocks.post).toHaveBeenCalledWith("/api/v1/chat/stop", {
+      conversation_id: "active-conversation",
+      client_stream_id: activeStreamId,
+    });
+    expect(mocks.stream).toHaveBeenCalledWith(
+      "/api/v1/chat/stream",
+      expect.objectContaining({ client_stream_id: activeStreamId }),
+      expect.any(AbortSignal)
+    );
+    expect(useChatStore.getState()).toMatchObject({
+      isLoading: true,
+      activeStreamId,
+      stopRequestedStreamId: activeStreamId,
+      pendingAnalysisSettlements: [],
+    });
+
+    releaseStream();
+    await investigation;
+
+    expect(useChatStore.getState()).toMatchObject({
+      isLoading: false,
+      activeStreamId: null,
+      stopRequestedStreamId: null,
+    });
+    expect(useChatStore.getState().pendingAnalysisSettlements).toEqual([
+      expect.objectContaining({ outcome: "stopped" }),
+    ]);
+  });
+
+  it("lets a completion that wins the stop race remain completed", async () => {
+    let releaseStream!: () => void;
+    const streamGate = new Promise<void>((resolve) => {
+      releaseStream = resolve;
+    });
+    mocks.post.mockResolvedValue({ data: { data: { stopped: true } } });
+    mocks.stream.mockImplementation(() =>
+      (async function* () {
+        await streamGate;
+        yield {
+          type: "done",
+          data: {
+            conversation_id: "active-conversation",
+            message_id: "message-1",
+          },
+        };
+      })()
+    );
+    useChatStore.setState({
+      currentConversationId: "active-conversation",
+      lastProjectId: "project-1",
+    });
+
+    const investigation = useChatStore
+      .getState()
+      .sendMessage("检查订单变化", null, "model-1", 5, "zh", "project-1");
+    useChatStore.getState().stopGeneration();
+    releaseStream();
+    await investigation;
+
+    expect(useChatStore.getState().pendingAnalysisSettlements).toEqual([
+      expect.objectContaining({ outcome: "completed" }),
+    ]);
+    expect(useChatStore.getState().stopRequestedStreamId).toBeNull();
+  });
+
+  it("does not let a late stop response from an old stream abort the new stream", async () => {
+    vi.useFakeTimers();
+    let releaseFirst!: () => void;
+    let releaseSecond!: () => void;
+    let resolveOldStop!: (value: { data: { data: { stopped: boolean } } }) => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const secondGate = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    const oldStop = new Promise<{ data: { data: { stopped: boolean } } }>(
+      (resolve) => {
+        resolveOldStop = resolve;
+      }
+    );
+    mocks.post.mockReturnValue(oldStop);
+    mocks.stream
+      .mockImplementationOnce(() =>
+        (async function* () {
+          await firstGate;
+          yield {
+            type: "done",
+            data: {
+              conversation_id: "active-conversation",
+              message_id: "message-a",
+            },
+          };
+        })()
+      )
+      .mockImplementationOnce(() =>
+        (async function* () {
+          await secondGate;
+          yield {
+            type: "done",
+            data: {
+              conversation_id: "active-conversation",
+              message_id: "message-b",
+            },
+          };
+        })()
+      );
+    useChatStore.setState({
+      currentConversationId: "active-conversation",
+      lastProjectId: "project-1",
+    });
+
+    const first = useChatStore
+      .getState()
+      .sendMessage("第一项调查", null, "model-1", 5, "zh", "project-1");
+    const firstStreamId = useChatStore.getState().activeStreamId;
+    useChatStore.getState().stopGeneration();
+    releaseFirst();
+    await first;
+
+    const second = useChatStore
+      .getState()
+      .sendMessage("第二项调查", null, "model-1", 5, "zh", "project-1");
+    const secondStreamId = useChatStore.getState().activeStreamId;
+    const secondController = useChatStore.getState().abortController;
+    expect(secondStreamId).toBeTruthy();
+    expect(secondStreamId).not.toBe(firstStreamId);
+    expect(secondController).not.toBeNull();
+    const abortSecond = vi.spyOn(secondController!, "abort");
+
+    try {
+      resolveOldStop({ data: { data: { stopped: true } } });
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(3_000);
+
+      expect(useChatStore.getState().activeStreamId).toBe(secondStreamId);
+      expect(useChatStore.getState().isLoading).toBe(true);
+      expect(abortSecond).not.toHaveBeenCalled();
+    } finally {
+      releaseSecond();
+      await second;
+      vi.useRealTimers();
+    }
   });
 
   it("does not replace or abort the active report when history is clicked", () => {

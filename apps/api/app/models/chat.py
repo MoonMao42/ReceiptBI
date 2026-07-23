@@ -168,6 +168,13 @@ class ChatStopRequest(BaseModel):
     """停止聊天请求"""
 
     conversation_id: UUID = Field(..., description="对话 ID")
+    client_stream_id: str = Field(
+        ...,
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+        description="本次流 ID",
+    )
 
 
 class BusinessConfirmationCommand(BaseModel):
@@ -200,6 +207,13 @@ class ChatStreamParams(BaseModel):
     conversation_id: UUID | None = Field(default=None, description="对话 ID")
     connection_id: UUID | None = Field(default=None, description="数据库连接 ID")
     project_id: UUID | None = Field(default=None, description="项目 ID")
+    client_stream_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+        description="本次流 ID",
+    )
     language: Literal["zh", "en"] = Field(default="zh", description="语言")
     context_rounds: int = Field(default=5, ge=1, le=20, description="上下文轮数")
 
@@ -221,6 +235,12 @@ class ChatStreamRequest(BaseModel):
     project_id: UUID | None = None
     resume_run_id: UUID | None = None
     correction_id: UUID | None = None
+    client_stream_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )
     semantic_validation_selection: list[SemanticValidationSelectionItem] = Field(
         default_factory=list,
         max_length=100,

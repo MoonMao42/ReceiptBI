@@ -6,6 +6,8 @@ import { useModelSettingsResource } from "@/components/settings/hooks/useModelSe
 import { api } from "@/lib/api/client";
 import { initialModelFormData } from "@/lib/settings/models";
 import type { ConfiguredModel } from "@/lib/types/api";
+import enMessages from "@/messages/en.json";
+import zhMessages from "@/messages/zh.json";
 
 vi.mock("@/lib/api/client", () => ({
   api: {
@@ -44,6 +46,17 @@ function createWrapper() {
   };
 }
 
+function resourceMessages(locale: "en" | "zh") {
+  const messages = locale === "zh" ? zhMessages.modelSettings : enMessages.modelSettings;
+  return {
+    connectionCheckFailed: messages.testFailed,
+    savedButConnectionCheckFailed: messages.savedButConnectionCheckFailed,
+    addModelFailed: messages.addModelFailed,
+    updateModelFailed: messages.updateModelFailed,
+    deleteModelFailed: messages.deleteModelFailed,
+  };
+}
+
 describe("useModelSettingsResource", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -55,7 +68,7 @@ describe("useModelSettingsResource", () => {
       .mockResolvedValueOnce({ data: { data: savedModel } })
       .mockResolvedValueOnce({ data: { data: failedCheck } });
 
-    const { result } = renderHook(() => useModelSettingsResource(), {
+    const { result } = renderHook(() => useModelSettingsResource(resourceMessages("zh")), {
       wrapper: createWrapper(),
     });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -95,7 +108,7 @@ describe("useModelSettingsResource", () => {
       },
     });
 
-    const { result } = renderHook(() => useModelSettingsResource(), {
+    const { result } = renderHook(() => useModelSettingsResource(resourceMessages("zh")), {
       wrapper: createWrapper(),
     });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -118,5 +131,71 @@ describe("useModelSettingsResource", () => {
       expect(api.post).toHaveBeenCalledWith(`/api/v1/config/models/${savedModel.id}/test`)
     );
     await waitFor(() => expect(result.current.testResult?.success).toBe(true));
+  });
+
+  it("uses the English catalog when a manual connection check cannot finish", async () => {
+    vi.mocked(api.post).mockRejectedValueOnce({
+      response: { data: { error: { message: "固定中文服务错误" } } },
+    });
+
+    const { result } = renderHook(
+      () => useModelSettingsResource(resourceMessages("en")),
+      { wrapper: createWrapper() }
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => result.current.testModel(savedModel.id));
+
+    await waitFor(() => expect(result.current.error).toBe("Connection check failed"));
+    expect(result.current.error).not.toBe("固定中文服务错误");
+  });
+
+  it("uses the Chinese catalog when a saved service check cannot finish", async () => {
+    vi.mocked(api.post)
+      .mockResolvedValueOnce({ data: { data: savedModel } })
+      .mockRejectedValueOnce({
+        response: { data: { error: { message: "Raw provider failure" } } },
+      });
+
+    const { result } = renderHook(
+      () => useModelSettingsResource(resourceMessages("zh")),
+      { wrapper: createWrapper() }
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.addModel({
+        ...initialModelFormData,
+        name: savedModel.name,
+        provider: savedModel.provider,
+        model_id: savedModel.model_id,
+      });
+    });
+
+    await waitFor(() =>
+      expect(result.current.error).toBe("服务已保存，但连接检查未完成")
+    );
+    expect(result.current.error).not.toBe("Raw provider failure");
+  });
+
+  it("uses a safe localized save error instead of a raw server message", async () => {
+    vi.mocked(api.post).mockRejectedValueOnce({
+      response: { data: { error: { message: "服务端固定中文" } } },
+    });
+
+    const { result } = renderHook(
+      () => useModelSettingsResource(resourceMessages("en")),
+      { wrapper: createWrapper() }
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await expect(result.current.addModel(initialModelFormData)).rejects.toBeDefined();
+    });
+
+    await waitFor(() =>
+      expect(result.current.error).toBe("Failed to add model, please check config")
+    );
+    expect(result.current.error).not.toBe("服务端固定中文");
   });
 });

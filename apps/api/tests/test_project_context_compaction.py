@@ -155,7 +155,7 @@ def _relationship(index: int, *, target: bool = False) -> dict[str, object]:
     }
 
 
-def test_public_summary_budgets_large_semantic_collections_and_ranks_query_match() -> None:
+def test_public_summary_excludes_candidates_and_budgets_confirmed_semantics() -> None:
     relationships = [_relationship(index, target=index == 791) for index in range(792)]
     context = ProjectRuntimeContext(
         confirmed_knowledge=[
@@ -194,17 +194,16 @@ def test_public_summary_budgets_large_semantic_collections_and_ranks_query_match
 
     summary = context.public_summary(query="priority stores")
 
-    assert len(summary["candidate_relationships"]) == 12
-    assert summary["candidate_relationships"][0]["key"] == "relationship_candidate:0791"
+    assert summary["candidate_relationships"] == []
     assert len(summary["confirmed_knowledge"]) == 48
-    assert len(summary["candidate_knowledge"]) == 24
+    assert summary["candidate_knowledge"] == []
     assert len(summary["confirmed_relationships"]) == 32
     assert summary["semantic_context"] == {
         "query_scoped": True,
         "confirmed_knowledge": {"total": 80, "included": 48, "truncated": True},
-        "candidate_knowledge": {"total": 80, "included": 24, "truncated": True},
+        "candidate_knowledge": {"total": 0, "included": 0, "truncated": False},
         "confirmed_relationships": {"total": 80, "included": 32, "truncated": True},
-        "candidate_relationships": {"total": 792, "included": 12, "truncated": True},
+        "candidate_relationships": {"total": 0, "included": 0, "truncated": False},
     }
 
 
@@ -227,7 +226,7 @@ def test_public_summary_never_crops_explicit_relationship_validation_contract() 
 
     summary = context.public_summary(query="没有命中的问题")
 
-    assert len(summary["candidate_relationships"]) == 12
+    assert summary["candidate_relationships"] == []
     assert len(summary["required_relationship_validations"]) == 25
     assert [item["semantic_entry_id"] for item in summary["required_relationship_validations"]] == [
         item["semantic_entry_id"] for item in required

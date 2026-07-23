@@ -13,19 +13,26 @@ node_modules/
 .pnpm-store/
 .next/
 .next-dev/
+*.tsbuildinfo
 out/
 playwright-report/
 test-results/
+.playwright-mcp/
+apps/web/tmp/
 
 # Environment
-.env
-.env.local
-.env*.local
+.env*
+!.env.example
+!**/.env.example
 *.local
 
 # IDE
 .idea/
 .vscode/
+.serena/
+.planning/
+AGENTS.md
+design-qa.md
 *.swp
 *.swo
 
@@ -54,3 +61,5 @@ target/
 *.egg
 *.whl
 ReceiptBI-*.dmg
+apps/desktop/next/
+apps/desktop/dist-electron/

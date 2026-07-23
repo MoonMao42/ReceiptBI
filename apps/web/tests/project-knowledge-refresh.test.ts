@@ -44,6 +44,7 @@ function deferred<T>() {
 
 describe("project knowledge refresh", () => {
   beforeEach(() => {
+    document.documentElement.lang = "zh-CN";
     Object.values(mocks).forEach((mock) => mock.mockReset());
     useProjectStore.setState({
       projects: [],
@@ -132,6 +133,27 @@ describe("project knowledge refresh", () => {
     ).rejects.toThrow("save failed");
 
     expect(useProjectStore.getState().suggestedQuestionsRevisionByProject).toEqual({});
+  });
+
+  it("keeps API detail out of an English store error", async () => {
+    document.documentElement.lang = "en";
+    mocks.put.mockRejectedValue({
+      isAxiosError: true,
+      message: "Request failed with status code 503",
+      response: {
+        status: 503,
+        data: { detail: "语义服务暂时不可用" },
+      },
+    });
+
+    await expect(
+      useProjectStore.getState().updateKnowledge("knowledge-1", { value: "new value" })
+    ).rejects.toBeDefined();
+
+    expect(useProjectStore.getState().error).toBe(
+      "The request could not be completed. Please retry."
+    );
+    expect(useProjectStore.getState().error).not.toContain("语义服务");
   });
 
   it("invalidates the original project without overwriting a project selected meanwhile", async () => {
@@ -241,7 +263,7 @@ describe("project knowledge refresh", () => {
 
     await useProjectStore.getState().refreshCurrent();
 
-    expect(useProjectStore.getState().error).toBe("数据准备失败，请稍后重试");
+    expect(useProjectStore.getState().error).toBe("请求未能完成，请重试。");
     expect(
       mocks.get.mock.calls.some(
         ([url]) => url === "/api/v1/projects/project-A/knowledge"
@@ -276,7 +298,8 @@ describe("project knowledge refresh", () => {
 
     await useProjectStore.getState().refreshCurrent();
 
-    expect(useProjectStore.getState().error).toBe("语义摘要暂时不可用");
+    expect(useProjectStore.getState().error).toBe("请求未能完成，请重试。");
+    expect(useProjectStore.getState().error).not.toContain("语义摘要");
     expect(
       mocks.get.mock.calls.some(
         ([url]) => url === "/api/v1/projects/project-A/knowledge"

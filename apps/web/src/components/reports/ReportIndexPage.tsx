@@ -14,11 +14,13 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import {
   createReport,
   deleteReport,
   listReports,
+  type ReportSerializationCopy,
   type ReportListItem,
 } from "@/lib/reports";
 import {
@@ -39,10 +41,10 @@ function reportContextQuery(
   return query ? `?${query}` : "";
 }
 
-function updatedLabel(value: string): string {
+function updatedLabel(value: string, locale: string, recent: string): string {
   const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return "最近更新";
-  return new Intl.DateTimeFormat("zh-CN", {
+  if (Number.isNaN(date.valueOf())) return recent;
+  return new Intl.DateTimeFormat(locale, {
     month: "long",
     day: "numeric",
     hour: "2-digit",
@@ -50,15 +52,12 @@ function updatedLabel(value: string): string {
   }).format(date);
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message
-    ? error.message
-    : "报告没有加载完成，请重试。";
-}
-
 export function ReportIndexPage({ projectId }: { projectId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const locale = useLocale();
+  const t = useTranslations("reportIndex");
+  const tBlocks = useTranslations("reportBlocks");
   const fromRun = searchParams.get("fromRun")?.trim() || "";
   const requestedConversationId = normalizeConversationId(
     searchParams.get("fromConversation")
@@ -75,6 +74,15 @@ export function ReportIndexPage({ projectId }: { projectId: string }) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const { armedId: armedDeleteId, request: requestDelete } = useArmedAction();
   const [error, setError] = useState<string | null>(null);
+  const serializationCopy = useMemo<ReportSerializationCopy>(
+    () => ({
+      unnamedBlock: tBlocks("unnamedBlock"),
+      textBlock: tBlocks("labelText"),
+      unnamedPage: tBlocks("unnamedPage"),
+      unnamedReport: tBlocks("unnamedReport"),
+    }),
+    [tBlocks]
+  );
   const liveConversationId =
     currentConversationId &&
     (currentConversationMeta?.project_id === projectId || lastProjectId === projectId)
@@ -92,12 +100,12 @@ export function ReportIndexPage({ projectId }: { projectId: string }) {
     setError(null);
     try {
       setReports(await listReports(projectId));
-    } catch (nextError) {
-      setError(errorMessage(nextError));
+    } catch {
+      setError(t("loadError"));
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, t]);
 
   useEffect(() => {
     void load();
@@ -113,20 +121,20 @@ export function ReportIndexPage({ projectId }: { projectId: string }) {
     setError(null);
     try {
       const report = await createReport(projectId, {
-        title: "新报告",
+        title: t("newReportTitle"),
         pages: [
           {
             id: `local-page-${Date.now()}`,
-            title: "概览",
+            title: t("overviewPage"),
             order_index: 0,
             config: {},
             blocks: [],
           },
         ],
-      });
+      }, serializationCopy);
       router.push(`/projects/${projectId}/reports/${report.id}${contextQuery}`);
-    } catch (nextError) {
-      setError(errorMessage(nextError));
+    } catch {
+      setError(t("createError"));
       setCreating(false);
     }
   };
@@ -138,8 +146,8 @@ export function ReportIndexPage({ projectId }: { projectId: string }) {
     try {
       await deleteReport(projectId, report.id);
       setReports((current) => current.filter((item) => item.id !== report.id));
-    } catch (nextError) {
-      setError(errorMessage(nextError));
+    } catch {
+      setError(t("deleteError"));
     } finally {
       setDeletingId(null);
     }
@@ -152,14 +160,14 @@ export function ReportIndexPage({ projectId }: { projectId: string }) {
           <div className="flex min-w-0 items-center gap-4">
             <Link
               href={projectHref}
-              aria-label="返回项目"
+              aria-label={t("backToProject")}
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <ArrowLeft size={17} />
             </Link>
             <div className="min-w-0">
-              <h1 className="truncate text-base font-semibold tracking-[-0.02em]">报告</h1>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">整理、编辑和交付分析结果</p>
+              <h1 className="truncate text-base font-semibold tracking-[-0.02em]">{t("title")}</h1>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">{t("subtitle")}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -168,7 +176,7 @@ export function ReportIndexPage({ projectId }: { projectId: string }) {
               className="hidden h-9 items-center gap-2 px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:inline-flex"
             >
               <BookOpenText size={15} />
-              项目理解
+              {t("projectUnderstanding")}
             </Link>
             <button
               type="button"
@@ -177,7 +185,7 @@ export function ReportIndexPage({ projectId }: { projectId: string }) {
               className="inline-flex h-9 items-center gap-2 bg-primary px-4 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {creating ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
-              新建报告
+              {t("newReport")}
             </button>
           </div>
         </div>
@@ -187,21 +195,21 @@ export function ReportIndexPage({ projectId }: { projectId: string }) {
         {fromRun && (
           <div className="mb-7 flex items-center gap-3 border border-primary/25 bg-primary/[0.045] px-4 py-3 text-xs text-foreground">
             <FilePlus2 size={15} className="shrink-0 text-primary" />
-            <span>选择一份报告，调查内容会在打开后供你挑选。</span>
+            <span>{t("selectReportHint")}</span>
           </div>
         )}
         <div className="mb-8 flex items-end justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 text-xs font-semibold text-primary">
               <BarChart3 size={15} />
-              报告工作台
+              {t("workspaceLabel")}
             </div>
             <h2 className="mt-3 text-2xl font-semibold tracking-[-0.035em] md:text-3xl">
-              把调查结果变成自己的报告
+              {t("workspaceTitle")}
             </h2>
           </div>
           {!loading && reports.length > 0 && (
-            <span className="text-xs tabular-nums text-muted-foreground">{reports.length} 份报告</span>
+            <span className="text-xs tabular-nums text-muted-foreground">{t("reportCount", { count: reports.length })}</span>
           )}
         </div>
 
@@ -210,7 +218,7 @@ export function ReportIndexPage({ projectId }: { projectId: string }) {
             <span>{error}</span>
             <button type="button" onClick={() => void load()} className="inline-flex shrink-0 items-center gap-1.5 font-medium hover:underline">
               <RefreshCw size={13} />
-              重试
+              {t("retry")}
             </button>
           </div>
         )}
@@ -218,7 +226,7 @@ export function ReportIndexPage({ projectId }: { projectId: string }) {
         {loading ? (
           <div className="flex min-h-72 items-center justify-center text-sm text-muted-foreground">
             <Loader2 size={18} className="mr-2 animate-spin" />
-            正在打开报告
+            {t("loading")}
           </div>
         ) : error ? (
           <section
@@ -226,7 +234,7 @@ export function ReportIndexPage({ projectId }: { projectId: string }) {
             className="flex min-h-[360px] flex-col items-center justify-center border border-destructive/25 bg-card px-6 text-center"
           >
             <CircleAlert size={28} strokeWidth={1.5} className="text-destructive" />
-            <h3 className="mt-5 text-lg font-semibold">报告暂时没有打开</h3>
+            <h3 className="mt-5 text-lg font-semibold">{t("unavailableTitle")}</h3>
             <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">{error}</p>
             <button
               type="button"
@@ -234,15 +242,15 @@ export function ReportIndexPage({ projectId }: { projectId: string }) {
               className="mt-6 inline-flex h-10 items-center gap-2 border border-border px-5 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
             >
               <RefreshCw size={14} />
-              重试
+              {t("retry")}
             </button>
           </section>
         ) : reports.length === 0 ? (
           <section className="flex min-h-[420px] flex-col items-center justify-center border border-border bg-card px-6 text-center">
             <FilePlus2 size={28} strokeWidth={1.5} className="text-primary" />
-            <h3 className="mt-5 text-lg font-semibold">从一张空白报告开始</h3>
+            <h3 className="mt-5 text-lg font-semibold">{t("emptyTitle")}</h3>
             <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-              你可以自己添加内容，也可以把已有调查中的指标、图表和明细放进来继续编辑。
+              {t("emptyDescription")}
             </p>
             <button
               type="button"
@@ -251,7 +259,7 @@ export function ReportIndexPage({ projectId }: { projectId: string }) {
               className="mt-6 inline-flex h-10 items-center gap-2 bg-primary px-5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
             >
               {creating ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
-              新建报告
+              {t("newReport")}
             </button>
           </section>
         ) : (
@@ -272,16 +280,20 @@ export function ReportIndexPage({ projectId }: { projectId: string }) {
                     {report.title}
                   </h3>
                   <p className="mt-2 line-clamp-2 min-h-10 text-xs leading-5 text-muted-foreground">
-                    {report.description || "打开后可添加页面、图表、明细和文字。"}
+                    {report.description || t("defaultDescription")}
                   </p>
                   <div className="mt-auto flex items-center justify-between gap-3 pt-7 text-[11px] text-muted-foreground">
-                    <span>{report.page_count} 页 · {report.block_count} 个区块</span>
-                    <span>{updatedLabel(report.updated_at)}</span>
+                    <span>{t("reportStats", { pages: report.page_count, blocks: report.block_count })}</span>
+                    <span>{updatedLabel(report.updated_at, locale, t("recent"))}</span>
                   </div>
                 </Link>
                 <button
                   type="button"
-                  aria-label={armedDeleteId === report.id ? "确认删除" : `删除报告：${report.title}`}
+                  aria-label={
+                    armedDeleteId === report.id
+                      ? t("confirmDelete")
+                      : t("deleteReport", { title: report.title })
+                  }
                   disabled={deletingId === report.id}
                   onClick={() => requestDelete(report.id, () => void handleDelete(report))}
                   className={
@@ -293,7 +305,7 @@ export function ReportIndexPage({ projectId }: { projectId: string }) {
                   {deletingId === report.id ? (
                     <Loader2 size={14} className="animate-spin" />
                   ) : armedDeleteId === report.id ? (
-                    "确认删除"
+                    t("confirmDelete")
                   ) : (
                     <Trash2 size={14} />
                   )}

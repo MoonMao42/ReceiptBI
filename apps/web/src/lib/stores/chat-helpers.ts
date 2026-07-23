@@ -9,6 +9,7 @@ import type {
 } from "@/lib/types/api";
 import { getErrorMessage } from "@/lib/types/api";
 import type { ChatMessage } from "@/lib/types/chat";
+import { runtimeMessage } from "@/i18n/runtime";
 
 export type ChatStreamEventPayload = Exclude<SSEEventData, { type: "error" | "done" }>;
 export type ChatStreamErrorPayload = Extract<SSEEventData, { type: "error" }>;
@@ -131,7 +132,6 @@ export function buildPendingAssistantMessage(
     content: "",
     streamId,
     isLoading: true,
-    status: "Analyzing...",
     executionContext,
     diagnostics: [],
     analysisRunId: resumeRunId || undefined,
@@ -196,9 +196,13 @@ export function applyStreamEvent(
   if (payload.type === "progress") {
     const executionContext = payload.data.execution_context as ExecutionContextSummary | undefined;
     const diagnosticEntry = payload.data.diagnostic_entry as AgentTraceEntry | undefined;
+    const progressStage = [payload.data.step, payload.data.stage, payload.data.phase]
+      .find((value) => typeof value === "string" && value.trim())
+      ?.trim();
     return updateTargetMessage(messages, streamId, (message) => ({
       ...message,
       status: String(payload.data.message || ""),
+      thinkingStage: progressStage || message.thinkingStage,
       analysisRunId: payload.data.analysis_run_id || message.analysisRunId,
       projectId: payload.data.project_id || message.projectId,
       analysisState: payload.data.analysis_state || message.analysisState,
@@ -231,7 +235,7 @@ export function applyStreamEvent(
       correctionApplication:
         payload.data.correction_application || message.correctionApplication,
       isLoading: true,
-      status: "正在保存调查结果",
+      status: runtimeMessage("savingInvestigationResult"),
     }));
   }
 
@@ -287,9 +291,9 @@ export function applyStreamErrorEvent(
     ...message,
     content:
       message.content ||
-      (wasCancelled ? "已停止这次调查。已经完成的步骤会在继续时重新核对。" : ""),
+      (wasCancelled ? runtimeMessage("investigationStopped") : ""),
     hasError: !wasCancelled,
-    errorMessage: String(errorData.message || "Execution failed"),
+    errorMessage: String(errorData.message || runtimeMessage("executionFailed")),
     errorCode: String(errorData.code || "EXECUTION_ERROR"),
     errorCategory: typeof errorData.error_category === "string" ? errorData.error_category : undefined,
     failedStage: typeof errorData.failed_stage === "string" ? errorData.failed_stage : undefined,
@@ -351,7 +355,7 @@ export function markStoppedMessage(
     message.isLoading
       ? {
           ...message,
-          content: message.content || "已停止这次调查。项目数据和已经保存的结果没有变化。",
+          content: message.content || runtimeMessage("investigationStoppedSaved"),
           analysisState: "needs_attention",
           status: undefined,
           isLoading: false,

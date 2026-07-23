@@ -24,24 +24,17 @@ from app.services.sanitation_contract import (
     canonicalize_sanitation_operations,
     executable_sanitation_operations,
 )
+from app.services.semantic_field_roles import (
+    SEMANTIC_ROLE_INFERENCE_VERSION,
+    has_identifier_semantics,
+    has_monetary_semantics,
+    has_refund_semantics,
+    has_time_semantics,
+    infer_semantic_field_role,
+)
 
 SUPPORTED_FILE_FORMATS = {"csv", "xls", "xlsx", "parquet", "json"}
 TOTAL_MARKERS = {"total", "grand total", "subtotal", "合计", "总计", "小计"}
-DATE_HINTS = ("date", "time", "day", "month", "日期", "时间", "月份", "天")
-CURRENCY_HINTS = (
-    "amount",
-    "revenue",
-    "sales",
-    "price",
-    "cost",
-    "gmv",
-    "金额",
-    "收入",
-    "销售",
-    "价格",
-    "成本",
-)
-REFUND_HINTS = ("refund", "return", "退款", "退货")
 REVENUE_INTENT_TERMS = (
     "收入",
     "营收",
@@ -61,7 +54,6 @@ REVENUE_INTENT_TERMS = (
     "amount",
     "profit",
 )
-IDENTIFIER_HINTS = ("id", "number", "code", "编号", "单号", "编码")
 RECIPE_METADATA_OPERATIONS = SANITATION_PROVENANCE_OPERATIONS
 SUPPORTED_RECIPE_OPERATIONS = EXECUTABLE_SANITATION_OPERATIONS
 
@@ -389,7 +381,6 @@ def _infer_and_clean_types(
     cleaned = frame.copy()
     for column in cleaned.columns:
         column_name = str(column)
-        name = column_name.lower()
         series = cleaned[column]
         is_text = pd.api.types.is_object_dtype(series.dtype) or pd.api.types.is_string_dtype(
             series.dtype
@@ -410,7 +401,7 @@ def _infer_and_clean_types(
             operations.append({"operation": "trim_text", "column": column_name, "replayed": True})
 
         replay_currency = column_name in expected_columns["normalize_currency"]
-        if any(hint in name for hint in CURRENCY_HINTS) or replay_currency:
+        if has_monetary_semantics(column_name) or replay_currency:
             if replay_currency and pd.api.types.is_numeric_dtype(cleaned[column].dtype):
                 operations.append(
                     {
@@ -460,7 +451,7 @@ def _infer_and_clean_types(
                 }
             )
             continue
-        if (any(hint in name for hint in DATE_HINTS) or replay_datetime) and is_text:
+        if (has_time_semantics(column_name) or replay_datetime) and is_text:
             converted = pd.to_datetime(cleaned[column], errors="coerce", format="mixed")
             non_null = cleaned[column].notna().sum()
             if non_null and converted.notna().sum() / non_null >= 0.8:
@@ -516,10 +507,9 @@ def _candidate_grain(frame: pd.DataFrame) -> list[dict[str, Any]]:
         series = frame[column].dropna()
         if series.empty:
             continue
-        name = str(column).lower()
         unique = int(series.nunique(dropna=True))
         uniqueness = unique / len(series)
-        if any(hint in name for hint in IDENTIFIER_HINTS) or uniqueness >= 0.98:
+        if has_identifier_semantics(column):
             candidates.append(
                 {
                     "column": str(column),
@@ -564,23 +554,17 @@ def _preanalysis_brief(
     roles: list[dict[str, Any]] = []
     for column in list(frame.columns)[:80]:
         column_name = str(column)
-        lowered = column_name.casefold()
         series = frame[column]
         non_null = series.dropna()
-        if any(hint in lowered for hint in IDENTIFIER_HINTS):
-            role = "identifier"
-        elif pd.api.types.is_datetime64_any_dtype(series.dtype) or any(
-            hint in lowered for hint in DATE_HINTS
-        ):
-            role = "time"
-        elif pd.api.types.is_numeric_dtype(series.dtype) or any(
-            hint in lowered for hint in CURRENCY_HINTS
-        ):
-            role = "measure"
-        elif column_name in grain_columns:
-            role = "identifier"
-        else:
-            role = "dimension"
+        role = infer_semantic_field_role(
+            column_name,
+            is_numeric=(
+                pd.api.types.is_numeric_dtype(series.dtype)
+                and not pd.api.types.is_bool_dtype(series.dtype)
+            ),
+            is_datetime=pd.api.types.is_datetime64_any_dtype(series.dtype),
+            is_grain=column_name in grain_columns,
+        )
 
         profile: dict[str, Any] = {
             "column": column_name,
@@ -622,6 +606,7 @@ def _preanalysis_brief(
         roles.append(profile)
     return {
         "generated_by": "deterministic_preflight",
+        "semantic_role_inference_version": SEMANTIC_ROLE_INFERENCE_VERSION,
         "requires_query_verification": True,
         "shape": {"rows": int(len(frame)), "columns": int(len(frame.columns))},
         "candidate_roles": roles,
@@ -655,9 +640,8 @@ def _find_outliers(frame: pd.DataFrame) -> list[dict[str, Any]]:
 
 def _business_ambiguities(frame: pd.DataFrame) -> list[dict[str, Any]]:
     columns = frame.columns.tolist()
-    lowered = [column.lower() for column in columns]
-    has_money = any(any(hint in column for hint in CURRENCY_HINTS) for column in lowered)
-    has_refund = any(any(hint in column for hint in REFUND_HINTS) for column in lowered)
+    has_money = any(has_monetary_semantics(column) for column in columns)
+    has_refund = any(has_refund_semantics(column) for column in columns)
     if not (has_money and has_refund):
         return []
     strategies = build_revenue_refund_option_strategies(_json_safe(frame.to_dict(orient="records")))
@@ -666,9 +650,18 @@ def _business_ambiguities(frame: pd.DataFrame) -> list[dict[str, Any]]:
     return [
         {
             "key": "revenue_refund_policy",
+            "presentation_code": "preflight.revenue_refund_policy",
             "question": "计算收入时，退款订单需要扣除吗？",
             "reason": "数据同时包含金额和退款字段，不同口径会改变收入结论。",
             "options": list(strategies),
+            "option_codes": {
+                option: {
+                    "value_filter": "exclude_refunds",
+                    "identity": "include_refunds",
+                    "metric_column": "use_existing_net_amount",
+                }.get(str((definition.get("action") or {}).get("kind") or ""), "")
+                for option, definition in strategies.items()
+            },
             "option_strategies": strategies,
             "affected_terms": list(REVENUE_INTENT_TERMS),
         }
@@ -832,9 +825,7 @@ def run_preflight(
     preanalysis = _preanalysis_brief(frame, candidate_grain)
     for candidate in candidate_grain:
         duplicate_values = candidate["duplicate_values"]
-        if duplicate_values and any(
-            hint in candidate["column"].lower() for hint in IDENTIFIER_HINTS
-        ):
+        if duplicate_values and has_identifier_semantics(candidate["column"]):
             issues.append(
                 {
                     "code": "duplicate_business_keys",
@@ -892,6 +883,8 @@ def run_preflight(
         ambiguities.append(
             {
                 "key": "excel_sheet_selection",
+                "presentation_code": "preflight.excel_sheet_selection",
+                "presentation_facts": {"selected_sheet": selected_sheet},
                 "question": f"这次先分析工作表“{selected_sheet}”，是否正确？",
                 "reason": "文件里有多个工作表，选择不同工作表可能改变分析范围。",
                 "options": [str(item.get("name")) for item in plausible_sheets[:12]],
@@ -932,6 +925,15 @@ def run_preflight(
         summary += "，整理方法已重放并核对" if not replay_drift else "，整理方法存在漂移"
 
     snapshot = {
+        "summary_code": "file_preflight",
+        "summary_facts": {
+            "rows": int(frame.shape[0]),
+            "columns": int(frame.shape[1]),
+            "automatic_issue_count": automatic_count,
+            "ambiguity_count": len(ambiguities),
+            "recipe_step_count": len(replay_steps),
+            "recipe_drift_count": len(replay_drift),
+        },
         "original_rows": int(original_shape[0]),
         "original_columns": int(original_shape[1]),
         "ready_rows": int(frame.shape[0]),

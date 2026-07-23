@@ -91,6 +91,7 @@ def _runtime(
     knowledge_state: str | None = None,
     ambiguity: dict[str, Any] | None = None,
     knowledge_key: str = REFUND_AMBIGUITY["key"],
+    language: str = "zh",
 ) -> tuple[PydanticAnalystRuntime, CompletedModelProbe]:
     monkeypatch.setattr(analyst_runtime, "build_pydantic_model", lambda _config: TestModel())
     runtime = PydanticAnalystRuntime(
@@ -100,6 +101,7 @@ def _runtime(
             ambiguity=ambiguity,
             knowledge_key=knowledge_key,
         ),
+        language=language,
     )
     probe = CompletedModelProbe()
     runtime.agent = probe
@@ -114,9 +116,7 @@ async def test_unresolved_active_source_ambiguity_blocks_before_model_and_return
     runtime, model = _runtime(monkeypatch)
 
     # Act: enter the production runtime at the same boundary used by chat execution.
-    events = [
-        event async for event in runtime.execute(query="比较各门店净收入")
-    ]
+    events = [event async for event in runtime.execute(query="比较各门店净收入")]
 
     # Assert: product policy, not model discretion, owns the blocking confirmation.
     result = next(event for event in events if event.type == SSEEventType.RESULT)
@@ -124,7 +124,15 @@ async def test_unresolved_active_source_ambiguity_blocks_before_model_and_return
     assert model.calls == 0
     assert result.data["analysis_state"] == "waiting_confirmation"
     assert report["status"] == "waiting_confirmation"
-    assert report["confirmation"] == REFUND_AMBIGUITY
+    assert report["confirmation"] == {
+        **REFUND_AMBIGUITY,
+        "presentation_code": "preflight.revenue_refund_policy",
+        "option_codes": {
+            "扣除退款": "exclude_refunds",
+            "保留退款订单": "include_refunds",
+            "按现有净额字段": "use_existing_net_amount",
+        },
+    }
     assert report["action"] == {
         "kind": "confirm",
         "label": "确认业务口径",
@@ -132,6 +140,80 @@ async def test_unresolved_active_source_ambiguity_blocks_before_model_and_return
         "requested_data": [],
         "confirmation_key": REFUND_AMBIGUITY["key"],
         "options": REFUND_AMBIGUITY["options"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_system_owned_confirmation_and_progress_follow_english_language(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime, model = _runtime(monkeypatch, language="en")
+
+    events = [event async for event in runtime.execute(query="比较各门店净收入")]
+
+    progress = [event.data for event in events if event.type == SSEEventType.PROGRESS]
+    result = next(event for event in events if event.type == SSEEventType.RESULT)
+    assert model.calls == 0
+    assert progress[0] == {
+        "stage": "understanding",
+        "step": "understand_data",
+        "message": "Understanding the data and business definitions",
+    }
+    assert progress[-1] == {
+        "stage": "waiting_confirmation",
+        "step": "confirmation_required",
+        "message": "A business definition that affects the conclusion needs confirmation",
+    }
+    assert result.data["report"]["title"] == "A business definition needs confirmation"
+    assert result.data["report"]["action"]["label"] == "Confirm business definition"
+    confirmation = result.data["report"]["confirmation"]
+    assert confirmation["question"] == (
+        "Should refunded orders be deducted when calculating revenue?"
+    )
+    assert confirmation["reason"].startswith("The data contains both amount and refund fields")
+    assert confirmation["options"] == REFUND_AMBIGUITY["options"]
+    assert confirmation["option_codes"]["扣除退款"] == "exclude_refunds"
+    assert "### Confirmation needed" in result.data["content"]
+
+
+@pytest.mark.asyncio
+async def test_excel_preflight_confirmation_localizes_prose_but_not_sheet_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_id = uuid4()
+    ambiguity = {
+        "key": f"excel_sheet_selection:{source_id}",
+        "presentation_code": "preflight.excel_sheet_selection",
+        "presentation_facts": {"selected_sheet": "订单明细"},
+        "question": "这次先分析工作表“订单明细”，是否正确？",
+        "reason": "文件里有多个工作表，选择不同工作表可能改变分析范围。",
+        "options": ["订单明细", "退款明细"],
+    }
+    runtime, model = _runtime(monkeypatch, ambiguity=ambiguity, language="en")
+
+    events = [event async for event in runtime.execute(query="Analyze this workbook")]
+
+    result = next(event for event in events if event.type == SSEEventType.RESULT)
+    confirmation = result.data["report"]["confirmation"]
+    assert model.calls == 0
+    assert confirmation["question"] == (
+        "Should this analysis use the “订单明细” worksheet?"
+    )
+    assert confirmation["reason"].startswith("This file contains multiple worksheets")
+    assert confirmation["options"] == ["订单明细", "退款明细"]
+
+
+def test_queued_product_milestones_use_stable_steps_and_runtime_language(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime, _ = _runtime(monkeypatch, language="en")
+
+    runtime._queue_product_progress("read_files")
+
+    assert runtime.deps.progress_queue.get_nowait() == {
+        "stage": "investigating",
+        "step": "read_files",
+        "message": "Reading the relevant file data",
     }
 
 
@@ -174,9 +256,7 @@ async def test_confirmed_or_locked_knowledge_suppresses_the_same_preflight_gate(
     runtime, model = _runtime(monkeypatch, knowledge_state=knowledge_state)
 
     # Act: run the same user request.
-    events = [
-        event async for event in runtime.execute(query="比较各门店净收入")
-    ]
+    events = [event async for event in runtime.execute(query="比较各门店净收入")]
 
     # Assert: the resolved key no longer interrupts the autonomous investigation.
     result = next(event for event in events if event.type == SSEEventType.RESULT)

@@ -15,6 +15,7 @@ import {
   Settings,
   X,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useChatStore } from "@/lib/stores/chat";
 import { useProjectStore } from "@/lib/stores/project";
 import type { AnalysisRunSummary } from "@/lib/types/api";
@@ -46,6 +47,8 @@ export function Sidebar({
   const { clearConversation } = useChatStore();
   const { projects, currentProjectId, selectProject, createProject, renameProject } =
     useProjectStore();
+  const t = useTranslations("sidebar");
+  const tProjectDefaults = useTranslations("projectDefaults");
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const currentProject = projects.find((project) => project.id === currentProjectId);
   const [isRenamingProject, setIsRenamingProject] = useState(false);
@@ -79,7 +82,7 @@ export function Sidebar({
     if (!currentProject || isSavingProjectName) return;
     const normalizedName = projectNameDraft.trim();
     if (!normalizedName) {
-      setProjectRenameError("项目名称不能为空");
+      setProjectRenameError(t("projectNameEmpty"));
       return;
     }
     if (normalizedName === currentProject.name) {
@@ -93,7 +96,7 @@ export function Sidebar({
       await renameProject(currentProject.id, normalizedName);
       setIsRenamingProject(false);
     } catch {
-      setProjectRenameError("项目名称保存失败，请重试");
+      setProjectRenameError(t("projectNameSaveFailed"));
     } finally {
       setIsSavingProjectName(false);
     }
@@ -132,14 +135,14 @@ export function Sidebar({
           <div className="ml-3 min-w-0">
             <div className="text-[13px] font-semibold tracking-[0.04em]">ReceiptBI</div>
             <div className="mt-0.5 text-[9px] font-medium tracking-[0.18em] text-muted-foreground">
-              数据调查台
+              {t("brandSubtitle")}
             </div>
           </div>
         </div>
 
         <div className="border-b border-border px-[18px] pb-4 pt-5">
           <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            当前项目
+            {t("currentProject")}
           </div>
           <button
             onClick={() => setProjectMenuOpen((value) => !value)}
@@ -148,7 +151,7 @@ export function Sidebar({
           >
             <Archive size={15} className="shrink-0 text-primary" strokeWidth={1.8} />
             <span className="min-w-0 flex-1 truncate text-[13px] font-medium tracking-[0.01em]">
-              {currentProject?.name || "正在准备"}
+              {currentProject?.name || t("preparing")}
             </span>
             <ChevronDown
               size={13}
@@ -170,11 +173,11 @@ export function Sidebar({
                   }}
                 >
                   <label className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                    项目名称
+                    {t("projectNameLabel")}
                   </label>
                   <input
                     autoFocus
-                    aria-label="侧栏项目名称"
+                    aria-label={t("projectNameInputAria")}
                     value={projectNameDraft}
                     maxLength={120}
                     disabled={isSavingProjectName}
@@ -194,7 +197,7 @@ export function Sidebar({
                     <button
                       type="submit"
                       disabled={isSavingProjectName}
-                      aria-label="保存侧栏项目名称"
+                      aria-label={t("saveProjectNameAria")}
                       className="inline-flex h-7 items-center gap-1 bg-primary px-2 text-[11px] font-semibold text-primary-foreground disabled:opacity-50"
                     >
                       {isSavingProjectName ? (
@@ -202,7 +205,7 @@ export function Sidebar({
                       ) : (
                         <Check size={12} />
                       )}
-                      保存
+                      {t("save")}
                     </button>
                     <button
                       type="button"
@@ -210,9 +213,9 @@ export function Sidebar({
                       disabled={isSavingProjectName}
                       className="inline-flex h-7 items-center gap-1 px-2 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
                     >
-                      <X size={12} />
-                      取消
-                    </button>
+                        <X size={12} />
+                        {t("cancel")}
+                      </button>
                   </div>
                   {projectRenameError && (
                     <p role="alert" className="mt-2 text-[11px] leading-4 text-destructive">
@@ -249,18 +252,18 @@ export function Sidebar({
                 disabled={!currentProject || isRenamingProject}
                 className="mt-1 flex w-full items-center gap-2 border-t border-border px-2 py-2.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:opacity-50"
               >
-                <Pencil size={13} strokeWidth={1.8} /> 重命名当前项目
+                <Pencil size={13} strokeWidth={1.8} /> {t("renameCurrent")}
               </button>
               <button
                 onClick={() => {
                   clearConversation({ forget: false });
-                  void createProject();
+                  void createProject(tProjectDefaults("newName"));
                   setProjectMenuOpen(false);
                   closeOnMobile();
                 }}
                 className="mt-1 flex w-full items-center gap-2 border-t border-border px-2 py-2.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
               >
-                <Plus size={13} strokeWidth={1.8} /> 新建项目
+                <Plus size={13} strokeWidth={1.8} /> {t("newProject")}
               </button>
             </div>
           )}
@@ -277,7 +280,7 @@ export function Sidebar({
             <span className="flex h-6 w-6 shrink-0 items-center justify-center border border-primary/40 bg-primary/10 text-primary transition-colors group-hover:border-primary/70 group-hover:bg-primary/20">
               <Plus size={14} strokeWidth={2} />
             </span>
-            <span>开始新调查</span>
+            <span>{t("startNewInvestigation")}</span>
           </button>
           {currentProjectId && (
             <>
@@ -290,7 +293,7 @@ export function Sidebar({
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center text-primary">
                   <LayoutDashboard size={15} strokeWidth={1.8} />
                 </span>
-                <span>报表</span>
+                <span>{t("reports")}</span>
               </Link>
               <Link
                 href={`/projects/${currentProjectId}/understanding`}
@@ -301,7 +304,7 @@ export function Sidebar({
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center text-primary">
                   <BookOpenText size={15} strokeWidth={1.8} />
                 </span>
-                <span>项目理解</span>
+                <span>{t("projectUnderstanding")}</span>
               </Link>
             </>
           )}
@@ -330,7 +333,7 @@ export function Sidebar({
           onClick={closeOnMobile}
           className="flex w-full items-center gap-2.5 py-2 text-[13px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
-          <Settings size={15} strokeWidth={1.8} /> 设置
+          <Settings size={15} strokeWidth={1.8} /> {t("settings")}
         </Link>
       </div>
     </aside>

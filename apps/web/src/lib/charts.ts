@@ -73,12 +73,16 @@ export type ChartPaletteId = keyof typeof RECEIPTBI_CHART_PALETTES;
 
 export const CHART_PALETTE_OPTIONS: ReadonlyArray<{
   value: ChartPaletteId;
-  label: string;
+  labelKey:
+    | "paletteReceiptBI"
+    | "paletteMuted"
+    | "paletteCategorical"
+    | "paletteMonochrome";
 }> = [
-  { value: "receiptbi", label: "ReceiptBI" },
-  { value: "receiptbi-muted", label: "柔和" },
-  { value: "categorical", label: "分类" },
-  { value: "monochrome", label: "单色" },
+  { value: "receiptbi", labelKey: "paletteReceiptBI" },
+  { value: "receiptbi-muted", labelKey: "paletteMuted" },
+  { value: "categorical", labelKey: "paletteCategorical" },
+  { value: "monochrome", labelKey: "paletteMonochrome" },
 ];
 
 export type ChartDataPoint = Record<string, unknown>;

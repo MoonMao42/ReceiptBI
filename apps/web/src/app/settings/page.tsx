@@ -15,16 +15,17 @@ import {
   Palette,
   Play,
 } from "lucide-react";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { ModelSettings } from "@/components/settings/ModelSettings";
 import { cn } from "@/lib/utils";
 import { RECEIPTBI_BRAND_ICON_SRC } from "@/lib/brand";
 
 function SettingsPanelPending() {
+  const t = useTranslations("settings");
   return (
     <div
       role="status"
-      aria-label="正在打开设置"
+      aria-label={t("openingAria")}
       className="flex min-h-40 items-center justify-center text-muted-foreground"
     >
       <Loader2 size={16} className="animate-spin" />
@@ -69,31 +70,7 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<TabType>("models");
   const [routeReady, setRouteReady] = useState(false);
   const router = useRouter();
-  const locale = useLocale();
   const t = useTranslations("settings");
-  const isChinese = locale === "zh";
-
-  const copy = isChinese
-    ? {
-        workbench: "分析工作台",
-        back: "返回当前项目",
-        globalSettings: "ReceiptBI 设置",
-        models: ["分析服务", "选择 ReceiptBI 用来完成分析的模型服务。"],
-        connections: ["数据连接", "管理可供项目使用的只读数据库连接。"],
-        execution: ["执行", "设置分析过程的自动处理方式。"],
-        appearance: ["外观", "调整语言和界面主题。"],
-        advanced: ["调查诊断", "查看失败、运行环境与依据详情；普通报告仍使用业务语言。"],
-      }
-    : {
-        workbench: "Analysis workbench",
-        back: "Back to current project",
-        globalSettings: "ReceiptBI settings",
-        models: ["Analysis service", "Choose the model service ReceiptBI uses to complete analysis."],
-        connections: ["Data connections", "Manage read-only database connections available to projects."],
-        execution: ["Execution", "Configure automatic analysis behavior."],
-        appearance: ["Appearance", "Adjust language and interface theme."],
-        advanced: ["Investigation diagnostics", "Review failures, runtime details, and evidence while ordinary reports stay in business language."],
-      };
 
   useEffect(() => {
     const requestedTab = new URLSearchParams(window.location.search).get("tab");
@@ -129,36 +106,36 @@ export default function SettingsPage() {
   const primaryTabs: NavigationItem[] = [
     {
       id: "models",
-      label: copy.models[0],
-      description: copy.models[1],
+      label: t("analysisService"),
+      description: t("analysisServiceDesc"),
       icon: Layers3,
       testId: "settings-tab-models",
     },
     {
       id: "connections",
-      label: copy.connections[0],
-      description: copy.connections[1],
+      label: t("dataConnections"),
+      description: t("dataConnectionsDesc"),
       icon: Database,
       testId: "settings-tab-connections",
     },
     {
       id: "execution",
-      label: copy.execution[0],
-      description: copy.execution[1],
+      label: t("execution"),
+      description: t("executionDesc"),
       icon: Play,
       testId: "settings-tab-execution",
     },
     {
       id: "appearance",
-      label: copy.appearance[0],
-      description: copy.appearance[1],
+      label: t("appearance"),
+      description: t("appearanceDesc"),
       icon: Palette,
       testId: "settings-tab-appearance",
     },
     {
       id: "advanced",
-      label: copy.advanced[0],
-      description: copy.advanced[1],
+      label: t("diagnostics"),
+      description: t("diagnosticsDesc"),
       icon: FileSearch,
       testId: "settings-tab-advanced",
     },
@@ -213,7 +190,7 @@ export default function SettingsPage() {
           />
           <div className="ml-3">
             <div className="text-sm font-semibold tracking-wide">ReceiptBI</div>
-            <div className="text-[10px] tracking-[0.14em] text-muted-foreground">{copy.workbench}</div>
+            <div className="text-[10px] tracking-[0.14em] text-muted-foreground">{t("workbench")}</div>
           </div>
         </div>
 
@@ -223,13 +200,13 @@ export default function SettingsPage() {
           className="mx-4 mt-4 flex items-center gap-2 border border-border px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
           <ArrowLeft size={16} />
-          {copy.back}
+          {t("backToProject")}
         </button>
 
         <nav className="grid gap-4 px-3 py-5 sm:grid-cols-2 lg:block lg:flex-1 lg:overflow-y-auto">
           <div>
             <div className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              {copy.globalSettings}
+              {t("globalSettings")}
             </div>
             {renderNavigation(primaryTabs)}
           </div>

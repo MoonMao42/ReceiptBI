@@ -433,6 +433,139 @@ _GENERATIONS: Final[tuple[SchemaGeneration, ...]] = (
             ),
         ),
     ),
+    SchemaGeneration(
+        revision="0016_processing_consent",
+        required_columns=(
+            (
+                "app_settings",
+                frozenset({"preprocessing_enabled", "self_analysis_enabled"}),
+            ),
+        ),
+    ),
+    SchemaGeneration(
+        revision="0017_semantic_validation_jobs",
+        required_tables=frozenset(
+            {"semantic_validation_jobs", "semantic_validation_job_items"}
+        ),
+        required_columns=(
+            (
+                "semantic_entries",
+                frozenset({"recommendation_batch_id"}),
+            ),
+            (
+                "semantic_validation_jobs",
+                frozenset(
+                    {
+                        "id",
+                        "project_id",
+                        "status",
+                        "requested_by",
+                        "cancel_requested",
+                        "details",
+                    }
+                ),
+            ),
+            (
+                "semantic_validation_job_items",
+                frozenset(
+                    {
+                        "id",
+                        "job_id",
+                        "semantic_entry_id",
+                        "semantic_revision_id",
+                        "definition_hash",
+                        "status",
+                        "code",
+                        "facts",
+                        "details",
+                    }
+                ),
+            ),
+        ),
+    ),
+    SchemaGeneration(
+        revision="0018_semantic_scope_nodes",
+        required_tables=frozenset({"semantic_scope_nodes"}),
+        required_columns=(
+            ("semantic_entries", frozenset({"scope_id"})),
+            (
+                "semantic_scope_nodes",
+                frozenset(
+                    {
+                        "id",
+                        "project_id",
+                        "parent_id",
+                        "kind",
+                        "stable_key",
+                        "business_name",
+                        "source_logical_name",
+                        "table_or_view",
+                        "context_facts",
+                        "is_active",
+                    }
+                ),
+            ),
+        ),
+    ),
+    SchemaGeneration(
+        revision="0021_semantic_inventory_jobs",
+        required_tables=frozenset(
+            {"semantic_inventory_jobs", "semantic_inventory_job_items"}
+        ),
+        required_columns=(
+            (
+                "semantic_inventory_jobs",
+                frozenset(
+                    {
+                        "id",
+                        "project_id",
+                        "source_id",
+                        "status",
+                        "depth",
+                        "locale",
+                        "model_id",
+                        "tables",
+                        "relation_index_hash",
+                        "selection_hash",
+                        "cancel_requested",
+                        "lease_owner",
+                        "lease_expires_at",
+                        "heartbeat_at",
+                        "details",
+                        "started_at",
+                        "completed_at",
+                        "created_at",
+                        "updated_at",
+                    }
+                ),
+            ),
+            (
+                "semantic_inventory_job_items",
+                frozenset(
+                    {
+                        "id",
+                        "job_id",
+                        "ordinal",
+                        "table_name",
+                        "status",
+                        "phase",
+                        "attempt_count",
+                        "next_attempt_at",
+                        "retryable",
+                        "code",
+                        "message",
+                        "profile_result",
+                        "recommendation_batch_id",
+                        "candidate_count",
+                        "started_at",
+                        "completed_at",
+                        "created_at",
+                        "updated_at",
+                    }
+                ),
+            ),
+        ),
+    ),
 )
 
 # Migrations without new tables or columns share the same markers as their last
@@ -442,6 +575,8 @@ _SCHEMA_REVISION_ALIASES: Final[dict[str, str]] = {
     "0009_cleanup_orphan_sanitation": "0008_sanitation_recipe_revisions",
     "0010_defer_sanitation_parent_fk": "0008_sanitation_recipe_revisions",
     "0014_candidate_hygiene": "0013_model_health",
+    "0019_retire_legacy_candidates": "0018_semantic_scope_nodes",
+    "0020_retire_stale_recos": "0018_semantic_scope_nodes",
 }
 
 
@@ -559,7 +694,14 @@ def _infer_revision(schema: dict[str, frozenset[str]]) -> str:
     if retired:
         if inferred == "0011_correction_target_ref":
             inferred = _RETIRED_REVISION
-        elif inferred not in {"0013_model_health", "0015_editable_reports"}:
+        elif inferred not in {
+            "0013_model_health",
+            "0015_editable_reports",
+            "0016_processing_consent",
+            "0017_semantic_validation_jobs",
+            "0018_semantic_scope_nodes",
+            "0021_semantic_inventory_jobs",
+        }:
             raise UnsafeLocalSchemaError("本地数据库过早移除了旧设置表，拒绝猜测迁移版本")
 
     known_tables = set(_RETAINED_BASE_TABLE_COLUMNS) | retired_tables
@@ -640,5 +782,28 @@ async def migrate_local_sqlite_to_head(
     if not database_url.startswith(("sqlite://", "sqlite+aiosqlite://")):
         raise UnsafeLocalSchemaError("桌面数据库必须使用本地 SQLite")
     location = script_location or _script_location()
-    async with engine.begin() as connection:
-        return await connection.run_sync(_bootstrap_sync, location)
+    # SQLite's copy-and-move batch migrations must drop the old table.  That is
+    # blocked while another retained table references it, even though the
+    # replacement has the same primary keys.  Disable enforcement before the
+    # migration transaction, then prove the resulting graph is intact before
+    # enabling it again.
+    async with engine.connect() as connection:
+        await connection.exec_driver_sql("PRAGMA foreign_keys = OFF")
+        await connection.commit()
+        try:
+            migrated_to = await connection.run_sync(_bootstrap_sync, location)
+            await connection.commit()
+            violations = (
+                await connection.exec_driver_sql("PRAGMA foreign_key_check")
+            ).all()
+            await connection.commit()
+            if violations:
+                raise UnsafeLocalSchemaError(
+                    "数据库迁移后存在失效的关联，拒绝启动"
+                )
+            return migrated_to
+        finally:
+            if connection.in_transaction():
+                await connection.rollback()
+            await connection.exec_driver_sql("PRAGMA foreign_keys = ON")
+            await connection.commit()

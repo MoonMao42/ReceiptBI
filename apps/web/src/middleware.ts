@@ -1,18 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { locales, defaultLocale, type Locale } from "./i18n/config";
+import {
+  isLocale,
+  localeCookieName,
+  resolveLocale,
+} from "./i18n/config";
 
 export function middleware(request: NextRequest) {
-  const localeCookie = request.cookies.get("locale")?.value;
+  const localeCookie = request.cookies.get(localeCookieName)?.value;
 
-  if (localeCookie && locales.includes(localeCookie as Locale)) {
+  if (isLocale(localeCookie)) {
     return NextResponse.next();
   }
 
-  const acceptLanguage = request.headers.get("accept-language") || "";
-  const detectedLocale = acceptLanguage.match(/zh/i) ? "zh" : defaultLocale;
+  const detectedLocale = resolveLocale(
+    localeCookie,
+    request.headers.get("accept-language")
+  );
 
   const response = NextResponse.next();
-  response.cookies.set("locale", detectedLocale, {
+  response.cookies.set(localeCookieName, detectedLocale, {
     path: "/",
     maxAge: 60 * 60 * 24 * 365,
     sameSite: "lax",

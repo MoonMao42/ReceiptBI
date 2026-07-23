@@ -1,6 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { NextIntlClientProvider } from "next-intl";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Sidebar } from "@/components/chat/Sidebar";
+import enMessages from "@/messages/en.json";
+import zhMessages from "@/messages/zh.json";
 import type { AnalysisRunSummary } from "@/lib/types/api";
 
 const mocks = vi.hoisted(() => ({
@@ -56,14 +59,18 @@ describe("Sidebar", () => {
 
   it("offers an explicit project rename action", async () => {
     mocks.renameProject.mockClear();
-    render(<Sidebar isOpen onToggle={vi.fn()} />);
+    render(
+      <NextIntlClientProvider locale="zh" messages={zhMessages}>
+        <Sidebar isOpen onToggle={vi.fn()} />
+      </NextIntlClientProvider>
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "财务分析" }));
     fireEvent.click(screen.getByRole("button", { name: "重命名当前项目" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "侧栏项目名称" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "项目名称" }), {
       target: { value: "  七月经营复盘  " },
     });
-    fireEvent.click(screen.getByRole("button", { name: "保存侧栏项目名称" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存项目名称" }));
 
     await waitFor(() =>
       expect(mocks.renameProject).toHaveBeenCalledWith("project-1", "七月经营复盘")
@@ -73,17 +80,19 @@ describe("Sidebar", () => {
   it("uses the middle rail for analysis runs without restoring conversation controls", () => {
     const onOpenReport = vi.fn();
     render(
-      <Sidebar
-        isOpen
-        onToggle={vi.fn()}
-        reportRuns={[
-          report("run-1", "收入变化", "conversation-1"),
-          report("run-2", "退款异常", "conversation-2", "needs_attention"),
-        ]}
-        currentConversationId="conversation-1"
-        currentAnalysisRunId="run-1"
-        onOpenReport={onOpenReport}
-      />
+      <NextIntlClientProvider locale="zh" messages={zhMessages}>
+        <Sidebar
+          isOpen
+          onToggle={vi.fn()}
+          reportRuns={[
+            report("run-1", "收入变化", "conversation-1"),
+            report("run-2", "退款异常", "conversation-2", "needs_attention"),
+          ]}
+          currentConversationId="conversation-1"
+          currentAnalysisRunId="run-1"
+          onOpenReport={onOpenReport}
+        />
+      </NextIntlClientProvider>
     );
 
     expect(screen.getByText("财务分析")).toBeInTheDocument();
@@ -100,7 +109,7 @@ describe("Sidebar", () => {
       "href",
       "/settings"
     );
-    expect(screen.getByRole("region", { name: "项目调查" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "项目调查列表" })).toBeInTheDocument();
 
     const current = screen.getByRole("button", { name: /当前调查：收入变化/ });
     expect(current).toHaveAttribute("aria-current", "page");
@@ -115,7 +124,11 @@ describe("Sidebar", () => {
   });
 
   it("keeps saved project conversations on navigation and forgets only when starting over", () => {
-    render(<Sidebar isOpen onToggle={vi.fn()} />);
+    render(
+      <NextIntlClientProvider locale="zh" messages={zhMessages}>
+        <Sidebar isOpen onToggle={vi.fn()} />
+      </NextIntlClientProvider>
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "财务分析" }));
     fireEvent.click(screen.getByRole("button", { name: "历史项目" }));
@@ -130,29 +143,49 @@ describe("Sidebar", () => {
   });
 
   it("creates a project without deleting or inheriting the current project pointer", () => {
-    render(<Sidebar isOpen onToggle={vi.fn()} />);
+    render(
+      <NextIntlClientProvider locale="zh" messages={zhMessages}>
+        <Sidebar isOpen onToggle={vi.fn()} />
+      </NextIntlClientProvider>
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "财务分析" }));
     fireEvent.click(screen.getByRole("button", { name: "新建项目" }));
 
     expect(mocks.clearConversation).toHaveBeenCalledWith({ forget: false });
-    expect(mocks.createProject).toHaveBeenCalledTimes(1);
+    expect(mocks.createProject).toHaveBeenCalledWith("新的分析项目");
+  });
+
+  it("creates a project with an English default name in the English UI", () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <Sidebar isOpen onToggle={vi.fn()} />
+      </NextIntlClientProvider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "财务分析" }));
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+
+    expect(mocks.clearConversation).toHaveBeenCalledWith({ forget: false });
+    expect(mocks.createProject).toHaveBeenCalledWith("New analysis project");
   });
 
   it("keeps report choices focusable but prevents switching during a running investigation", () => {
     const onOpenReport = vi.fn();
     render(
-      <Sidebar
-        isOpen
-        onToggle={vi.fn()}
-        reportRuns={[
-          report("run-1", "收入变化", "conversation-1", "investigating"),
-          report("run-2", "退款异常", "conversation-2"),
-        ]}
-        currentAnalysisRunId="run-1"
-        reportSwitchDisabled
-        onOpenReport={onOpenReport}
-      />
+      <NextIntlClientProvider locale="zh" messages={zhMessages}>
+        <Sidebar
+          isOpen
+          onToggle={vi.fn()}
+          reportRuns={[
+            report("run-1", "收入变化", "conversation-1", "investigating"),
+            report("run-2", "退款异常", "conversation-2"),
+          ]}
+          currentAnalysisRunId="run-1"
+          reportSwitchDisabled
+          onOpenReport={onOpenReport}
+        />
+      </NextIntlClientProvider>
     );
 
     const historyReport = screen.getByRole("button", { name: /打开调查：退款异常/ });

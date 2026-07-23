@@ -65,6 +65,7 @@ def test_verified_receipt_requires_current_rule_to_reach_final_result():
 
     assert receipt is not None
     assert receipt["status"] == "verified"
+    assert receipt["summary_code"] == "correction_verified"
     assert receipt["application_result_name"] == "orders_without_refunds"
     assert receipt["final_result_name"] == "monthly_revenue"
     assert receipt["definition_hash"] == "definition-current"
@@ -218,6 +219,7 @@ def test_definition_only_correction_is_truthful_not_fake_verified():
 
     assert receipt is not None
     assert receipt["status"] == "definition_only"
+    assert receipt["summary_code"] == "correction_definition_only"
     assert receipt["checks"] == ["business_definition_recorded"]
 
 
@@ -303,6 +305,7 @@ def test_relationship_correction_requires_validated_join_to_reach_final_result()
 
     assert receipt is not None
     assert receipt["status"] == "verified"
+    assert receipt["summary_code"] == "correction_relationship_verified"
     assert receipt["action_kind"] == "relationship"
     assert receipt["application_result_name"] == "joined_orders"
     assert receipt["result_hash"] == "c" * 64

@@ -16,6 +16,7 @@ import structlog
 
 from app.services.database_adapters import (
     AdapterQueryResult,
+    BoundedRelationIndex,
     BoundedSchemaCatalog,
     DatabaseQueryCancelledError,
     build_database_adapter,
@@ -432,6 +433,61 @@ class DatabaseManager:
                 max_columns_per_relation=max_columns_per_relation,
                 max_total_columns=max_total_columns,
             )
+
+    def get_bounded_relation_index(
+        self,
+        *,
+        max_relations: int,
+        after: str | None = None,
+    ) -> BoundedRelationIndex:
+        """Return a metadata-only relation directory without reading business rows."""
+
+        if max_relations <= 0:
+            raise ValueError("数据库目录预算必须大于 0")
+        with self.connect() as conn:
+            self._adapter.enforce_read_only(conn, timeout_seconds=10.0)
+            if after is not None:
+                return self._adapter.get_bounded_relation_index(
+                    conn,
+                    max_relations=max_relations,
+                    after=after,
+                )
+            return self._adapter.get_bounded_relation_index(
+                conn,
+                max_relations=max_relations,
+            )
+
+    def get_bounded_relation_schema(
+        self,
+        table_name: str,
+        *,
+        max_columns: int,
+    ) -> dict[str, Any]:
+        """Read one explicitly selected relation's bounded column directory.
+
+        Unlike :meth:`get_bounded_schema_catalog`, this method never advances from
+        the first alphabetical relation.  It is the narrow primitive used by the
+        resumable semantic inventory worker after the user has selected a table
+        from the relation index.  Only metadata is read here; business rows are
+        sampled separately and only for the explicit ``sampled`` job depth.
+        """
+
+        normalized_table = table_name.strip()
+        if not normalized_table:
+            raise ValueError("数据库目录必须指定表")
+        if not 1 <= max_columns <= 240:
+            raise ValueError("单表字段目录预算必须在 1 到 240 之间")
+
+        with self.connect() as conn:
+            self._adapter.enforce_read_only(conn, timeout_seconds=10.0)
+            entry = self._adapter.get_bounded_relation_schema(
+                conn,
+                table_name=normalized_table,
+                max_columns=max_columns,
+            )
+        if not entry.get("columns"):
+            raise ValueError("所选表不存在或没有可读取字段")
+        return dict(entry)
 
     def _get_tables(self, conn: Any) -> list[str]:
         return self._adapter.get_tables(conn)

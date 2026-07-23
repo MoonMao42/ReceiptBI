@@ -16,6 +16,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
+from uuid import uuid4
 
 import duckdb
 import pandas as pd
@@ -23,6 +24,7 @@ import structlog
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_ai import Agent, ModelRetry, RunContext
 
+from app.i18n import get_progress_message, t
 from app.models import SSEEvent
 from app.services.analysis_checkpoint import CheckpointDriftError, stable_payload_hash
 from app.services.business_decision_slots import (
@@ -40,10 +42,12 @@ from app.services.correction_completion import (
 )
 from app.services.database import create_database_manager
 from app.services.dependency_manager import ProjectDependencyManager
+from app.services.execution_policy import ExecutionPolicy
 from app.services.golden_regression import evaluate_golden_contract, find_matching_contract
 from app.services.metric_formula import (
     aggregate_decimal_metric,
     apply_metric_formula,
+    metric_formula_columns,
     validate_metric_formula_action,
 )
 from app.services.metric_lineage import prove_metric_application_lineage
@@ -53,7 +57,11 @@ from app.services.project_context import (
 )
 from app.services.python_runtime import validate_python_code
 from app.services.python_sandbox import PythonSandbox
-from app.services.result_filters import apply_value_filter, resolve_confirmed_rule_strategy
+from app.services.result_filters import (
+    apply_value_filter,
+    resolve_confirmed_rule_strategy,
+    stable_field_binding_candidates,
+)
 from app.services.semantic_adapter import SemanticEngineAdapter
 
 logger = structlog.get_logger()
@@ -70,6 +78,19 @@ class ConfirmationRequest(BaseModel):
     question: str = Field(min_length=4, max_length=500)
     options: list[str] = Field(min_length=2, max_length=8)
     reason: str = Field(min_length=4, max_length=500)
+    presentation_code: str | None = Field(
+        default=None,
+        max_length=160,
+        exclude_if=lambda value: value is None,
+    )
+    presentation_facts: dict[str, str] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+    )
+    option_codes: dict[str, str] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+    )
 
     @field_validator("key", "question", "reason")
     @classmethod
@@ -116,6 +137,63 @@ def _canonical_confirmation_key(payload: dict[str, Any]) -> str:
         reason=str(payload.get("reason") or ""),
         options=options,
     )
+
+
+_REFUND_OPTION_CODES = {
+    "扣除退款": "exclude_refunds",
+    "保留退款订单": "include_refunds",
+    "按现有净额字段": "use_existing_net_amount",
+    "exclude_refunds": "exclude_refunds",
+    "include_refunds": "include_refunds",
+    "use_existing_net_amount": "use_existing_net_amount",
+}
+
+
+def _localized_preflight_confirmation(
+    raw_ambiguity: dict[str, Any],
+    *,
+    key: str,
+    language: str,
+) -> ConfirmationRequest:
+    """Localize only system-owned preflight prose while preserving source values."""
+
+    payload = {**raw_ambiguity, "key": key}
+    presentation_code = str(payload.get("presentation_code") or "").strip()
+    facts = payload.get("presentation_facts")
+    presentation_facts = (
+        {str(name): str(value) for name, value in facts.items()}
+        if isinstance(facts, dict)
+        else {}
+    )
+    raw_options = [str(option) for option in payload.get("options") or []]
+
+    if key == REVENUE_REFUND_POLICY:
+        presentation_code = "preflight.revenue_refund_policy"
+        payload["question"] = t("analysis.preflight_refund_question", language)
+        payload["reason"] = t("analysis.preflight_refund_reason", language)
+        raw_codes = payload.get("option_codes")
+        option_codes = dict(raw_codes) if isinstance(raw_codes, dict) else {}
+        payload["option_codes"] = {
+            option: str(option_codes.get(option) or _REFUND_OPTION_CODES.get(option) or "")
+            for option in raw_options
+            if option_codes.get(option) or _REFUND_OPTION_CODES.get(option)
+        }
+    elif key == "excel_sheet_selection" or key.startswith("excel_sheet_selection:"):
+        presentation_code = "preflight.excel_sheet_selection"
+        selected_sheet = presentation_facts.get("selected_sheet", "").strip()
+        if selected_sheet:
+            payload["question"] = t(
+                "analysis.preflight_excel_question_selected", language
+            ).format(sheet=selected_sheet)
+        else:
+            payload["question"] = t("analysis.preflight_excel_question", language)
+        payload["reason"] = t("analysis.preflight_excel_reason", language)
+
+    if presentation_code:
+        payload["presentation_code"] = presentation_code
+    if presentation_facts:
+        payload["presentation_facts"] = presentation_facts
+    return ConfirmationRequest.model_validate(payload)
 
 
 class ReportAction(BaseModel):
@@ -304,12 +382,41 @@ class StructuredQueryFilter(BaseModel):
     value: Any | None = None
 
 
+class SemanticDimensionFilter(BaseModel):
+    """A filter bound to a confirmed dimension instead of a physical column name."""
+
+    dimension_key: str = Field(min_length=1, max_length=160)
+    operator: Literal[
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "in",
+        "not_in",
+        "contains",
+        "is_null",
+        "not_null",
+        "year_eq",
+    ] = "eq"
+    value: Any | None = None
+
+
 class StructuredQueryMetric(BaseModel):
     """A deterministic aggregation over a real source column."""
 
     operation: Literal["count", "count_distinct", "sum", "avg", "min", "max"]
     column: str | None = Field(default=None, max_length=160)
     alias: str | None = Field(default=None, max_length=80)
+
+
+class _StructuredFormulaMetric(BaseModel):
+    """Server-resolved metric formula that is never exposed as a model tool input."""
+
+    operation: Literal["sum", "avg"]
+    formula: dict[str, Any]
+    alias: str
 
 
 class StructuredQuerySort(BaseModel):
@@ -333,6 +440,7 @@ class AnalystDependencies:
     knowledge_proposals: list[dict[str, Any]] = field(default_factory=list)
     validated_results: set[str] = field(default_factory=set)
     protected_results: dict[str, dict[str, str]] = field(default_factory=dict)
+    semantic_scope_receipts: dict[str, dict[str, Any]] = field(default_factory=dict)
     user_confirmation: bool = False
     pending_confirmation: dict[str, Any] | None = None
     current_query: str = ""
@@ -792,14 +900,12 @@ def _required_trial_relationship(
     candidate = _candidate_relationship_by_key(project, relationship_key)
     if candidate is None:
         return None
+    expected_active_revision_id = str(required.get("expected_active_revision_id") or "")
     if (
-        str(candidate.get("id") or "") != str(required.get("semantic_entry_id") or "")
+        not expected_active_revision_id
+        or str(candidate.get("id") or "") != str(required.get("semantic_entry_id") or "")
         or str(candidate.get("definition_hash") or "") != str(required.get("definition_hash") or "")
-        or (
-            required.get("expected_active_revision_id") is not None
-            and str(candidate.get("active_revision_id") or "")
-            != str(required.get("expected_active_revision_id") or "")
-        )
+        or str(candidate.get("active_revision_id") or "") != expected_active_revision_id
         or candidate.get("state") not in {"candidate", "confirmed", "locked"}
         or candidate.get("validity") not in {"active", "unverified"}
         or candidate.get("execution_state") != "needs_validation"
@@ -1269,6 +1375,84 @@ def _canonical_schema_name(value: str) -> str:
     return re.sub(r"[^a-zA-Z0-9\u4e00-\u9fff]+", "", value).casefold()
 
 
+def _catalog_table_identity(table: dict[str, Any]) -> str:
+    name = str(table.get("name") or "").strip()
+    schema = str(table.get("schema") or "").strip()
+    return f"{schema}.{name}" if schema and name else name
+
+
+def _match_table_identity(requested: str, available: list[str], *, label: str) -> str:
+    """Resolve a table while keeping schema segments meaningful and fail-closed."""
+
+    candidate = requested.strip()
+    if not candidate:
+        raise ValueError(f"{label}不能为空")
+    unique_available = list(dict.fromkeys(item for item in available if item))
+    exact = [item for item in unique_available if item.casefold() == candidate.casefold()]
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        raise ValueError(f"{label}“{requested}”有多个可能匹配，请使用完整 Schema 和真实表名")
+
+    requested_schema, separator, requested_bare = candidate.rpartition(".")
+    if separator:
+        schema_matches = [
+            item
+            for item in unique_available
+            if "." in item
+            and item.rsplit(".", 1)[0].casefold() == requested_schema.casefold()
+            and _canonical_schema_name(item.rsplit(".", 1)[1])
+            == _canonical_schema_name(requested_bare)
+        ]
+        if len(schema_matches) == 1:
+            return schema_matches[0]
+        if len(schema_matches) > 1:
+            raise ValueError(f"{label}“{requested}”有多个可能匹配，请使用真实表名")
+    else:
+        bare_matches = [
+            item
+            for item in unique_available
+            if _canonical_schema_name(item.rsplit(".", 1)[-1])
+            == _canonical_schema_name(candidate)
+        ]
+        if len(bare_matches) == 1:
+            return bare_matches[0]
+        if len(bare_matches) > 1:
+            raise ValueError(
+                f"{label}“{requested}”存在于多个 Schema，请使用完整的 Schema.表名"
+            )
+    preview = "、".join(unique_available[:20])
+    raise ValueError(f"找不到{label}“{requested}”；可用名称：{preview or '无'}")
+
+
+def _table_identity_equal(left: Any, right: Any) -> bool:
+    return str(left or "").strip().casefold() == str(right or "").strip().casefold()
+
+
+def _configured_connection_schema(
+    source: dict[str, Any],
+    connection_config: dict[str, Any] | None,
+) -> str | None:
+    if connection_config is None:
+        return None
+    source_driver = str(source.get("format") or "").strip().casefold()
+    config_driver = str(connection_config.get("driver") or source_driver).strip().casefold()
+    if source_driver and config_driver and source_driver != config_driver:
+        raise ValueError("数据源结构与当前连接类型不一致，不能执行")
+    if config_driver == "postgresql":
+        options = connection_config.get("extra_options") or {}
+        return str(options.get("schema") or "public").strip()
+    if config_driver == "mysql":
+        return str(
+            connection_config.get("database")
+            or connection_config.get("database_name")
+            or ""
+        ).strip()
+    if config_driver == "sqlite":
+        return "main"
+    return None
+
+
 def _match_schema_name(requested: str, available: list[str], *, label: str) -> str:
     """Resolve an exact schema name with conservative case/canonical repair."""
 
@@ -1374,16 +1558,23 @@ def _structured_source_tables(
         columns = list((profile.get("schema") or {}).get("columns") or [])
         return [(view_name, columns)] if view_name and columns else []
     return [
-        (str(table.get("name") or ""), list(table.get("columns") or []))
+        (_catalog_table_identity(table), list(table.get("columns") or []))
         for table in (profile.get("tables") or [])
         if str(table.get("name") or "") and table.get("columns")
     ]
 
 
-def _resolve_structured_source(
-    sources: list[dict[str, Any]], source_ref: str | None
+def _resolve_source_reference(
+    sources: list[dict[str, Any]],
+    source_ref: str | None,
+    *,
+    require_structured_tables: bool,
 ) -> dict[str, Any]:
-    available = [source for source in sources if _structured_source_tables(source)]
+    available = (
+        [source for source in sources if _structured_source_tables(source)]
+        if require_structured_tables
+        else list(sources)
+    )
     if source_ref is None or not source_ref.strip():
         if len(available) == 1:
             return available[0]
@@ -1418,7 +1609,479 @@ def _resolve_structured_source(
     raise ValueError("找不到该数据源，请先调用 inspect_project_data 查看当前 source id")
 
 
-def _structured_metric_alias(metric: StructuredQueryMetric, column: str | None) -> str:
+def _resolve_structured_source(
+    sources: list[dict[str, Any]], source_ref: str | None
+) -> dict[str, Any]:
+    return _resolve_source_reference(
+        sources,
+        source_ref,
+        require_structured_tables=True,
+    )
+
+
+def _resolve_semantic_source(
+    sources: list[dict[str, Any]], source_ref: str | None
+) -> dict[str, Any]:
+    """Resolve a source for catalog semantics even before any table is profiled."""
+
+    return _resolve_source_reference(
+        sources,
+        source_ref,
+        require_structured_tables=False,
+    )
+
+
+def _resolve_runtime_semantic_table(
+    source: dict[str, Any],
+    requested_table: str,
+    connection_config: dict[str, Any] | None = None,
+) -> tuple[str, str]:
+    """Return physical query table plus stable semantic table for one source."""
+
+    profile = source.get("profile") or {}
+    if source.get("kind") == "file":
+        physical = str(source.get("view_name") or "").strip()
+        logical = str(profile.get("logical_name") or source.get("name") or "").strip()
+        requested = requested_table.strip()
+        if not requested:
+            raise ValueError("文件表名不能为空")
+        aliases = list(dict.fromkeys(item for item in (physical, logical) if item))
+        _match_schema_name(requested, aliases, label="文件表")
+        if not physical or not logical:
+            raise ValueError("文件数据源缺少可验证的物理表或逻辑表")
+        return physical, logical
+
+    available = [name for name, _columns in _structured_source_tables(source)]
+    relation_index = (profile.get("preanalysis") or {}).get("relation_index") or {}
+    available.extend(
+        _catalog_table_identity(item)
+        for item in relation_index.get("relations") or []
+        if isinstance(item, dict) and str(item.get("name") or "").strip()
+    )
+    available = list(dict.fromkeys(item for item in available if item))
+    semantic_table = _match_table_identity(requested_table, available, label="数据表")
+    schema, separator, physical_table = semantic_table.rpartition(".")
+    if not separator:
+        return semantic_table, semantic_table
+
+    configured_schema = _configured_connection_schema(source, connection_config)
+    if not configured_schema:
+        raise ValueError("该数据表包含 Schema，但当前连接缺少可验证的 Schema 配置")
+    if configured_schema.casefold() != schema.casefold():
+        raise ValueError(
+            f"数据表属于 Schema“{schema}”，当前连接仅允许 Schema“{configured_schema}”"
+        )
+    return physical_table, semantic_table
+
+
+def _semantic_scope_public_payload(scope: dict[str, Any]) -> dict[str, Any]:
+    facts = dict(scope.get("context_facts") or {})
+    return {
+        "id": str(scope.get("id") or ""),
+        "kind": scope.get("kind"),
+        "business_name": scope.get("business_name"),
+        "description": scope.get("description"),
+        "synonyms": list(facts.get("synonyms") or []),
+        "source_logical_name": scope.get("source_logical_name"),
+        "table_or_view": scope.get("table_or_view"),
+        "context_facts": {
+            key: value
+            for key, value in facts.items()
+            if key
+            not in {
+                "presentation_entry_id",
+                "presentation_revision_id",
+            }
+        },
+    }
+
+
+def _semantic_entry_public_payload(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: item.get(key)
+        for key in (
+            "id",
+            "active_revision_id",
+            "key",
+            "value",
+            "type",
+            "state",
+            "validity",
+            "execution_state",
+            "definition",
+            "definition_hash",
+            "scope_id",
+            "scope_path",
+        )
+    }
+
+
+def _scope_ancestor_context(
+    project: ProjectRuntimeContext,
+    scope: dict[str, Any] | None,
+    *,
+    include_current: bool,
+) -> list[dict[str, Any]]:
+    if scope is None:
+        return []
+    path = list(scope.get("path") or [])
+    path_ids = [str(item.get("id") or "") for item in path if item.get("id")]
+    if not include_current:
+        current_id = str(scope.get("id") or "")
+        path_ids = [item for item in path_ids if item != current_id]
+    scopes_by_id = {
+        str(item.get("id") or ""): item
+        for item in project.semantic_scopes
+        if item.get("id")
+    }
+    return [
+        _semantic_scope_public_payload(scopes_by_id[scope_id])
+        for scope_id in path_ids
+        if scope_id in scopes_by_id
+    ]
+
+
+def _direct_confirmed_scope_semantics(
+    project: ProjectRuntimeContext,
+    scope: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    if scope is None:
+        return []
+    scope_id = str(scope.get("id") or "")
+    return [
+        item
+        for item in project.confirmed_knowledge
+        if item.get("state") in {"confirmed", "locked"}
+        and item.get("validity") != "stale"
+        and str(item.get("scope_id") or "") == scope_id
+    ]
+
+
+def _opened_semantic_scope_receipt(
+    deps: AnalystDependencies,
+    receipt_token: str | None,
+) -> dict[str, Any]:
+    token = str(receipt_token or "").strip()
+    receipt = deps.semantic_scope_receipts.get(token)
+    if not token or receipt is None:
+        raise ValueError("使用已确认语义前必须先打开对应表的语义，并传回本次运行的 receipt")
+    if receipt.get("kind") != "semantic_table_scope_opened":
+        raise ValueError("语义作用域 receipt 类型无效")
+    return receipt
+
+
+def _validate_semantic_scope_receipt(
+    receipt: dict[str, Any],
+    *,
+    entry: dict[str, Any],
+    source: dict[str, Any],
+    binding_receipt: dict[str, Any],
+) -> None:
+    """Bind a governed entry to the exact table opened earlier in this run."""
+
+    entry_id = str(entry.get("id") or "")
+    allowed_entry_ids = {str(value) for value in receipt.get("semantic_entry_ids") or []}
+    if not entry_id or entry_id not in allowed_entry_ids:
+        raise ValueError("所选语义定义不在已打开的表作用域中")
+    if str(entry.get("scope_id") or "") != str(receipt.get("scope_id") or ""):
+        raise ValueError("语义定义已移动到另一个作用域，请重新打开对应表")
+    if stable_payload_hash(dict(entry.get("scope_context_facts") or {})) != str(
+        receipt.get("scope_context_hash") or ""
+    ):
+        raise ValueError("语义作用域上下文已变化，请重新打开对应表")
+    if str(source.get("id") or "") != str(receipt.get("source_id") or ""):
+        raise ValueError("语义作用域 receipt 不属于当前数据源")
+    binding = binding_receipt.get("source_binding") or {}
+    if not _table_identity_equal(
+        binding.get("table_or_view"),
+        receipt.get("scope_table_or_view"),
+    ):
+        raise ValueError("语义作用域 receipt 不属于当前数据表")
+
+
+def _resolve_confirmed_aggregate_metric(
+    project: ProjectRuntimeContext,
+    metric_key: str,
+) -> tuple[dict[str, Any], dict[str, Any], StructuredQueryMetric, dict[str, Any]]:
+    """Bind one governed aggregate metric to its exact current source schema.
+
+    The model selects only the semantic key.  Operation, column, source and
+    table are all recovered from the confirmed definition and checked against
+    the current source profile before SQL compilation.
+    """
+
+    normalized_key = metric_key.strip()
+    matches = [
+        item for item in project.confirmed_knowledge if str(item.get("key") or "") == normalized_key
+    ]
+    if len(matches) != 1:
+        raise ValueError("找不到唯一的已确认指标定义")
+    entry = matches[0]
+    definition = entry.get("definition")
+    if (
+        entry.get("type") != "metric"
+        or entry.get("state") not in {"confirmed", "locked"}
+        or entry.get("validity") != "active"
+        or entry.get("execution_state") != "verified"
+        or not isinstance(definition, dict)
+        or definition.get("version") != 1
+        or definition.get("kind") != "aggregate_metric"
+        or definition.get("operation") not in {"sum", "avg"}
+    ):
+        raise ValueError("该指标尚未确认并通过当前版本验证，不能执行")
+    definition_hash = stable_payload_hash(definition)
+    if str(entry.get("definition_hash") or "") != definition_hash:
+        raise ValueError("该指标定义指纹不一致，不能执行")
+    binding = definition.get("source")
+    if not isinstance(binding, dict):
+        raise ValueError("该指标缺少稳定的数据来源绑定")
+    action_column = str(binding.get("action_column") or "").strip()
+    if not action_column:
+        raise ValueError("该指标缺少真实字段绑定")
+
+    source_matches: list[dict[str, Any]] = []
+    for source in project.sources:
+        if binding in stable_field_binding_candidates(source, action_column):
+            source_matches.append(source)
+    if len(source_matches) != 1:
+        raise ValueError("该指标绑定的数据结构已变化或不再唯一，请重新验证")
+    source = source_matches[0]
+    output_alias = f"metric_{definition_hash[:12]}"
+    metric = StructuredQueryMetric(
+        operation=cast(Literal["sum", "avg"], definition["operation"]),
+        column=action_column,
+        alias=output_alias,
+    )
+    receipt = {
+        "kind": "semantic_metric_binding",
+        "semantic_entry_id": entry.get("id"),
+        "active_revision_id": entry.get("active_revision_id"),
+        "metric_key": normalized_key,
+        "definition_hash": definition_hash,
+        "operation": definition["operation"],
+        "source_binding": binding,
+        "output_alias": output_alias,
+    }
+    return entry, source, metric, receipt
+
+
+def _resolve_confirmed_derived_metric(
+    project: ProjectRuntimeContext,
+    metric_key: str,
+) -> tuple[dict[str, Any], dict[str, Any], _StructuredFormulaMetric, dict[str, Any]]:
+    """Bind a confirmed row-level formula to its current source columns.
+
+    Formula structure and physical bindings are recovered from the immutable
+    semantic definition.  The model supplies only ``metric_key``.
+    """
+
+    normalized_key = metric_key.strip()
+    matches = [
+        item
+        for item in project.confirmed_knowledge
+        if str(item.get("key") or "") == normalized_key
+    ]
+    if len(matches) != 1:
+        raise ValueError("找不到唯一的已确认指标定义")
+    entry = matches[0]
+    definition = entry.get("definition")
+    if (
+        entry.get("type") != "metric"
+        or entry.get("state") not in {"confirmed", "locked"}
+        or entry.get("validity") != "active"
+        or entry.get("execution_state") != "verified"
+        or not isinstance(definition, dict)
+        or definition.get("version") != 1
+        or definition.get("kind") != "derived_metric"
+        or definition.get("aggregate") not in {"sum", "avg"}
+    ):
+        raise ValueError("该派生指标尚未确认并通过当前版本验证，不能执行")
+    definition_hash = stable_payload_hash(definition)
+    if str(entry.get("definition_hash") or "") != definition_hash:
+        raise ValueError("该派生指标定义指纹不一致，不能执行")
+
+    formula = validate_metric_formula_action(definition.get("formula"))
+    formula_columns = metric_formula_columns(formula)
+    raw_bindings = definition.get("sources")
+    if not isinstance(raw_bindings, list) or not raw_bindings:
+        raise ValueError("该派生指标缺少稳定的数据来源绑定")
+    bindings = [binding for binding in raw_bindings if isinstance(binding, dict)]
+    if len(bindings) != len(raw_bindings):
+        raise ValueError("该派生指标的数据来源绑定无效")
+    bound_columns = [str(binding.get("action_column") or "").strip() for binding in bindings]
+    if (
+        any(not column for column in bound_columns)
+        or len(bound_columns) != len(set(bound_columns))
+        or set(bound_columns) != set(formula_columns)
+    ):
+        raise ValueError("该派生指标的公式字段与来源绑定不一致")
+
+    resolved_sources: list[dict[str, Any]] = []
+    for binding, column in zip(bindings, bound_columns, strict=True):
+        source_matches = [
+            source
+            for source in project.sources
+            if binding in stable_field_binding_candidates(source, column)
+        ]
+        if len(source_matches) != 1:
+            raise ValueError("该派生指标绑定的数据结构已变化或不再唯一，请重新验证")
+        resolved_sources.append(source_matches[0])
+    source_ids = {str(source.get("id") or "") for source in resolved_sources}
+    if len(source_ids) != 1:
+        raise ValueError("当前仅支持同一数据源内的派生指标，请拆分或补充已验证关系")
+    tables = {
+        str(binding.get("table_or_view") or "").strip().casefold()
+        for binding in bindings
+    }
+    if len(tables) != 1:
+        raise ValueError("当前仅支持同一表内的派生指标，请先治理跨表关系")
+
+    output_alias = f"metric_{definition_hash[:12]}"
+    metric = _StructuredFormulaMetric(
+        operation=cast(Literal["sum", "avg"], definition["aggregate"]),
+        formula=formula,
+        alias=output_alias,
+    )
+    receipt = {
+        "kind": "semantic_derived_metric_binding",
+        "semantic_entry_id": entry.get("id"),
+        "active_revision_id": entry.get("active_revision_id"),
+        "metric_key": normalized_key,
+        "definition_hash": definition_hash,
+        "formula_hash": stable_payload_hash(formula),
+        "operation": definition["aggregate"],
+        "source_binding": bindings[0],
+        "source_bindings": bindings,
+        "output_alias": output_alias,
+    }
+    return entry, resolved_sources[0], metric, receipt
+
+
+def _resolve_confirmed_metric(
+    project: ProjectRuntimeContext,
+    metric_key: str,
+) -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    StructuredQueryMetric | _StructuredFormulaMetric,
+    dict[str, Any],
+]:
+    """Resolve either an aggregate column metric or a governed formula metric."""
+
+    matches = [
+        item
+        for item in project.confirmed_knowledge
+        if str(item.get("key") or "") == metric_key.strip()
+    ]
+    if len(matches) != 1:
+        raise ValueError("找不到唯一的已确认指标定义")
+    definition = matches[0].get("definition")
+    if isinstance(definition, dict) and definition.get("kind") == "derived_metric":
+        return _resolve_confirmed_derived_metric(project, metric_key)
+    return _resolve_confirmed_aggregate_metric(project, metric_key)
+
+
+def _resolve_confirmed_dimension(
+    project: ProjectRuntimeContext,
+    dimension_key: str,
+) -> tuple[dict[str, Any], dict[str, Any], str, dict[str, Any]]:
+    """Bind a governed dimension key to one current, schema-matching column."""
+
+    normalized_key = dimension_key.strip()
+    matches = [
+        item
+        for item in project.confirmed_knowledge
+        if str(item.get("key") or "") == normalized_key
+    ]
+    if len(matches) != 1:
+        raise ValueError("找不到唯一的已确认维度定义")
+    entry = matches[0]
+    definition = entry.get("definition")
+    if (
+        entry.get("type") != "dimension"
+        or entry.get("state") not in {"confirmed", "locked"}
+        or entry.get("validity") != "active"
+        or entry.get("execution_state") != "verified"
+        or not isinstance(definition, dict)
+        or definition.get("version") != 1
+        or definition.get("kind") != "dimension"
+        or definition.get("role") not in {"time", "category", "identifier"}
+    ):
+        raise ValueError("该维度尚未确认并通过当前版本验证，不能执行")
+    definition_hash = stable_payload_hash(definition)
+    if str(entry.get("definition_hash") or "") != definition_hash:
+        raise ValueError("该维度定义指纹不一致，不能执行")
+    binding = definition.get("source")
+    if not isinstance(binding, dict):
+        raise ValueError("该维度缺少稳定的数据来源绑定")
+    action_column = str(binding.get("action_column") or "").strip()
+    if not action_column:
+        raise ValueError("该维度缺少真实字段绑定")
+
+    source_matches = [
+        source
+        for source in project.sources
+        if binding in stable_field_binding_candidates(source, action_column)
+    ]
+    if len(source_matches) != 1:
+        raise ValueError("该维度绑定的数据结构已变化或不再唯一，请重新验证")
+    source = source_matches[0]
+    receipt = {
+        "kind": "semantic_dimension_binding",
+        "semantic_entry_id": entry.get("id"),
+        "active_revision_id": entry.get("active_revision_id"),
+        "dimension_key": normalized_key,
+        "definition_hash": definition_hash,
+        "role": definition["role"],
+        "source_binding": binding,
+        "time_granularities": list(definition.get("time_granularities") or []),
+        "timezone": definition.get("timezone"),
+        "output_column": action_column,
+    }
+    return entry, source, action_column, receipt
+
+
+def _compile_semantic_dimension_filter(
+    item: SemanticDimensionFilter,
+    *,
+    column: str,
+    receipt: dict[str, Any],
+) -> list[StructuredQueryFilter]:
+    """Translate one governed filter without exposing its physical field to the model."""
+
+    if item.operator != "year_eq":
+        return [
+            StructuredQueryFilter(
+                column=column,
+                operator=item.operator,
+                value=item.value,
+            )
+        ]
+    if receipt.get("role") != "time":
+        raise ValueError("year_eq 只能用于已确认的时间维度")
+    granularities = {str(value) for value in receipt.get("time_granularities") or []}
+    if granularities and "year" not in granularities:
+        raise ValueError("该时间维度没有声明按年筛选能力")
+    if isinstance(item.value, bool):
+        raise ValueError("年份必须是四位整数")
+    try:
+        year = int(str(item.value))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("年份必须是四位整数") from exc
+    if not 1000 <= year <= 9998:
+        raise ValueError("年份必须在 1000 到 9998 之间")
+    # A half-open range avoids timestamp end-of-day ambiguity and works for
+    # DATE/TIMESTAMP values across every supported read-only backend.
+    return [
+        StructuredQueryFilter(column=column, operator="gte", value=f"{year:04d}-01-01"),
+        StructuredQueryFilter(column=column, operator="lt", value=f"{year + 1:04d}-01-01"),
+    ]
+
+
+def _structured_metric_alias(
+    metric: StructuredQueryMetric | _StructuredFormulaMetric,
+    column: str | None,
+) -> str:
     if metric.alias is not None:
         alias = metric.alias.strip()
     elif metric.operation == "count" and column is None:
@@ -1433,7 +2096,7 @@ def _structured_metric_alias(metric: StructuredQueryMetric, column: str | None) 
 
 def _structured_query_scope(
     *,
-    metrics: list[StructuredQueryMetric],
+    metrics: list[StructuredQueryMetric | _StructuredFormulaMetric],
     filters: list[StructuredQueryFilter],
 ) -> Literal["full", "filtered", "aggregated", "derived"]:
     """Classify the source rows represented by one schema-bound query."""
@@ -1445,12 +2108,45 @@ def _structured_query_scope(
     return "full"
 
 
+def _enforce_connection_semantic_query(
+    source: dict[str, Any],
+    *,
+    governed_request: bool,
+    dimensions: list[str],
+    metrics: list[StructuredQueryMetric],
+    filters: list[StructuredQueryFilter],
+    sort: list[StructuredQuerySort],
+) -> None:
+    """Keep ordinary database analysis on adopted, table-scoped semantics."""
+
+    if source.get("kind") != "connection":
+        return
+    if not governed_request:
+        raise ValueError(
+            "数据库分析只能使用项目理解中已确认的指标和维度；请先打开对应表并确认业务定义"
+        )
+    if dimensions or metrics or filters or sort:
+        raise ValueError(
+            "数据库分析不能混入模型临时选择的字段、计算、筛选或排序；请使用已确认语义"
+        )
+
+
+def _reject_ordinary_database_sql(project: ProjectRuntimeContext) -> None:
+    if project.connection_configs or any(
+        source.get("kind") == "connection" for source in project.sources
+    ):
+        raise ValueError(
+            "普通分析不能直接执行自由 SQL；请先在项目理解中确认定义，再使用 query_source_data"
+        )
+
+
 def _compile_structured_query(
     source: dict[str, Any],
     *,
+    connection_config: dict[str, Any] | None = None,
     table: str | None,
     dimensions: list[str],
-    metrics: list[StructuredQueryMetric],
+    metrics: list[StructuredQueryMetric | _StructuredFormulaMetric],
     filters: list[StructuredQueryFilter],
     sort: list[StructuredQuerySort],
     limit: int,
@@ -1471,8 +2167,16 @@ def _compile_structured_query(
             raise ValueError(f"该数据源有多个表，请指定其中一个：{'、'.join(table_names[:20])}")
         selected_table, column_details = tables[0]
     else:
-        selected_table = _match_schema_name(table, table_names, label="表")
+        selected_table = _match_table_identity(table, table_names, label="表")
         column_details = next(columns for name, columns in tables if name == selected_table)
+
+    physical_table = selected_table
+    if source.get("kind") == "connection":
+        physical_table, selected_table = _resolve_runtime_semantic_table(
+            source,
+            selected_table,
+            connection_config,
+        )
 
     columns = [str(item.get("name") or "") for item in column_details]
     columns = [column for column in columns if column]
@@ -1492,6 +2196,7 @@ def _compile_structured_query(
     select_parts = [quote(column) for column in resolved_dimensions]
     metric_aliases: list[str] = []
     metric_columns: list[str | None] = []
+    metric_formula_plans: list[dict[str, Any] | None] = []
     operation_sql = {
         "count": "COUNT",
         "count_distinct": "COUNT",
@@ -1501,6 +2206,78 @@ def _compile_structured_query(
         "max": "MAX",
     }
     for metric in metrics:
+        if isinstance(metric, _StructuredFormulaMetric):
+            action = validate_metric_formula_action(metric.formula)
+            resolved_formula_columns: dict[str, str] = {}
+            for requested_column in metric_formula_columns(action):
+                resolved_column = _match_schema_name(
+                    requested_column,
+                    columns,
+                    label="公式字段",
+                )
+                column_profile = next(
+                    item
+                    for item in column_details
+                    if str(item.get("name") or "") == resolved_column
+                )
+                if not _structured_column_is_numeric(column_profile):
+                    profile_type = str(
+                        column_profile.get("type")
+                        or column_profile.get("dtype")
+                        or "unknown"
+                    )
+                    raise ValueError(
+                        f"派生指标字段“{resolved_column}”必须是预检明确识别的数值字段；"
+                        f"当前类型为 {profile_type}"
+                    )
+                resolved_formula_columns[requested_column] = resolved_column
+
+            def formula_sql(node: dict[str, Any]) -> str:
+                operation = node["op"]
+                if operation == "decimal":
+                    # validate_metric_formula_action has already canonicalized and
+                    # bounded this string, so it is safe as a numeric SQL literal.
+                    return str(node["value"])
+                if operation == "column":
+                    expression = quote(resolved_formula_columns[str(node["name"])])
+                    if action["null_policy"] == "zero":
+                        return f"COALESCE({expression}, 0)"
+                    return expression
+                if operation == "negate":
+                    return f"(-({formula_sql(node['operand'])}))"
+                left = formula_sql(node["left"])
+                right = formula_sql(node["right"])
+                operator = {
+                    "add": "+",
+                    "subtract": "-",
+                    "multiply": "*",
+                    "divide": "/",
+                }[operation]
+                if operation == "divide" and action["divide_by_zero"] == "null":
+                    right = f"NULLIF(({right}), 0)"
+                return f"(({left}) {operator} ({right}))"
+
+            metric_column = None
+            alias = _structured_metric_alias(metric, None)
+            if alias in metric_aliases or alias in resolved_dimensions:
+                raise ValueError(f"结果名称“{alias}”重复")
+            metric_aliases.append(alias)
+            metric_columns.append(None)
+            metric_formula_plans.append(
+                {
+                    "kind": "derived_metric",
+                    "formula_hash": stable_payload_hash(action),
+                    "referenced_columns": [
+                        resolved_formula_columns[column]
+                        for column in metric_formula_columns(action)
+                    ],
+                    "null_policy": action["null_policy"],
+                    "divide_by_zero": action["divide_by_zero"],
+                }
+            )
+            expression = f"{operation_sql[metric.operation]}({formula_sql(action['expression'])})"
+            select_parts.append(f"{expression} AS {quote(alias)}")
+            continue
         if metric.column is None or not metric.column.strip():
             if metric.operation != "count":
                 raise ValueError(f"{metric.operation} 汇总必须指定真实字段")
@@ -1524,6 +2301,7 @@ def _compile_structured_query(
             raise ValueError(f"结果名称“{alias}”重复")
         metric_aliases.append(alias)
         metric_columns.append(metric_column)
+        metric_formula_plans.append(None)
         if metric.operation == "count" and metric_column is None:
             expression = "COUNT(*)"
         elif metric.operation == "count_distinct":
@@ -1597,7 +2375,7 @@ def _compile_structured_query(
         field = _match_schema_name(item.field, output_names or columns, label="排序字段")
         order_parts.append(f"{quote(field)} {item.direction.upper()}")
 
-    clauses = [f"SELECT {', '.join(select_parts)}", f"FROM {quote(selected_table)}"]
+    clauses = [f"SELECT {', '.join(select_parts)}", f"FROM {quote(physical_table)}"]
     if where_parts:
         clauses.append(f"WHERE {' AND '.join(where_parts)}")
     if metrics and resolved_dimensions:
@@ -1618,8 +2396,15 @@ def _compile_structured_query(
                 "operation": metric.operation,
                 "column": column,
                 "alias": alias,
+                **({"formula": formula_plan} if formula_plan is not None else {}),
             }
-            for metric, column, alias in zip(metrics, metric_columns, metric_aliases, strict=True)
+            for metric, column, alias, formula_plan in zip(
+                metrics,
+                metric_columns,
+                metric_aliases,
+                metric_formula_plans,
+                strict=True,
+            )
         ],
         "filters": [item.model_dump(mode="json") for item in filters],
         "sort": [item.model_dump(mode="json") for item in sort],
@@ -2050,12 +2835,14 @@ def _query_project_file_rows(
         connection.close()
 
 
-def _report_markdown(report: AnalysisReport) -> str:
+def _report_markdown(report: AnalysisReport, language: str = "zh") -> str:
     parts = [f"## {report.title}", report.summary]
     if report.findings:
         parts.append("\n".join(f"- {finding}" for finding in report.findings))
     if report.confirmation:
-        parts.append(f"### 需要你确认\n{report.confirmation.question}")
+        parts.append(
+            f"### {t('analysis.confirmation_heading', language)}\n{report.confirmation.question}"
+        )
     if report.action and report.action.kind == "add_data":
         requested = "\n".join(f"- {item}" for item in report.action.requested_data)
         parts.append(f"### {report.action.label}\n{report.action.reason}\n{requested}")
@@ -2070,6 +2857,7 @@ class PydanticAnalystRuntime:
         *,
         model_config: dict[str, Any],
         project_context: ProjectRuntimeContext,
+        execution_policy: ExecutionPolicy | None = None,
         language: str = "zh",
         timeout: int = 300,
         checkpoint_callback: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]] | None = None,
@@ -2077,6 +2865,7 @@ class PydanticAnalystRuntime:
     ):
         self.model_config = model_config
         self.project_context = project_context
+        self.execution_policy = execution_policy or ExecutionPolicy()
         self.language = language
         self.timeout = timeout
         self.checkpoint_callback = checkpoint_callback
@@ -2114,14 +2903,32 @@ class PydanticAnalystRuntime:
             self.agent = self._build_agent()
             self._generated_agent = self.agent
 
-    def _queue_product_progress(self, message: str) -> None:
+    def _progress_event(self, stage: str, step: str) -> SSEEvent:
+        return SSEEvent.progress(
+            stage,
+            get_progress_message(step, self.language),
+            step=step,
+        )
+
+    def _queue_product_progress(self, step: str) -> None:
         """Expose a business milestone without leaking tool internals or model reasoning."""
 
-        normalized = message.strip()
+        normalized = step.strip()
         if not normalized or normalized == self._last_progress_message:
             return
         self._last_progress_message = normalized
-        self.deps.progress_queue.put_nowait({"stage": "investigating", "message": normalized})
+        self.deps.progress_queue.put_nowait(
+            {
+                "stage": "investigating",
+                "step": normalized,
+                "message": get_progress_message(normalized, self.language),
+            }
+        )
+
+    def _diagnostic_error(self, error: BaseException) -> str:
+        if self.execution_policy.diagnostics_enabled:
+            return str(error)
+        return type(error).__name__
 
     def _requires_system_playbook_execution(self) -> bool:
         required = self.project_context.required_analysis
@@ -2290,7 +3097,11 @@ class PydanticAnalystRuntime:
                     if terms and not any(term in normalized_query for term in terms):
                         continue
                 try:
-                    return ConfirmationRequest.model_validate({**raw_ambiguity, "key": key})
+                    return _localized_preflight_confirmation(
+                        raw_ambiguity,
+                        key=key,
+                        language=self.language,
+                    )
                 except ValueError:
                     # A malformed historical profile cannot be turned into a safe typed
                     # question.  It remains visible in data diagnostics instead of being
@@ -2308,7 +3119,7 @@ class PydanticAnalystRuntime:
             self._resume_blocker_reason = reason or "non_replayable_tool_state"
         effective_resumable = self._resume_blocker_reason is None
         effective_reason = None if effective_resumable else self._resume_blocker_reason
-        if self.checkpoint_callback is None:
+        if self.checkpoint_callback is None or not self.execution_policy.diagnostics_enabled:
             return
         # Checkpoint serialization runs in a worker thread. Never hand that thread
         # references to state that another tool call can still mutate.
@@ -2342,11 +3153,17 @@ class PydanticAnalystRuntime:
     ) -> tuple[str | None, list[str], list[str]]:
         """Install straightforward missing imports once, then execute the original code."""
 
+        self.execution_policy.require_python("Python 分析")
         is_safe, safety_error = validate_python_code(code)
         if not is_safe:
             raise ValueError(safety_error)
         missing_modules = self.deps.python_sandbox.missing_modules(code)
         if missing_modules:
+            if not self.execution_policy.auto_repair_enabled:
+                raise RuntimeError(
+                    "当前已关闭自动修复，Python 环境缺少模块："
+                    + "、".join(missing_modules)
+                )
             try:
                 await self.deps.dependency_manager.install(missing_modules)
             except (ValueError, RuntimeError) as exc:
@@ -2387,6 +3204,12 @@ class PydanticAnalystRuntime:
         journal = list(manifest.get("replay_journal") or [])
         if not journal:
             raise CheckpointDriftError("调查检查点没有可恢复的安全工具步骤")
+        if (
+            saved_python_output
+            or saved_python_images
+            or any(str(step.get("op") or "") == "render_chart" for step in journal)
+        ):
+            self.execution_policy.require_python("Python 图表恢复")
         if not all(isinstance(item, str) for item in saved_python_output) or not all(
             isinstance(item, str) for item in saved_python_images
         ):
@@ -2744,20 +3567,32 @@ class PydanticAnalystRuntime:
             ensure_ascii=False,
             default=str,
         )
+        python_guidance = (
+            "当前可按需使用 Python、依赖安装和 Python 图表工具。"
+            if self.execution_policy.python_enabled
+            else "当前未启用 Python；不要计划 Python、依赖安装或 Python 图表，"
+            "请使用结构化查询、确定性汇总和结构化图表完成任务。"
+        )
+        repair_guidance = (
+            "技术错误可以在安全校验给出的边界内自行修正重试。"
+            if self.execution_policy.auto_repair_enabled
+            else "当前未启用自动修复；每个工具参数和最终报告只有一次提交机会，"
+            "安全校验仍会执行且不得绕过。"
+        )
         return f"""你是 ReceiptBI 的私人数据分析员。你的任务不是只写一条 SQL，而是主动完成调查并给普通业务人员一份可靠报告。
 
 工作原则：
-- 先理解项目里可用的数据、已确认口径和候选关系。preanalysis 只是系统提前整理的数据事实与线索，不是结论，也不替你决定调查方向或图表。
+- 先理解项目里可用的数据和已确认口径。普通分析不会提供待核对的知识或关系；preanalysis 只是系统提前整理的数据事实与线索，不是结论，也不替你决定调查方向或图表。
 - conversation_context 和 recent_analyses 是经过裁剪的连续工作记录。除非用户明确换题，追问、质疑、反问、代词和展示方式修正都应承接最近调查的对象、时间范围与尚未满足的请求；若上一轮要求与实际交付不一致，应直接修正并完成请求，不要把用户的质疑改写成独立术语科普。历史数字只能帮助定位任务，定量结论仍须在当前数据上重新查询和验证。
 - 是否画图由任务和实际发现决定；但用户明确指定的展示形式（图表类型、排序、粒度、对比维度）必须优先遵循，只有数据形态确实无法表达时才改用更接近的形式，并在正文一句话说明替换原因。
-- 你可以自主选择查询、汇总、关联、Python 或其他工具，也可以多轮比较假设。优先使用 query_source_data，让系统根据真实 schema 编译筛选和汇总；只有它表达不了调查意图时才使用原始 SQL。render_chart 只是常见图形的便捷工具，自由 Python 与它地位相同。
+- 你可以自主选择当前可用的查询、汇总、关联或其他工具，也可以多轮比较假设。{python_guidance}优先使用 query_source_data，让系统根据真实 schema 编译筛选和汇总；已确认且已验证的 aggregate_metric / derived_metric 必须通过 semantic_metric_key 执行，已确认维度必须通过 semantic_dimension_keys / semantic_dimension_filters 执行，不得把这些定义复制成模型自选字段、自定义 metrics 或原始 SQL。year_eq 会由系统编译为下一年之前的半开日期区间。连接数据库始终只能使用已治理语义，不允许自由字段或原始 SQL；文件数据仅在用户明确要求探索且没有可用治理定义时才可使用自由字段，并且不能据此替代已治理口径。
 - join_results 会在一次调用中完成跨来源关联及覆盖率、基数和行数膨胀检查，不要求先走固定的工具顺序。数据库内部的只读查询可以自主组织。筛选、汇总、派生、截断或缺少表级血缘的输入只能证明当前结果；若要完成全局关系修正，左右两侧必须分别用 query_source_data 读取未筛选、未汇总且完整的原表或视图。
 - 数字和结论必须来自当前真实数据；提交定量结论前验证最终使用的结果。若用户明确要求抽样、有限样本或数据质量概览，被截断的结果可以支撑诚实的样本报告，但标题或摘要必须把结论限定在样本内，不能声称全量总计、排名或占比；其他被截断结果应回到来源按所需粒度查询或汇总，不能把样例冒充完整结果。
-- 已确认和锁定知识是当前项目的长期业务含义，候选知识只能作为调查线索。只有 execution_state=verified 的定义可在普通任务中调用 apply_confirmed_rule 自动执行；definition_only 只能帮助理解含义，不能冒充已执行。当前确认或 required_correction 明确绑定的 needs_validation 定义可在本次调查中试执行并接受系统验收。
+- 已确认和锁定知识是当前项目的长期业务含义。项目初始上下文只提供项目根级定义；先用 inspect_source_semantics 读取所选数据源自己的已确认说明和子表目录，再选择 source_id 和 table 调用 inspect_table_semantics。表工具只返回项目/数据源的祖先说明与该表直接拥有的已确认定义，不得读取兄弟表语义。使用 semantic_metric_key 或 semantic_dimension_keys / semantic_dimension_filters 时，必须把该工具本次返回的 semantic_scope_receipt 原样传给 query_source_data；不能用另一张表或上一轮的 receipt。普通任务不能读取或执行候选知识；只有 required_correction 按 id 和定义指纹绑定，或 required_relationship_validations 进一步按精确版本绑定的候选关系，才可在本次调查中以 relationship_key 试跑。只有 execution_state=verified 的定义可在普通任务中调用 apply_confirmed_rule、semantic_metric_key 或 semantic_dimension_keys / semantic_dimension_filters 自动执行；definition_only 只能帮助理解含义，不能冒充已执行。
 - required_correction 不为空时，这次任务是在纠正上一份报告。若 executable=true 且 correction_type=relationship_rule，必须把 target_key 作为 relationship_key 显式传给 validate_relationship 和 join_results，并让关联结果进入最终验证结果；其他可执行修正必须调用 apply_confirmed_rule 并让其结果进入最终验证结果。若 executable=false，应按修正重新调查，但不能声称执行方式已被系统验证。任何情况都不能复制上一份结论，也不能把“看到了纠正”冒充已经应用。
 - required_relationship_validations 不为空时，这是逐条绑定版本的批量关系验证合同。必须对列表中的每一个 relationship_key 使用完整、未筛选、未汇总且未截断的左右来源执行 validate_relationship 或 join_results；证据中的 semantic_entry_id、active_revision_id 和 definition_hash 必须与合同逐项一致。不能只验证前若干条，也不能用一条关系的证据代替另一条；未全部完成时不得提交 completed 报告。
 - reusable_analyses 和 active_trusted_references 只帮助提出方法与假设，不得复用旧结果；历史依据绝不能直接当作当前答案，必须在当前数据上重新执行、重验关系并核对。只有 required_analysis 不为空时，才按它代表的明确持续分析合同重新运行并验证；若提示中已经提供 system_verified_result，说明系统已在当前数据上完成类型化执行与校验，直接解释该结果，不得再查询来源来替换它，primary_result 必须使用其中给出的 result_name。
-- 技术错误自行重试修复，不向普通用户询问 SQL、字段名、关联键或 Python。只有确实会改变当前结论的业务歧义才返回 waiting_confirmation。
+- {repair_guidance}不要向普通用户询问 SQL、字段名、关联键或 Python。只有确实会改变当前结论的业务歧义才返回 waiting_confirmation。
 - 如果完成任务所需的数据确实不存在，返回 needs_data 并说明最少需要补充什么；不要设置通用导入关卡，也不要在已经查到数据后假装缺数据。
 - 如果选择结构化图表，使用 version=1 的库无关协议：type、title、encoding.x.field、encoding.y[].field，以及可选的 data_ref.result_name；presentation 只能选择系统提供的 orientation、stack 和 palette ID。不要提供 data、result_hash、颜色值或任何 JavaScript，系统会从已验证结果填入真实数据和凭证。
 - 最终正文只写业务结论、关键数字和依据。如果验证了多份结果，primary_result 填写真正支撑标题结论的 result_name。next_actions 是可选的展示增强，不能为了凑格式妨碍提交正确结果。
@@ -2773,16 +3608,206 @@ class PydanticAnalystRuntime:
             deps_type=AnalystDependencies,
             output_type=AnalysisReport,
             instructions=self._instructions(),
-            retries={"tools": 5, "output": 4},
+            retries=self.execution_policy.retry_budget,
             tool_timeout=90,
         )
+
+        def capability_tool(
+            *,
+            enabled: bool,
+            **tool_kwargs: Any,
+        ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+            """Register a tool only when the immutable run policy advertises it."""
+
+            def decorate(function: Callable[..., Any]) -> Callable[..., Any]:
+                if enabled:
+                    return agent.tool(**tool_kwargs)(function)
+                return function
+
+            return decorate
 
         @agent.tool
         async def inspect_project_data(ctx: RunContext[AnalystDependencies]) -> dict[str, Any]:
             """Inspect current sources, learned context and historical reference hypotheses."""
 
-            self._queue_product_progress("已检查当前项目的数据和业务口径")
+            self._queue_product_progress("project_context_checked")
             return ctx.deps.project.public_summary(query=ctx.deps.current_query)
+
+        @agent.tool
+        async def inspect_source_semantics(
+            ctx: RunContext[AnalystDependencies],
+            source_id: str,
+        ) -> dict[str, Any]:
+            """Read one source's confirmed context and child-table catalog, never child semantics."""
+
+            source = _resolve_semantic_source(ctx.deps.project.sources, source_id)
+            logical_name = str(
+                (source.get("profile") or {}).get("logical_name")
+                or source.get("name")
+                or ""
+            )
+            scope_matches = [
+                item
+                for item in ctx.deps.project.semantic_scopes
+                if item.get("kind") == "source"
+                and _canonical_schema_name(
+                    str(item.get("source_logical_name") or "")
+                )
+                == _canonical_schema_name(logical_name)
+            ]
+            exact_source_matches = [
+                item
+                for item in scope_matches
+                if str((item.get("context_facts") or {}).get("source_id") or "")
+                == str(source.get("id") or "")
+            ]
+            if exact_source_matches:
+                scope_matches = exact_source_matches
+            if len(scope_matches) != 1:
+                raise ModelRetry("当前数据源没有唯一可读的语义作用域，请先在项目理解中修复")
+            source_scope = scope_matches[0]
+            direct_semantics = _direct_confirmed_scope_semantics(
+                ctx.deps.project,
+                source_scope,
+            )
+            table_scopes = sorted(
+                (
+                    item
+                    for item in ctx.deps.project.semantic_scopes
+                    if item.get("kind") == "table"
+                    and str(item.get("parent_id") or "")
+                    == str(source_scope.get("id") or "")
+                ),
+                key=lambda item: (
+                    str(item.get("business_name") or "").casefold(),
+                    str(item.get("table_or_view") or "").casefold(),
+                ),
+            )
+            return {
+                "source_id": str(source.get("id") or ""),
+                "source": _semantic_scope_public_payload(source_scope),
+                "ancestor_context": _scope_ancestor_context(
+                    ctx.deps.project,
+                    source_scope,
+                    include_current=False,
+                ),
+                "semantics": [
+                    _semantic_entry_public_payload(item) for item in direct_semantics
+                ],
+                "tables": [
+                    _semantic_scope_public_payload(item) for item in table_scopes
+                ],
+            }
+
+        @agent.tool
+        async def inspect_table_semantics(
+            ctx: RunContext[AnalystDependencies],
+            source_id: str,
+            table: str,
+        ) -> dict[str, Any]:
+            """Open only one table's confirmed semantics and issue an in-run receipt."""
+
+            source = _resolve_semantic_source(ctx.deps.project.sources, source_id)
+            connection_config = (
+                ctx.deps.project.connection_configs.get(str(source.get("id") or ""))
+                if source.get("kind") == "connection"
+                else None
+            )
+            physical_table, scope_table = _resolve_runtime_semantic_table(
+                source,
+                table,
+                connection_config,
+            )
+            logical_name = str(
+                (source.get("profile") or {}).get("logical_name")
+                or source.get("name")
+                or ""
+            )
+            scope_matches = [
+                item
+                for item in ctx.deps.project.semantic_scopes
+                if item.get("kind") == "table"
+                and _canonical_schema_name(
+                    str(item.get("source_logical_name") or "")
+                )
+                == _canonical_schema_name(logical_name)
+                and _table_identity_equal(item.get("table_or_view"), scope_table)
+            ]
+            if len(scope_matches) > 1:
+                raise ModelRetry("当前数据表对应多个语义作用域，请先在项目理解中修复")
+            table_scope = scope_matches[0] if scope_matches else None
+            semantics = [
+                item
+                for item in ctx.deps.project.confirmed_knowledge
+                if item.get("state") in {"confirmed", "locked"}
+                and item.get("validity") != "stale"
+                and item.get("scope_kind") == "table"
+                and _canonical_schema_name(
+                    str(item.get("scope_source_logical_name") or "")
+                )
+                == _canonical_schema_name(logical_name)
+                and _table_identity_equal(item.get("scope_table_or_view"), scope_table)
+                and (
+                    table_scope is None
+                    or str(item.get("scope_id") or "")
+                    == str(table_scope.get("id") or "")
+                )
+            ]
+            scope_ids = {
+                str(item.get("scope_id") or "") for item in semantics if item.get("scope_id")
+            }
+            if len(scope_ids) > 1:
+                raise ModelRetry("当前表存在互相冲突的直接语义作用域，请先在项目理解中修复")
+            scope_id = (
+                str(table_scope.get("id") or "")
+                if table_scope is not None
+                else next(iter(scope_ids), "")
+            ) or None
+            scope_context_facts = dict(
+                (table_scope or {}).get("context_facts")
+                or (semantics[0].get("scope_context_facts") if semantics else {})
+                or {}
+            )
+            scope_path = list(
+                (table_scope or {}).get("path")
+                or (semantics[0].get("scope_path") if semantics else [])
+                or []
+            )
+            ancestor_context = _scope_ancestor_context(
+                ctx.deps.project,
+                table_scope,
+                include_current=False,
+            )
+            token = str(uuid4())
+            receipt = {
+                "kind": "semantic_table_scope_opened",
+                "receipt": token,
+                "scope_id": scope_id,
+                "source_id": str(source.get("id") or ""),
+                "source_logical_name": logical_name,
+                "physical_table_or_view": physical_table,
+                "scope_table_or_view": scope_table,
+                "scope_context_facts": scope_context_facts,
+                "scope_context_hash": stable_payload_hash(scope_context_facts),
+                "scope_path": scope_path,
+                "ancestor_context": ancestor_context,
+                "semantic_entry_ids": [str(item.get("id") or "") for item in semantics],
+                "semantic_revision_ids": [
+                    str(item.get("active_revision_id") or "") for item in semantics
+                ],
+            }
+            ctx.deps.semantic_scope_receipts[token] = receipt
+            ctx.deps.tool_history.append(receipt)
+            return {
+                "source_id": receipt["source_id"],
+                "table_or_view": physical_table,
+                "scope_table_or_view": scope_table,
+                "scope_context_facts": scope_context_facts,
+                "scope_path": scope_path,
+                "ancestor_context": ancestor_context,
+                "semantic_scope_receipt": token,
+                "semantics": [_semantic_entry_public_payload(item) for item in semantics],
+            }
 
         @agent.tool
         async def query_source_data(
@@ -2791,24 +3816,175 @@ class PydanticAnalystRuntime:
             result_name: str,
             source_id: str | None = None,
             table: str | None = None,
+            semantic_scope_receipt: str | None = None,
             dimensions: list[str] | None = None,
+            semantic_dimension_keys: list[str] | None = None,
             metrics: list[StructuredQueryMetric] | None = None,
+            semantic_metric_key: str | None = None,
             filters: list[StructuredQueryFilter] | None = None,
+            semantic_dimension_filters: list[SemanticDimensionFilter] | None = None,
             sort: list[StructuredQuerySort] | None = None,
             limit: int = 1000,
         ) -> dict[str, Any]:
-            """Read one source through schema-bound fields, filters, metrics and ordering."""
+            """Read files by schema or databases only through confirmed semantic keys."""
 
             _ensure_result_write_allowed(ctx.deps)
-            self._queue_product_progress("正在按真实数据结构整理调查所需资料")
+            self._queue_product_progress("prepare_materials")
             selected_dimensions = dimensions or []
             selected_metrics = metrics or []
             selected_filters = filters or []
             selected_sort = sort or []
+            semantic_metric_receipt: dict[str, Any] | None = None
+            semantic_dimension_receipts: list[dict[str, Any]] = []
+            semantic_filter_receipts: list[dict[str, Any]] = []
+            opened_scope_receipt: dict[str, Any] | None = None
             try:
+                governed_request = bool(
+                    semantic_metric_key
+                    or semantic_dimension_keys
+                    or semantic_dimension_filters
+                )
+                if governed_request and (
+                    selected_dimensions
+                    or selected_metrics
+                    or selected_filters
+                    or selected_sort
+                ):
+                    raise ValueError(
+                        "使用已确认语义时不能混入模型自选的 dimensions、metrics、filters 或 sort"
+                    )
+                if governed_request:
+                    opened_scope_receipt = _opened_semantic_scope_receipt(
+                        ctx.deps,
+                        semantic_scope_receipt,
+                    )
+
+                governed_source_id: str | None = None
+                governed_table: str | None = None
+
+                def bind_governed_scope(
+                    entry: dict[str, Any],
+                    bound_source: dict[str, Any],
+                    binding_receipt: dict[str, Any],
+                    *,
+                    label: str,
+                ) -> None:
+                    nonlocal source_id, table, governed_source_id, governed_table
+                    bound_source_id = str(bound_source.get("id") or "")
+                    if opened_scope_receipt is None:
+                        raise ValueError("缺少本次运行的语义作用域 receipt")
+                    _validate_semantic_scope_receipt(
+                        opened_scope_receipt,
+                        entry=entry,
+                        source=bound_source,
+                        binding_receipt=binding_receipt,
+                    )
+                    binding = binding_receipt.get("source_binding") or {}
+                    bound_table = str(binding.get("table_or_view") or "")
+                    if governed_source_id and governed_source_id != bound_source_id:
+                        raise ValueError("所选已确认语义不在同一数据源，当前查询无法安全组合")
+                    if source_id:
+                        requested_source = _resolve_structured_source(
+                            ctx.deps.project.sources,
+                            source_id,
+                        )
+                        if str(requested_source.get("id") or "") != bound_source_id:
+                            raise ValueError(f"{label}不属于所选数据源")
+                    governed_source_id = bound_source_id
+                    source_id = bound_source_id
+                    if bound_source.get("kind") == "connection":
+                        if governed_table and not _table_identity_equal(
+                            governed_table,
+                            bound_table,
+                        ):
+                            raise ValueError("所选已确认语义不在同一数据表，当前查询无法安全组合")
+                        if table and not _table_identity_equal(table, bound_table):
+                            raise ValueError(f"{label}不属于所选数据表")
+                        governed_table = bound_table
+                        table = bound_table
+                    else:
+                        # File contracts bind to a logical role; the query compiler
+                        # addresses the current physical working view.
+                        table = None
+
+                seen_dimension_keys: set[str] = set()
+                for dimension_key in semantic_dimension_keys or []:
+                    normalized_key = dimension_key.strip()
+                    if normalized_key in seen_dimension_keys:
+                        raise ValueError("semantic_dimension_keys 不能包含重复维度")
+                    seen_dimension_keys.add(normalized_key)
+                    entry, bound_source, bound_column, receipt = (
+                        _resolve_confirmed_dimension(
+                            ctx.deps.project,
+                            normalized_key,
+                        )
+                    )
+                    bind_governed_scope(entry, bound_source, receipt, label="已确认维度")
+                    selected_dimensions.append(bound_column)
+                    semantic_dimension_receipts.append(receipt)
+
+                for semantic_filter in semantic_dimension_filters or []:
+                    entry, bound_source, bound_column, receipt = (
+                        _resolve_confirmed_dimension(
+                            ctx.deps.project,
+                            semantic_filter.dimension_key,
+                        )
+                    )
+                    bind_governed_scope(
+                        entry,
+                        bound_source,
+                        receipt,
+                        label="已确认维度筛选",
+                    )
+                    selected_filters.extend(
+                        _compile_semantic_dimension_filter(
+                            semantic_filter,
+                            column=bound_column,
+                            receipt=receipt,
+                        )
+                    )
+                    semantic_filter_receipts.append(
+                        {
+                            **receipt,
+                            "operator": semantic_filter.operator,
+                            "requested_value": semantic_filter.value,
+                        }
+                    )
+
+                if semantic_metric_key:
+                    entry, bound_source, bound_metric, semantic_metric_receipt = (
+                        _resolve_confirmed_metric(
+                            ctx.deps.project,
+                            semantic_metric_key,
+                        )
+                    )
+                    bind_governed_scope(
+                        entry,
+                        bound_source,
+                        semantic_metric_receipt,
+                        label="已确认指标",
+                    )
+                    selected_metrics = [bound_metric]
                 source = _resolve_structured_source(ctx.deps.project.sources, source_id)
+                _enforce_connection_semantic_query(
+                    source,
+                    governed_request=governed_request,
+                    dimensions=dimensions or [],
+                    metrics=metrics or [],
+                    filters=filters or [],
+                    sort=sort or [],
+                )
+                source_key = str(source.get("id") or "")
+                if not source_key:
+                    raise ValueError("数据源缺少稳定 source id，不能生成可追溯结果")
+                connection_config = (
+                    ctx.deps.project.connection_configs.get(source_key)
+                    if source.get("kind") == "connection"
+                    else None
+                )
                 sql, query_plan = _compile_structured_query(
                     source,
+                    connection_config=connection_config,
                     table=table,
                     dimensions=selected_dimensions,
                     metrics=selected_metrics,
@@ -2816,10 +3992,27 @@ class PydanticAnalystRuntime:
                     sort=selected_sort,
                     limit=limit,
                 )
+                if semantic_metric_receipt is not None:
+                    query_plan = {
+                        **query_plan,
+                        "semantic_metric": semantic_metric_receipt,
+                    }
+                if semantic_dimension_receipts:
+                    query_plan = {
+                        **query_plan,
+                        "semantic_dimensions": semantic_dimension_receipts,
+                    }
+                if semantic_filter_receipts:
+                    query_plan = {
+                        **query_plan,
+                        "semantic_dimension_filters": semantic_filter_receipts,
+                    }
+                if opened_scope_receipt is not None:
+                    query_plan = {
+                        **query_plan,
+                        "semantic_scope_receipt": opened_scope_receipt,
+                    }
                 _validate_read_only(sql)
-                source_key = str(source.get("id") or "")
-                if not source_key:
-                    raise ValueError("数据源缺少稳定 source id，不能生成可追溯结果")
                 semantic_source = "files" if source.get("kind") == "file" else source_key
                 self.semantic_adapter.validate_sql(sql, source_id=semantic_source)
                 planned_sql = self.semantic_adapter.transform_sql(sql, source_id=semantic_source)
@@ -2916,6 +4109,10 @@ class PydanticAnalystRuntime:
                 "execution_backend": execution_backend,
                 "execution_metadata": execution_metadata,
                 "source_refs": source_refs,
+                "semantic_metric": semantic_metric_receipt,
+                "semantic_dimensions": semantic_dimension_receipts,
+                "semantic_dimension_filters": semantic_filter_receipts,
+                "semantic_scope_receipt": opened_scope_receipt,
             }
             ctx.deps.tool_history.append(
                 {
@@ -2928,6 +4125,10 @@ class PydanticAnalystRuntime:
                     "source_refs": source_refs,
                     "purpose": purpose,
                     "query_plan": query_plan,
+                    "semantic_metric": semantic_metric_receipt,
+                    "semantic_dimensions": semantic_dimension_receipts,
+                    "semantic_dimension_filters": semantic_filter_receipts,
+                    "semantic_scope_receipt": opened_scope_receipt,
                     "compiled_sql": sql,
                     "result_name": name,
                     "rows": len(rows),
@@ -2945,6 +4146,10 @@ class PydanticAnalystRuntime:
                     "query_scope": query_scope,
                     "result_completeness": result_completeness,
                     "query_plan": query_plan,
+                    "semantic_metric": semantic_metric_receipt,
+                    "semantic_dimensions": semantic_dimension_receipts,
+                    "semantic_dimension_filters": semantic_filter_receipts,
+                    "semantic_scope_receipt": opened_scope_receipt,
                     "planned_sql": planned_sql,
                     "result_name": name,
                     "result_hash": stable_payload_hash(rows),
@@ -2961,6 +4166,10 @@ class PydanticAnalystRuntime:
                 "query_scope": query_scope,
                 "result_completeness": result_completeness,
                 "columns": list(rows[0]) if rows else [],
+                "semantic_metric": semantic_metric_receipt,
+                "semantic_dimensions": semantic_dimension_receipts,
+                "semantic_dimension_filters": semantic_filter_receipts,
+                "semantic_scope_receipt": opened_scope_receipt,
                 "sample": rows[:30],
             }
 
@@ -2972,12 +4181,13 @@ class PydanticAnalystRuntime:
             purpose: str,
             source_id: str | None = None,
         ) -> dict[str, Any]:
-            """Run a read-only query against a project database and retain the result for Python."""
+            """Legacy free-SQL tool; ordinary project database analysis is rejected."""
 
             _ensure_result_write_allowed(ctx.deps)
-            self._queue_product_progress("正在读取与问题相关的数据库资料")
+            self._queue_product_progress("read_database")
             cancellation_event = threading.Event()
             try:
+                _reject_ordinary_database_sql(ctx.deps.project)
                 _validate_read_only(sql)
                 configs = ctx.deps.project.connection_configs
                 key = source_id or (next(iter(configs)) if configs else None)
@@ -3079,7 +4289,7 @@ class PydanticAnalystRuntime:
             """Query one or more analysis-ready project files with DuckDB view names from inspect_project_data."""
 
             _ensure_result_write_allowed(ctx.deps)
-            self._queue_product_progress("正在读取与问题相关的文件资料")
+            self._queue_product_progress("read_files")
             try:
                 _validate_read_only(sql)
                 try:
@@ -3197,7 +4407,7 @@ class PydanticAnalystRuntime:
         ) -> dict[str, Any]:
             """Validate retained rows before reporting metrics, joins or charts."""
 
-            self._queue_product_progress("正在验证最终结果")
+            self._queue_product_progress("validate_results")
             rows = ctx.deps.dataframes.get(result_name)
             if rows is None:
                 raise ModelRetry(f"找不到结果 {result_name}，请使用查询工具实际返回的 result_name")
@@ -3260,10 +4470,10 @@ class PydanticAnalystRuntime:
             normalization: Literal["auto", "exact", "trim_casefold", "identifier"] = "auto",
             relationship_key: str | None = None,
         ) -> dict[str, Any]:
-            """Join retained results; a unique confirmed or candidate relationship is auto-validated."""
+            """Join retained results; only confirmed or explicitly bound trial relationships apply."""
 
             _ensure_result_write_allowed(ctx.deps)
-            self._queue_product_progress("正在关联不同来源的数据")
+            self._queue_product_progress("relate_sources")
             left_rows = ctx.deps.dataframes.get(left_result)
             right_rows = ctx.deps.dataframes.get(right_result)
             if left_rows is None or right_rows is None:
@@ -3346,20 +4556,6 @@ class PydanticAnalystRuntime:
                     is not None
                 ):
                     applicable_relationships.append(relationship)
-            applicable_candidates: list[dict[str, Any]] = []
-            for candidate in ctx.deps.project.candidate_relationships:
-                if not candidate.get("definition"):
-                    continue
-                if (
-                    _relationship_orientation(
-                        candidate,
-                        left_endpoints=left_endpoints,
-                        right_endpoints=right_endpoints,
-                    )
-                    is not None
-                ):
-                    applicable_candidates.append(candidate)
-
             relationship: dict[str, Any] | None = None
             candidate_relationship: dict[str, Any] | None = None
             reversed_direction = False
@@ -3374,7 +4570,12 @@ class PydanticAnalystRuntime:
                     )
                     if (
                         candidate_relationship is None
-                        or candidate_relationship not in applicable_candidates
+                        or _relationship_orientation(
+                            candidate_relationship,
+                            left_endpoints=left_endpoints,
+                            right_endpoints=right_endpoints,
+                        )
+                        is None
                     ):
                         raise ModelRetry("该关系尚未验证，且不属于这次任务绑定的指定试跑关系")
                 selected_relationship = relationship or candidate_relationship
@@ -3422,42 +4623,9 @@ class PydanticAnalystRuntime:
                 raise ModelRetry(
                     f"这两个数据源已有确认关系，请通过 relationship_key 复用：{known_keys}"
                 )
-            elif len(applicable_candidates) == 1:
-                # A unique candidate is only a hypothesis: derive its columns, then
-                # prove it against the current rows before it can become reusable.
-                candidate = applicable_candidates[0]
-                definition = candidate["definition"]
-                orientation = _relationship_orientation(
-                    candidate,
-                    left_endpoints=left_endpoints,
-                    right_endpoints=right_endpoints,
-                )
-                if orientation == "forward":
-                    candidate_left_key = str(definition["left"]["column"])
-                    candidate_right_key = str(definition["right"]["column"])
-                elif orientation == "reverse":
-                    reversed_direction = True
-                    candidate_left_key = str(definition["right"]["column"])
-                    candidate_right_key = str(definition["left"]["column"])
-                else:
-                    raise ModelRetry("该候选关系不适用于这两个查询结果的来源和表")
-                if any(candidate_left_key in row for row in left_rows) and any(
-                    candidate_right_key in row for row in right_rows
-                ):
-                    candidate_relationship = candidate
-                    left_key = candidate_left_key
-                    right_key = candidate_right_key
-                    normalization = str(definition["normalization"])
-                    how = str(definition["default_join"])
-                elif not left_key or not right_key:
-                    raise ModelRetry(
-                        "唯一候选关系的原始关联字段没有保留在查询结果中；"
-                        "请重新查询并保留原始字段，不要先在 Python 或 SQL 中另造标准化字段"
-                    )
             if not left_key or not right_key:
                 raise ModelRetry(
-                    "没有唯一可验证的候选关系时才需要提供左右关联字段；"
-                    "不要用 Python 或临时文件绕过关系校验"
+                    "未使用已确认关系时必须明确提供左右关联字段；普通分析不能自动采用待核对关系"
                 )
 
             try:
@@ -3488,17 +4656,7 @@ class PydanticAnalystRuntime:
             )
             profile.update(proof_scope)
 
-            observed_relationship = (
-                relationship
-                or candidate_relationship
-                or _matching_candidate_relationship(
-                    ctx.deps.project.candidate_relationships,
-                    left_endpoints=left_endpoints,
-                    right_endpoints=right_endpoints,
-                    left_key=left_key,
-                    right_key=right_key,
-                )
-            )
+            observed_relationship = relationship or candidate_relationship
             candidate_relationship_key: str | None = None
             if relationship is None and observed_relationship is not None:
                 candidate_relationship_key = str(observed_relationship.get("key") or "") or None
@@ -3683,7 +4841,7 @@ class PydanticAnalystRuntime:
             """Create a retained, deterministic grouped result for metrics and charts."""
 
             _ensure_result_write_allowed(ctx.deps)
-            self._queue_product_progress("正在汇总关键结果")
+            self._queue_product_progress("aggregate_results")
             source_rows = ctx.deps.dataframes.get(source_result)
             if source_rows is None:
                 raise ModelRetry("汇总只能使用查询或关联工具实际返回的 result_name")
@@ -3866,7 +5024,7 @@ class PydanticAnalystRuntime:
             """Apply the named confirmed rule; its stored strategy supplies all filter details."""
 
             _ensure_result_write_allowed(ctx.deps)
-            self._queue_product_progress("正在按已确认的业务口径核对数据")
+            self._queue_product_progress("check_confirmed_definitions")
             rule_key = canonicalize_decision_key(rule_key)
             source_rows = ctx.deps.dataframes.get(source_result)
             if source_rows is None:
@@ -4092,7 +5250,7 @@ class PydanticAnalystRuntime:
                 "sample": rows[:30],
             }
 
-        @agent.tool
+        @capability_tool(enabled=self.execution_policy.python_enabled)
         async def render_chart(
             ctx: RunContext[AnalystDependencies],
             result_name: str,
@@ -4106,7 +5264,8 @@ class PydanticAnalystRuntime:
         ) -> dict[str, Any]:
             """Render a common business chart from a retained result."""
 
-            self._queue_product_progress("正在生成并核对结果图")
+            self.execution_policy.require_python("Python 图表")
+            self._queue_product_progress("render_chart")
             rows = ctx.deps.dataframes.get(result_name)
             if rows is None:
                 raise ModelRetry("绘图只能使用实际存在的 result_name")
@@ -4186,9 +5345,9 @@ class PydanticAnalystRuntime:
             normalization: Literal["auto", "exact", "trim_casefold", "identifier"] = "auto",
             relationship_key: str | None = None,
         ) -> dict[str, Any]:
-            """Check join coverage; unique candidate fields and ID normalization are automatic."""
+            """Check join coverage without adopting unconfirmed relationship candidates."""
 
-            self._queue_product_progress("正在核对数据之间的关联是否可靠")
+            self._queue_product_progress("validate_relationships")
             left_rows = ctx.deps.dataframes.get(left_result)
             right_rows = ctx.deps.dataframes.get(right_result)
             if left_rows is None or right_rows is None:
@@ -4208,19 +5367,6 @@ class PydanticAnalystRuntime:
                     is not None
                 ):
                     applicable_relationships.append(candidate)
-            applicable_candidates: list[dict[str, Any]] = []
-            for candidate in ctx.deps.project.candidate_relationships:
-                if not candidate.get("definition"):
-                    continue
-                if (
-                    _relationship_orientation(
-                        candidate,
-                        left_endpoints=left_endpoints,
-                        right_endpoints=right_endpoints,
-                    )
-                    is not None
-                ):
-                    applicable_candidates.append(candidate)
             relationship = (
                 ctx.deps.project.executable_relationships.get(relationship_key)
                 if relationship_key
@@ -4240,7 +5386,12 @@ class PydanticAnalystRuntime:
                 )
                 if (
                     candidate_relationship is None
-                    or candidate_relationship not in applicable_candidates
+                    or _relationship_orientation(
+                        candidate_relationship,
+                        left_endpoints=left_endpoints,
+                        right_endpoints=right_endpoints,
+                    )
+                    is None
                 ):
                     raise ModelRetry("该关系尚未验证，且不属于这次任务绑定的指定试跑关系")
             if (
@@ -4259,35 +5410,6 @@ class PydanticAnalystRuntime:
                     str(item.get("key") or "") for item in applicable_relationships
                 )
                 raise ModelRetry(f"有多个确认关系适用，请选择 relationship_key：{known_keys}")
-            elif (
-                relationship is None
-                and candidate_relationship is None
-                and len(applicable_candidates) == 1
-            ):
-                candidate = applicable_candidates[0]
-                candidate_definition = candidate["definition"]
-                orientation = _relationship_orientation(
-                    candidate,
-                    left_endpoints=left_endpoints,
-                    right_endpoints=right_endpoints,
-                )
-                if orientation == "forward":
-                    candidate_left_key = str(candidate_definition["left"]["column"])
-                    candidate_right_key = str(candidate_definition["right"]["column"])
-                elif orientation == "reverse":
-                    candidate_left_key = str(candidate_definition["right"]["column"])
-                    candidate_right_key = str(candidate_definition["left"]["column"])
-                else:
-                    raise ModelRetry("该候选关系不适用于这两个查询结果的来源和表")
-                if any(candidate_left_key in row for row in left_rows) and any(
-                    candidate_right_key in row for row in right_rows
-                ):
-                    candidate_relationship = candidate
-                elif not left_key or not right_key:
-                    raise ModelRetry(
-                        "唯一候选关系的原始关联字段没有保留在查询结果中；"
-                        "请重新查询并保留原始字段，不要先另造标准化字段"
-                    )
             reversed_direction = False
             selected_relationship = relationship or candidate_relationship
             if selected_relationship is not None:
@@ -4309,7 +5431,7 @@ class PydanticAnalystRuntime:
                 normalization = str(definition["normalization"])
             if not left_key or not right_key:
                 raise ModelRetry(
-                    "没有唯一可验证的候选关系时才需要提供左右关联字段；不要要求用户确认字段格式"
+                    "未使用已确认关系时必须明确提供左右关联字段；普通分析不能自动采用待核对关系"
                 )
             try:
                 _rows, profile = _join_result_rows(
@@ -4384,7 +5506,10 @@ class PydanticAnalystRuntime:
             await self._persist_safe_boundary()
             return profile
 
-        @agent.tool(timeout=300)
+        @capability_tool(
+            enabled=self.execution_policy.python_enabled,
+            timeout=300,
+        )
         async def analyze_with_python(
             ctx: RunContext[AnalystDependencies],
             code: str,
@@ -4393,6 +5518,7 @@ class PydanticAnalystRuntime:
         ) -> dict[str, Any]:
             """Run free Python over retained results and record any outputs it actually creates."""
 
+            self.execution_policy.require_python("Python 分析")
             available_results = set(ctx.deps.dataframes)
             selected_results = list(dict.fromkeys(input_results or []))
             unknown_results = [name for name in selected_results if name not in available_results]
@@ -4428,7 +5554,7 @@ class PydanticAnalystRuntime:
             }
             if not python_inputs:
                 python_inputs = ctx.deps.dataframes
-            self._queue_product_progress("正在执行补充分析")
+            self._queue_product_progress("supplemental_analysis")
             try:
                 output, images, auto_installed = await self._execute_python_code(
                     code,
@@ -4493,13 +5619,21 @@ class PydanticAnalystRuntime:
                 "auto_installed": auto_installed,
             }
 
-        @agent.tool(timeout=240)
+        @capability_tool(
+            enabled=(
+                self.execution_policy.python_enabled
+                and self.execution_policy.auto_repair_enabled
+            ),
+            timeout=240,
+        )
         async def install_python_packages(
             ctx: RunContext[AnalystDependencies], packages: list[str], reason: str
         ) -> str:
             """Install missing long-tail analysis packages into this project's isolated import path."""
 
-            self._queue_product_progress("正在准备这次分析需要的能力")
+            self.execution_policy.require_python("Python 依赖安装")
+            self.execution_policy.require_auto_repair("Python 依赖安装")
+            self._queue_product_progress("prepare_capabilities")
             try:
                 result = await ctx.deps.dependency_manager.install(packages)
             except (ValueError, RuntimeError) as exc:
@@ -4522,7 +5656,7 @@ class PydanticAnalystRuntime:
         ) -> str:
             """Record a user correction or reusable business definition as a candidate for this project."""
 
-            self._queue_product_progress("正在记录可复用的业务理解")
+            self._queue_product_progress("record_understanding")
             proposal_key = canonicalize_decision_key(
                 key,
                 question=evidence,
@@ -4641,7 +5775,7 @@ class PydanticAnalystRuntime:
                     raise ModelRetry("等待业务确认时只能提供确认动作")
                 report.action = ReportAction(
                     kind="confirm",
-                    label="确认业务口径",
+                    label=t("analysis.confirmation_action", self.language),
                     reason=confirmation.reason,
                     confirmation_key=confirmation.key,
                     options=confirmation.options,
@@ -4933,7 +6067,7 @@ class PydanticAnalystRuntime:
             except ModelRetry as exc:
                 logger.warning(
                     "Analysis report rejected for self-repair",
-                    reason=str(exc),
+                    reason=self._diagnostic_error(exc),
                     report_status=report.status,
                     tool_kinds=[
                         str(item.get("kind") or "") for item in ctx.deps.tool_history[-20:]
@@ -4990,33 +6124,30 @@ class PydanticAnalystRuntime:
     ):
         self._prepare_query_context(query)
         if self.resume_state:
-            yield SSEEvent.progress("understanding", "正在恢复上次已保存的调查步骤")
+            yield self._progress_event("understanding", "restore_saved_steps")
         else:
-            yield SSEEvent.progress("understanding", "正在理解数据和业务口径")
+            yield self._progress_event("understanding", "understand_data")
         required_confirmation = self._required_preflight_confirmation(query)
         if required_confirmation is not None:
             self.deps.pending_confirmation = required_confirmation.model_dump()
             report = AnalysisReport(
                 status="waiting_confirmation",
-                title="需要确认一个业务口径",
+                title=t("analysis.confirmation_title", self.language),
                 summary=required_confirmation.reason,
                 confirmation=required_confirmation,
                 action=ReportAction(
                     kind="confirm",
-                    label="确认业务口径",
+                    label=t("analysis.confirmation_action", self.language),
                     reason=required_confirmation.reason,
                     confirmation_key=required_confirmation.key,
                     options=required_confirmation.options,
                 ),
             )
             self.last_report = report
-            yield SSEEvent.progress(
-                "waiting_confirmation",
-                "有一个会影响结论的业务口径需要确认",
-            )
+            yield self._progress_event("waiting_confirmation", "confirmation_required")
             try:
                 yield SSEEvent.result(
-                    _report_markdown(report),
+                    _report_markdown(report, self.language),
                     report=report.model_dump(),
                     analysis_state="waiting_confirmation",
                     tool_history=self.deps.tool_history,
@@ -5062,7 +6193,7 @@ class PydanticAnalystRuntime:
             await self.replay_checkpoint()
         system_verified_result: dict[str, Any] | None = None
         if self._requires_system_playbook_execution():
-            yield SSEEvent.progress("investigating", "正在按已保存的方法核对当前数据")
+            yield self._progress_event("investigating", "check_saved_method")
             try:
                 system_verified_result = await self._prepare_required_system_analysis(stop_checker)
             except (AnalystStoppedError, TimeoutError, asyncio.CancelledError):
@@ -5071,13 +6202,13 @@ class PydanticAnalystRuntime:
                 logger.warning(
                     "System-owned playbook execution was rejected",
                     playbook_id=(self.project_context.required_analysis or {}).get("id"),
-                    reason=str(exc),
+                    reason=self._diagnostic_error(exc),
                 )
                 raise RuntimeError(
                     "当前数据与保存的分析方法不再完全匹配，系统没有沿用旧结果。"
                     "请重新调查后更新这项持续分析。"
                 ) from exc
-        yield SSEEvent.progress("investigating", "正在调查数据并核对结论")
+        yield self._progress_event("investigating", "investigate")
         conversation_context = build_conversation_context(
             recent_history,
             current_query=query,
@@ -5111,11 +6242,19 @@ class PydanticAnalystRuntime:
                     )
                 except TimeoutError:
                     continue
-                yield SSEEvent.progress(milestone["stage"], milestone["message"])
+                yield SSEEvent.progress(
+                    milestone["stage"],
+                    milestone["message"],
+                    step=milestone["step"],
+                )
             report = await agent_task
             while not self.deps.progress_queue.empty():
                 milestone = self.deps.progress_queue.get_nowait()
-                yield SSEEvent.progress(milestone["stage"], milestone["message"])
+                yield SSEEvent.progress(
+                    milestone["stage"],
+                    milestone["message"],
+                    step=milestone["step"],
+                )
         finally:
             if not agent_task.done():
                 agent_task.cancel()
@@ -5143,11 +6282,11 @@ class PydanticAnalystRuntime:
             "completed": "completed",
         }[report.status]
         if state == "waiting_confirmation":
-            yield SSEEvent.progress("waiting_confirmation", "有一个会影响结论的业务口径需要确认")
+            yield self._progress_event("waiting_confirmation", "confirmation_required")
         elif report.status == "needs_data":
-            yield SSEEvent.progress("needs_attention", "还需要补充少量相关数据才能继续")
+            yield self._progress_event("needs_attention", "more_data_required")
         else:
-            yield SSEEvent.progress("completed", "调查完成，正在整理报告")
+            yield self._progress_event("completed", "complete_report")
 
         requested_result_name = str(report.primary_result or "")
         validated_result_name = (
@@ -5216,7 +6355,7 @@ class PydanticAnalystRuntime:
                 None,
             )
             yield SSEEvent.result(
-                _report_markdown(report),
+                _report_markdown(report, self.language),
                 sql=last_sql,
                 python=last_python,
                 data=data_preview,

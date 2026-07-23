@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1 import projects as projects_api
 from app.db.tables import (
+    AppSettings,
     Connection,
     PreflightReportRecord,
     Project,
@@ -298,10 +299,64 @@ async def test_suggested_questions_fall_back_to_current_preflight_context(
     assert all("七月门店订单.xlsx" in item["prompt"] for item in payload["items"])
     assert all("SQL" not in item["prompt"] for item in payload["items"])
     ai_suggestions.assert_awaited_once()
+    suggestion_request = ai_suggestions.await_args.args[1]
+    assert suggestion_request.locale == "zh"
     suggestion_context = ai_suggestions.await_args.args[2]
     assert suggestion_context["confirmed_business_context"] == [
         {"type": "business_rule", "value": "收入按实付金额计算，退款需要扣除"}
     ]
+
+
+@pytest.mark.asyncio
+async def test_suggested_questions_localize_system_fallbacks_in_english(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    project = Project(name="July business review")
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(
+        ProjectDataSource(
+            project_id=project.id,
+            kind="file",
+            name="七月门店订单.xlsx",
+            format="xlsx",
+            status="ready",
+            profile_data={
+                "is_current": True,
+                "preanalysis": {
+                    "candidate_roles": [
+                        {"column": "order_date", "role": "time", "missing": 0},
+                        {"column": "net_revenue", "role": "measure", "missing": 3},
+                        {"column": "store_name", "role": "dimension", "missing": 0},
+                    ],
+                },
+            },
+        )
+    )
+    await db_session.commit()
+    ai_suggestions = AsyncMock(return_value=None)
+    monkeypatch.setattr(projects_api, "_ai_suggestions", ai_suggestions)
+
+    response = await client.post(
+        f"/api/v1/projects/{project.id}/suggested-questions",
+        json={"locale": "en"},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()["data"]
+    assert payload["generated_by"] == "preflight"
+    assert [item["label"] for item in payload["items"]] == [
+        "Find the most important issue",
+        "See where the change began",
+        "Compare business groups",
+    ]
+    assert all("七月门店订单.xlsx" in item["prompt"] for item in payload["items"])
+    assert all(item["reason"] for item in payload["items"])
+    ai_suggestions.assert_awaited_once()
+    suggestion_request = ai_suggestions.await_args.args[1]
+    assert suggestion_request.locale == "en"
 
 
 @pytest.mark.asyncio
@@ -368,6 +423,44 @@ async def test_suggested_questions_are_empty_without_ready_sources(
     payload = response.json()["data"]
     assert payload["items"] == []
     assert payload["generated_by"] == "preflight"
+    ai_suggestions.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_suggested_questions_require_explicit_permission_without_calling_model(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    project = Project(name="关闭分析建议")
+    db_session.add_all(
+        [
+            project,
+            AppSettings(id=1, self_analysis_enabled=False),
+        ]
+    )
+    await db_session.flush()
+    db_session.add(
+        ProjectDataSource(
+            project_id=project.id,
+            kind="file",
+            name="订单.csv",
+            format="csv",
+            status="ready",
+            profile_data={"is_current": True},
+        )
+    )
+    await db_session.commit()
+    ai_suggestions = AsyncMock(return_value=[])
+    monkeypatch.setattr(projects_api, "_ai_suggestions", ai_suggestions)
+
+    response = await client.post(
+        f"/api/v1/projects/{project.id}/suggested-questions",
+        json={},
+    )
+
+    assert response.status_code == 403
+    assert "分析建议已在设置中关闭" in response.json()["detail"]
     ai_suggestions.assert_not_awaited()
 
 
@@ -776,6 +869,40 @@ async def test_database_preflight_persists_bounded_value_context_for_the_project
         "已退款",
         "未退款",
     }
+
+
+@pytest.mark.asyncio
+async def test_preflight_requires_explicit_permission_and_preserves_attached_source(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    project = Project(name="关闭数据预处理")
+    db_session.add_all(
+        [
+            project,
+            AppSettings(id=1, preprocessing_enabled=False),
+        ]
+    )
+    await db_session.flush()
+    source = ProjectDataSource(
+        project_id=project.id,
+        kind="file",
+        name="尚未读取.csv",
+        format="csv",
+        status="attached",
+        profile_data={},
+    )
+    db_session.add(source)
+    await db_session.commit()
+
+    response = await client.post(
+        f"/api/v1/projects/{project.id}/sources/{source.id}/preflight"
+    )
+
+    assert response.status_code == 403
+    assert "数据预处理已在设置中关闭" in response.json()["detail"]
+    await db_session.refresh(source)
+    assert source.status == "attached"
 
 
 @pytest.mark.asyncio

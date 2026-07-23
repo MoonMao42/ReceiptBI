@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { NextIntlClientProvider } from "next-intl";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DataWorkspacePanel,
@@ -9,6 +10,8 @@ import {
   parseSavedVisualCleaningOperations,
 } from "@/components/chat/VisualCleaningEditor";
 import { useProjectStore } from "@/lib/stores/project";
+import enMessages from "@/messages/en.json";
+import messages from "@/messages/zh.json";
 import type {
   ProjectDataSource,
   SanitationRecipe,
@@ -16,6 +19,9 @@ import type {
   SanitationTemplatePreview,
   SemanticEntry,
 } from "@/lib/types/api";
+
+const removeStepAria = (step: string) =>
+  messages.visualCleaning.removeStepAria.replace("{step}", step);
 
 const relationshipCandidate: SemanticEntry = {
   id: "relationship-1",
@@ -120,13 +126,15 @@ describe("DataWorkspacePanel project understanding", () => {
     });
 
     render(
-      <DataWorkspacePanel
-        open
-        view="understanding"
-        onClose={vi.fn()}
-        onConfigureConnection={vi.fn()}
-        connections={[]}
-      />
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <DataWorkspacePanel
+          open
+          view="understanding"
+          onClose={vi.fn()}
+          onConfigureConnection={vi.fn()}
+          connections={[]}
+        />
+      </NextIntlClientProvider>
     );
 
     const preview = screen.getByRole("region", { name: "项目理解预览" });
@@ -145,12 +153,14 @@ describe("DataWorkspacePanel project understanding", () => {
 
   it("uses one fixed overlay drawer width on desktop and full width on mobile", () => {
     const { container } = render(
-      <DataWorkspacePanel
-        open
-        onClose={vi.fn()}
-        onConfigureConnection={vi.fn()}
-        connections={[]}
-      />
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <DataWorkspacePanel
+          open
+          onClose={vi.fn()}
+          onConfigureConnection={vi.fn()}
+          connections={[]}
+        />
+      </NextIntlClientProvider>
     );
 
     const panel = container.querySelector("aside");
@@ -160,9 +170,132 @@ describe("DataWorkspacePanel project understanding", () => {
     expect(screen.queryByText("随时加入或替换；原件不会被修改。")).not.toBeInTheDocument();
     expect(screen.getByText("暂无数据")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: /数据理解/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /项目理解/ }));
     expect(panel).toHaveClass("md:w-[540px]");
     expect(panel).not.toHaveClass("md:w-[640px]");
+  });
+
+  it("shows every source without inventing relationship connectors", () => {
+    const mapSources: ProjectDataSource[] = [
+      {
+        id: "source-orders",
+        project_id: "project-1",
+        kind: "file",
+        name: "orders.csv",
+        format: "csv",
+        status: "ready",
+        profile_data: {},
+        created_at: "2026-07-22T00:00:00Z",
+        updated_at: "2026-07-22T00:00:00Z",
+      },
+      {
+        id: "source-warehouse",
+        project_id: "project-1",
+        connection_id: "connection-1",
+        kind: "connection",
+        name: "本地数仓-维度层",
+        status: "ready",
+        profile_data: {},
+        created_at: "2026-07-22T00:00:00Z",
+        updated_at: "2026-07-22T00:00:00Z",
+      },
+      {
+        id: "source-products",
+        project_id: "project-1",
+        kind: "file",
+        name: "products.csv",
+        format: "csv",
+        status: "ready",
+        profile_data: {},
+        created_at: "2026-07-22T00:00:00Z",
+        updated_at: "2026-07-22T00:00:00Z",
+      },
+    ];
+    useProjectStore.setState({
+      currentProjectId: "project-1",
+      sources: mapSources,
+      knowledgeTotal: 89,
+      relationshipKnowledgeCount: 80,
+    });
+
+    const { container } = render(
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <DataWorkspacePanel
+          open
+          view="understanding"
+          onClose={vi.fn()}
+          onConfigureConnection={vi.fn()}
+          connections={[]}
+        />
+      </NextIntlClientProvider>
+    );
+
+    const map = container.querySelector(
+      `[aria-label="${messages.dataWorkspace.understandingMapAria}"]`
+    );
+    const sourceNodes = container.querySelectorAll("[data-source-overview-node]");
+    const relationshipEdges = container.querySelectorAll("[data-map-edge]");
+    const understandingSummary = container.querySelector("[data-understanding-summary]");
+
+    expect(map).toHaveClass("border", "bg-background/70", "p-3");
+    expect(sourceNodes).toHaveLength(3);
+    expect(relationshipEdges).toHaveLength(0);
+    expect(understandingSummary).toHaveTextContent("89");
+    expect(understandingSummary).toHaveTextContent("80");
+  });
+
+  it("keeps attached data untouched until the user explicitly prepares it", async () => {
+    const originalProfileSource = useProjectStore.getState().profileSource;
+    const profileSource = vi.fn().mockResolvedValue(undefined);
+    const source: ProjectDataSource = {
+      id: "source-attached",
+      project_id: "project-1",
+      kind: "file",
+      name: "orders.csv",
+      format: "csv",
+      status: "attached",
+      profile_data: {},
+      created_at: "2026-07-22T00:00:00Z",
+      updated_at: "2026-07-22T00:00:00Z",
+    };
+    useProjectStore.setState({
+      currentProjectId: "project-1",
+      sources: [source],
+      profileSource,
+    });
+
+    const { rerender } = render(
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <DataWorkspacePanel
+          open
+          preprocessingEnabled={false}
+          onClose={vi.fn()}
+          onConfigureConnection={vi.fn()}
+          connections={[]}
+        />
+      </NextIntlClientProvider>
+    );
+
+    expect(screen.getByText("来源已加入，等待准备。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "检查并准备数据" })).toBeDisabled();
+    expect(screen.getByText("数据准备已关闭。")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "设置" })).not.toBeInTheDocument();
+    expect(profileSource).not.toHaveBeenCalled();
+
+    rerender(
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <DataWorkspacePanel
+          open
+          preprocessingEnabled
+          onClose={vi.fn()}
+          onConfigureConnection={vi.fn()}
+          connections={[]}
+        />
+      </NextIntlClientProvider>
+    );
+    fireEvent.click(screen.getByRole("button", { name: "检查并准备数据" }));
+    await waitFor(() => expect(profileSource).toHaveBeenCalledWith("source-attached"));
+    useProjectStore.setState({ profileSource: originalProfileSource });
   });
 
   it("builds only the approved visual cleaning operations", () => {
@@ -225,12 +358,14 @@ describe("DataWorkspacePanel project understanding", () => {
     });
 
     render(
-      <DataWorkspacePanel
-        open
-        onClose={vi.fn()}
-        onConfigureConnection={vi.fn()}
-        connections={[]}
-      />
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <DataWorkspacePanel
+          open
+          onClose={vi.fn()}
+          onConfigureConnection={vi.fn()}
+          connections={[]}
+        />
+      </NextIntlClientProvider>
     );
     fireEvent.click(screen.getByRole("button", { name: "整理数据" }));
 
@@ -240,7 +375,9 @@ describe("DataWorkspacePanel project understanding", () => {
     expect(screen.queryByRole("button", { name: "预览变化" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /空值填 0/ })).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "删除步骤：“customer” 去除首尾空格" })
+      screen.getByRole("button", {
+        name: removeStepAria("“customer” 去除首尾空格"),
+      })
     ).toBeDisabled();
   });
 
@@ -303,12 +440,14 @@ describe("DataWorkspacePanel project understanding", () => {
 
     try {
       render(
-        <DataWorkspacePanel
-          open
-          onClose={vi.fn()}
-          onConfigureConnection={vi.fn()}
-          connections={[]}
-        />
+        <NextIntlClientProvider locale="zh" messages={messages}>
+          <DataWorkspacePanel
+            open
+            onClose={vi.fn()}
+            onConfigureConnection={vi.fn()}
+            connections={[]}
+          />
+        </NextIntlClientProvider>
       );
       fireEvent.click(screen.getByRole("button", { name: "整理数据" }));
 
@@ -317,12 +456,12 @@ describe("DataWorkspacePanel project understanding", () => {
       expect(screen.getByText("移除完全重复的行")).toBeInTheDocument();
       expect(
         screen.queryByRole("button", {
-          name: "删除步骤：“customer” 去除首尾空格",
+          name: removeStepAria("“customer” 去除首尾空格"),
         })
       ).not.toBeInTheDocument();
       expect(
         screen.getByRole("button", {
-          name: "删除步骤：“amount” 空值填 0",
+          name: removeStepAria("“amount” 空值填 0"),
         })
       ).toBeEnabled();
 
@@ -399,19 +538,21 @@ describe("DataWorkspacePanel project understanding", () => {
 
     try {
       render(
-        <DataWorkspacePanel
-          open
-          onClose={vi.fn()}
-          onConfigureConnection={vi.fn()}
-          connections={[]}
-        />
+        <NextIntlClientProvider locale="zh" messages={messages}>
+          <DataWorkspacePanel
+            open
+            onClose={vi.fn()}
+            onConfigureConnection={vi.fn()}
+            connections={[]}
+          />
+        </NextIntlClientProvider>
       );
       fireEvent.click(screen.getByRole("button", { name: "整理数据" }));
 
       expect(screen.getByText("“amount” 空值填 0")).toBeInTheDocument();
       fireEvent.click(
         screen.getByRole("button", {
-          name: "删除步骤：“amount” 空值填 0",
+          name: removeStepAria("“amount” 空值填 0"),
         })
       );
       expect(screen.getByText("已移除全部步骤。预览后可确认更新。")).toBeInTheDocument();
@@ -428,7 +569,7 @@ describe("DataWorkspacePanel project understanding", () => {
     }
   });
 
-  it("shows a business-facing preview refusal returned by the API", async () => {
+  it("uses the localized preview fallback instead of an unknown API detail", async () => {
     const originalPreview = useProjectStore.getState().previewSourceCleaning;
     const source: ProjectDataSource = {
       id: "source-cleaning-too-large",
@@ -460,20 +601,25 @@ describe("DataWorkspacePanel project understanding", () => {
 
     try {
       render(
-        <DataWorkspacePanel
-          open
-          onClose={vi.fn()}
-          onConfigureConnection={vi.fn()}
-          connections={[]}
-        />
+        <NextIntlClientProvider locale="zh" messages={messages}>
+          <DataWorkspacePanel
+            open
+            onClose={vi.fn()}
+            onConfigureConnection={vi.fn()}
+            connections={[]}
+          />
+        </NextIntlClientProvider>
       );
       fireEvent.click(screen.getByRole("button", { name: "整理数据" }));
       fireEvent.click(screen.getByRole("button", { name: /空值填 0/ }));
       fireEvent.click(screen.getByRole("button", { name: "预览变化" }));
 
       expect(
-        await screen.findByText("这份文件太大，暂时不能直接整理。请先拆分文件后再试。")
+        await screen.findByText(messages.visualCleaning.previewFailed)
       ).toBeInTheDocument();
+      expect(
+        screen.queryByText("这份文件太大，暂时不能直接整理。请先拆分文件后再试。")
+      ).not.toBeInTheDocument();
     } finally {
       useProjectStore.setState({ previewSourceCleaning: originalPreview });
     }
@@ -555,12 +701,14 @@ describe("DataWorkspacePanel project understanding", () => {
 
     try {
       render(
-        <DataWorkspacePanel
-          open
-          onClose={vi.fn()}
-          onConfigureConnection={vi.fn()}
-          connections={[]}
-        />
+        <NextIntlClientProvider locale="zh" messages={messages}>
+          <DataWorkspacePanel
+            open
+            onClose={vi.fn()}
+            onConfigureConnection={vi.fn()}
+            connections={[]}
+          />
+        </NextIntlClientProvider>
       );
 
       fireEvent.click(screen.getByRole("button", { name: "整理数据" }));
@@ -575,9 +723,9 @@ describe("DataWorkspacePanel project understanding", () => {
           { operation: "fill_missing", column: "amount", value: 0 },
         ])
       );
-      expect(screen.getByRole("region", { name: "整理结果预览" })).toHaveTextContent(
-        "1 个单元格会变化"
-      );
+      expect(
+        screen.getByRole("region", { name: messages.visualCleaning.previewAria })
+      ).toHaveTextContent("1 个单元格会变化");
       expect(screen.getByText("整理前")).toBeInTheDocument();
       expect(screen.getByText("整理后")).toBeInTheDocument();
       expect(screen.queryByText("d".repeat(64))).not.toBeInTheDocument();
@@ -586,7 +734,7 @@ describe("DataWorkspacePanel project understanding", () => {
       fireEvent.click(screen.getByRole("button", { name: /统一金额/ }));
       expect(clearSourceCleaningPreview).toHaveBeenLastCalledWith(source.id);
       expect(
-        screen.queryByRole("region", { name: "整理结果预览" })
+        screen.queryByRole("region", { name: messages.visualCleaning.previewAria })
       ).not.toBeInTheDocument();
 
       fireEvent.click(screen.getByRole("button", { name: "预览变化" }));
@@ -629,12 +777,14 @@ describe("DataWorkspacePanel project understanding", () => {
     });
 
     render(
-      <DataWorkspacePanel
-        open
-        onClose={vi.fn()}
-        onConfigureConnection={vi.fn()}
-        connections={[]}
-      />
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <DataWorkspacePanel
+          open
+          onClose={vi.fn()}
+          onConfigureConnection={vi.fn()}
+          connections={[]}
+        />
+      </NextIntlClientProvider>
     );
 
     expect(screen.queryByRole("button", { name: "整理数据" })).not.toBeInTheDocument();
@@ -707,12 +857,14 @@ describe("DataWorkspacePanel project understanding", () => {
     });
 
     render(
-      <DataWorkspacePanel
-        open
-        onClose={vi.fn()}
-        onConfigureConnection={vi.fn()}
-        connections={[]}
-      />
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <DataWorkspacePanel
+          open
+          onClose={vi.fn()}
+          onConfigureConnection={vi.fn()}
+          connections={[]}
+        />
+      </NextIntlClientProvider>
     );
 
     expect(screen.getByText("项目记住的整理方法")).toBeInTheDocument();
@@ -799,12 +951,14 @@ describe("DataWorkspacePanel project understanding", () => {
 
     try {
       render(
-        <DataWorkspacePanel
-          open
-          onClose={vi.fn()}
-          onConfigureConnection={vi.fn()}
-          connections={[]}
-        />
+        <NextIntlClientProvider locale="zh" messages={messages}>
+          <DataWorkspacePanel
+            open
+            onClose={vi.fn()}
+            onConfigureConnection={vi.fn()}
+            connections={[]}
+          />
+        </NextIntlClientProvider>
       );
 
       const acceptButton = screen.getByRole("button", {
@@ -849,11 +1003,16 @@ describe("DataWorkspacePanel project understanding", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "查看变化" }));
       expect(screen.getByText("本期缺少：金额")).toBeInTheDocument();
-      expect(screen.getByText(/原始文件和数据库保持不变/)).toBeInTheDocument();
+      expect(
+        screen.queryByText(/原始文件和数据库保持不变/)
+      ).not.toBeInTheDocument();
+      expect(screen.getByText("使用只读连接查询现有数据。")).toBeInTheDocument();
 
       fireEvent.click(screen.getByRole("button", { name: "移除来源" }));
       expect(screen.getByRole("button", { name: "确认移除" })).toBeInTheDocument();
-      expect(screen.getByText(/原始文件或数据库不会改变/)).toBeInTheDocument();
+      expect(
+        screen.getByText("移除后，这个来源将不再出现在当前项目中。"),
+      ).toBeInTheDocument();
     } finally {
       useProjectStore.setState({
         acceptReplacement: originalAcceptReplacement,
@@ -965,12 +1124,14 @@ describe("DataWorkspacePanel project understanding", () => {
 
     try {
       render(
-        <DataWorkspacePanel
-          open
-          onClose={vi.fn()}
-          onConfigureConnection={vi.fn()}
-          connections={[]}
-        />
+        <NextIntlClientProvider locale="zh" messages={messages}>
+          <DataWorkspacePanel
+            open
+            onClose={vi.fn()}
+            onConfigureConnection={vi.fn()}
+            connections={[]}
+          />
+        </NextIntlClientProvider>
       );
 
       fireEvent.click(screen.getByRole("button", { name: /整理方法记录/ }));
@@ -995,6 +1156,295 @@ describe("DataWorkspacePanel project understanding", () => {
         loadRecipeRevisions: originalLoadRecipeRevisions,
         restoreRecipeRevision: originalRestoreRecipeRevision,
       });
+    }
+  });
+
+  it("maps known and unknown preflight issues into the active English locale", () => {
+    const numberFormat = vi.spyOn(Number.prototype, "toLocaleString");
+    const source: ProjectDataSource = {
+      id: "source-english-issues",
+      project_id: "project-1",
+      kind: "file",
+      name: "orders.csv",
+      format: "csv",
+      status: "ready",
+      profile_data: { sample: [{ amount: "invalid" }] },
+      created_at: "2026-07-19T00:00:00Z",
+      updated_at: "2026-07-19T00:00:00Z",
+    };
+    useProjectStore.setState({
+      currentProjectId: "project-1",
+      sources: [source],
+      preflightReports: [
+        {
+          id: "report-english-issues",
+          project_id: "project-1",
+          data_source_id: source.id,
+          status: "ready",
+          summary: "服务端固定中文摘要",
+          issues: [
+            {
+              code: "invalid_currency_values",
+              title: "amount 中有 1234 个金额无法识别",
+              detail: "服务端固定中文详情",
+              severity: "warning",
+              automatic: false,
+              count: 1234,
+            },
+            {
+              code: "future_system_issue",
+              title: "未知的服务端中文问题",
+              detail: "不应直接显示",
+              severity: "warning",
+              automatic: false,
+            },
+            {
+              code: "another_future_system_issue",
+              title: "另一个未知的服务端中文问题",
+              detail: "不应重复显示相同的业务提示",
+              severity: "warning",
+              automatic: false,
+            },
+          ],
+          ambiguities: [],
+          source_snapshot: {
+            summary_code: "file_preflight",
+            summary_facts: {
+              rows: 1234,
+              columns: 7,
+              automatic_issue_count: 0,
+              ambiguity_count: 0,
+              recipe_step_count: 0,
+              recipe_drift_count: 0,
+            },
+          },
+          created_at: "2026-07-19T00:00:00Z",
+        },
+      ],
+      recipes: [],
+      knowledge: [],
+    });
+
+    try {
+      render(
+        <NextIntlClientProvider locale="en" messages={enMessages}>
+          <DataWorkspacePanel
+            open
+            onClose={vi.fn()}
+            onConfigureConnection={vi.fn()}
+            connections={[]}
+          />
+        </NextIntlClientProvider>
+      );
+
+      expect(
+        screen.getByText("amount has 1,234 amounts that cannot be recognized")
+      ).toBeInTheDocument();
+      expect(
+        screen.getAllByText("A data preparation item needs your review"),
+      ).toHaveLength(1);
+      expect(
+        screen.getByText("Data ready: 1,234 rows · 7 columns")
+      ).toBeInTheDocument();
+      expect(screen.queryByText("服务端固定中文摘要")).not.toBeInTheDocument();
+      expect(screen.queryByText("未知的服务端中文问题")).not.toBeInTheDocument();
+      expect(numberFormat).toHaveBeenCalledWith("en");
+    } finally {
+      numberFormat.mockRestore();
+    }
+  });
+
+  it("renders file and database preflight summaries from facts in Chinese", () => {
+    const sources: ProjectDataSource[] = [
+      {
+        id: "source-file-summary-zh",
+        project_id: "project-1",
+        kind: "file",
+        name: "orders.csv",
+        format: "csv",
+        status: "ready",
+        profile_data: {},
+        created_at: "2026-07-19T00:00:00Z",
+        updated_at: "2026-07-19T00:00:00Z",
+      },
+      {
+        id: "source-database-summary-zh",
+        project_id: "project-1",
+        kind: "connection",
+        connection_id: "connection-1",
+        name: "warehouse",
+        status: "ready",
+        profile_data: {
+          relation_index: {
+            relations: [],
+            relations_loaded: 12,
+            relations_total: 12,
+            relations_total_at_least: 12,
+            complete: true,
+            truncated: false,
+            unread_relations_at_least: 0,
+          },
+        },
+        created_at: "2026-07-19T00:00:00Z",
+        updated_at: "2026-07-19T00:00:00Z",
+      },
+    ];
+    useProjectStore.setState({
+      currentProjectId: "project-1",
+      sources,
+      preflightReports: [
+        {
+          id: "report-file-summary-zh",
+          project_id: "project-1",
+          data_source_id: sources[0].id,
+          status: "ready",
+          summary: "persisted English summary must not be displayed",
+          issues: [],
+          ambiguities: [],
+          source_snapshot: {
+            summary_code: "file_preflight",
+            summary_facts: {
+              rows: 28,
+              columns: 6,
+              automatic_issue_count: 0,
+              ambiguity_count: 0,
+            },
+          },
+          created_at: "2026-07-19T00:00:00Z",
+        },
+        {
+          id: "report-database-summary-zh",
+          project_id: "project-1",
+          data_source_id: sources[1].id,
+          status: "ready",
+          summary: "persisted English database summary must not be displayed",
+          issues: [],
+          ambiguities: [],
+          source_snapshot: {
+            preanalysis: {
+              summary_code: "database_value_preflight",
+              summary_facts: {
+                profiled_tables: 3,
+                profiled_columns: 19,
+                status: "partial",
+                partial: true,
+              },
+            },
+          },
+          created_at: "2026-07-19T00:00:00Z",
+        },
+      ],
+    });
+
+    render(
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <DataWorkspacePanel
+          open
+          onClose={vi.fn()}
+          onConfigureConnection={vi.fn()}
+          connections={[]}
+        />
+      </NextIntlClientProvider>,
+    );
+
+    expect(screen.getByText("数据已准备好：28 行 · 6 列")).toBeInTheDocument();
+    expect(screen.getByText("已发现 12 张表 · 已检查 3 张")).toBeInTheDocument();
+    expect(screen.queryByText(/persisted English/)).not.toBeInTheDocument();
+  });
+
+  it("does not expose a cross-language legacy preflight summary", () => {
+    const source: ProjectDataSource = {
+      id: "source-legacy-summary",
+      project_id: "project-1",
+      kind: "file",
+      name: "orders.csv",
+      format: "csv",
+      status: "ready",
+      profile_data: { summary: "旧版中文预检摘要" },
+      created_at: "2026-07-19T00:00:00Z",
+      updated_at: "2026-07-19T00:00:00Z",
+    };
+    useProjectStore.setState({
+      currentProjectId: "project-1",
+      sources: [source],
+      preflightReports: [],
+    });
+
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <DataWorkspacePanel
+          open
+          onClose={vi.fn()}
+          onConfigureConnection={vi.fn()}
+          connections={[]}
+        />
+      </NextIntlClientProvider>,
+    );
+
+    expect(screen.getByText("The data has been prepared for analysis")).toBeInTheDocument();
+    expect(screen.queryByText("旧版中文预检摘要")).not.toBeInTheDocument();
+    cleanup();
+
+    render(
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <DataWorkspacePanel
+          open
+          onClose={vi.fn()}
+          onConfigureConnection={vi.fn()}
+          connections={[]}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByText("旧版中文预检摘要")).toBeInTheDocument();
+  });
+
+  it("does not expose an unknown Chinese cleaning error in the English editor", async () => {
+    const originalPreview = useProjectStore.getState().previewSourceCleaning;
+    const source: ProjectDataSource = {
+      id: "source-english-cleaning-error",
+      project_id: "project-1",
+      kind: "file",
+      name: "orders.csv",
+      format: "csv",
+      status: "ready",
+      profile_data: { sample: [{ amount: null }] },
+      created_at: "2026-07-19T00:00:00Z",
+      updated_at: "2026-07-19T00:00:00Z",
+    };
+    const previewSourceCleaning = vi.fn().mockRejectedValue({
+      response: { data: { detail: "服务端固定中文错误" } },
+    });
+    useProjectStore.setState({
+      currentProjectId: "project-1",
+      sources: [source],
+      preflightReports: [],
+      recipes: [],
+      knowledge: [],
+      cleaningPreviewBySource: {},
+      previewSourceCleaning,
+    });
+
+    try {
+      render(
+        <NextIntlClientProvider locale="en" messages={enMessages}>
+          <DataWorkspacePanel
+            open
+            onClose={vi.fn()}
+            onConfigureConnection={vi.fn()}
+            connections={[]}
+          />
+        </NextIntlClientProvider>
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Clean data" }));
+      fireEvent.click(screen.getByRole("button", { name: /Fill blanks with 0/ }));
+      fireEvent.click(screen.getByRole("button", { name: "Preview changes" }));
+
+      expect(
+        await screen.findByText("Could not preview, please retry.")
+      ).toBeInTheDocument();
+      expect(screen.queryByText("服务端固定中文错误")).not.toBeInTheDocument();
+    } finally {
+      useProjectStore.setState({ previewSourceCleaning: originalPreview });
     }
   });
 });

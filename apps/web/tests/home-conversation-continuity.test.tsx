@@ -1,7 +1,10 @@
 import { render, waitFor } from "@testing-library/react";
+import { NextIntlClientProvider } from "next-intl";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "@/app/page";
 import { CONVERSATION_CONTINUITY_STORAGE_KEY } from "@/lib/stores/chat";
+import enMessages from "@/messages/en.json";
+import zhMessages from "@/messages/zh.json";
 
 const mocks = vi.hoisted(() => ({
   bootstrap: vi.fn(),
@@ -47,6 +50,17 @@ vi.mock("@/lib/stores/chat", async (importOriginal) => {
   };
 });
 
+function renderHome(locale: "en" | "zh" = "zh") {
+  return render(
+    <NextIntlClientProvider
+      locale={locale}
+      messages={locale === "en" ? enMessages : zhMessages}
+    >
+      <Home />
+    </NextIntlClientProvider>
+  );
+}
+
 describe("home conversation continuity", () => {
   beforeEach(() => {
     mocks.bootstrap.mockReset();
@@ -68,7 +82,7 @@ describe("home conversation continuity", () => {
         : null
     );
 
-    render(<Home />);
+    renderHome();
 
     await waitFor(() =>
       expect(mocks.setCurrentConversation).toHaveBeenCalledWith(
@@ -76,7 +90,10 @@ describe("home conversation continuity", () => {
         "project-1"
       )
     );
-    expect(mocks.bootstrap).toHaveBeenCalledTimes(1);
+    expect(mocks.bootstrap).toHaveBeenCalledWith({
+      name: "我的分析项目",
+      description: "订单、门店和业务口径都保存在这里",
+    });
     expect(mocks.replace).not.toHaveBeenCalled();
   });
 
@@ -87,7 +104,7 @@ describe("home conversation continuity", () => {
       "/?conversation=conversation-from-report"
     );
 
-    render(<Home />);
+    renderHome();
 
     await waitFor(() =>
       expect(mocks.setCurrentConversation).toHaveBeenCalledWith(
@@ -106,11 +123,22 @@ describe("home conversation continuity", () => {
     );
     mocks.currentConversationId = "conversation-from-report";
 
-    render(<Home />);
+    renderHome();
 
     await waitFor(() =>
       expect(mocks.replace).toHaveBeenCalledWith("/", { scroll: false })
     );
     expect(mocks.setCurrentConversation).not.toHaveBeenCalled();
+  });
+
+  it("bootstraps a fresh English workspace with English project defaults", async () => {
+    renderHome("en");
+
+    await waitFor(() =>
+      expect(mocks.bootstrap).toHaveBeenCalledWith({
+        name: "My analysis project",
+        description: "Keep orders, stores, and confirmed business definitions here",
+      })
+    );
   });
 });

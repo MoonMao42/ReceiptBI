@@ -23,9 +23,11 @@ import type { ConfiguredConnection } from "@/lib/types/api";
 import { cn } from "@/lib/utils";
 import { useArmedAction } from "@/lib/hooks/useArmedAction";
 import { ArmedDeleteButton } from "@/components/ui/armed-delete-button";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 
 export function ConnectionSettings() {
+  const t = useTranslations("connectionSettings");
+  const tc = useTranslations("common");
   const {
     connections,
     isLoading,
@@ -37,28 +39,16 @@ export function ConnectionSettings() {
     deleteConnection,
     testConnection,
     isSubmitting,
-  } = useConnectionSettingsResource();
+  } = useConnectionSettingsResource({
+    success: t("testResultSuccess"),
+    failure: t("testResultFailed"),
+    requestFailure: t("testRequestFailed"),
+  });
   const [showForm, setShowForm] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<ConnectionFormData>(defaultConnectionFormData);
-  const t = useTranslations("connectionSettings");
-  const tc = useTranslations("common");
   const { armedId: armedDeleteId, request: requestDelete } = useArmedAction();
-  const isChinese = useLocale() === "zh";
-  const copy = isChinese
-    ? {
-        title: "数据库",
-        description:
-          "添加 SQLite、MySQL 或 PostgreSQL 数据库连接，供分析项目只读使用。文件数据仍从项目工作台加入。",
-        add: "添加数据库",
-      }
-    : {
-        title: "Databases",
-        description:
-          "Add SQLite, MySQL, or PostgreSQL connections for read-only analysis. Add file data from the project workbench.",
-        add: "Add database",
-      };
 
   const handleSelectConnection = (id: string) => {
     setSelectedId(id);
@@ -107,7 +97,7 @@ export function ConnectionSettings() {
           className="flex items-center gap-2 bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           <Plus size={16} />
-          {copy.add}
+          {t("addDatabase")}
         </button>
       </div>
 
@@ -163,7 +153,7 @@ export function ConnectionSettings() {
                       )}
                     >
                       {testResult.success ? <CheckCircle size={14} /> : <XCircle size={14} />}
-                      {testResult.message}
+                      {testResult.text}
                     </div>
                   )}
                 </div>

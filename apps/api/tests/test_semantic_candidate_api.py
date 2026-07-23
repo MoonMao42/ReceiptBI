@@ -79,6 +79,35 @@ async def _post_relationship_candidate(
     return response.json()["data"]
 
 
+async def _add_relationship_source(
+    db_session: AsyncSession,
+    project_id: UUID,
+    *tables: str,
+) -> ProjectDataSource:
+    source = ProjectDataSource(
+        project_id=project_id,
+        kind="connection",
+        name="经营数据",
+        format="sqlite",
+        status="ready",
+        profile_data={
+            "logical_name": "经营数据",
+            "is_current": True,
+            "tables": [
+                {
+                    "name": table,
+                    "columns": [{"name": "store_id", "type": "TEXT"}],
+                }
+                for table in tables
+            ],
+            "preanalysis": {},
+        },
+    )
+    db_session.add(source)
+    await db_session.flush()
+    return source
+
+
 @pytest.mark.asyncio
 async def test_paginated_knowledge_filters_without_changing_legacy_get(
     client: AsyncClient,
@@ -615,6 +644,15 @@ async def test_knowledge_summary_uses_one_active_governance_count_contract(
 ):
     project = Project(name="项目理解摘要")
     db_session.add(project)
+    await db_session.flush()
+    await _add_relationship_source(
+        db_session,
+        project.id,
+        "orders",
+        "stores",
+        "sales",
+        "products",
+    )
     await db_session.commit()
     await _post_relationship_candidate(
         client,
@@ -770,15 +808,12 @@ async def test_batch_queue_and_ignore_are_revision_bound_and_reversible(
     assert queued_entry["active_revision_id"] != candidate["active_revision_id"]
     assert queued_entry["execution_state"] == "needs_validation"
     assert queued_entry["validity"] == "unverified"
-    assert queued_entry["allowed_actions"] == ["ignore", "queue_validation"]
+    assert queued_entry["allowed_actions"] == []
     assert queued_data["queued_entry_ids"] == [candidate["id"]]
-    assert queued_data["validation_selection"] == [
-        {
-            "entry_id": candidate["id"],
-            "expected_active_revision_id": queued_entry["active_revision_id"],
-        }
-    ]
-    assert "匹配率、唯一性和行数扩张" in queued_data["validation_prompt"]
+    assert queued_data["validation_job_id"]
+    assert queued_data["validation_status"] == "queued"
+    assert "validation_selection" not in queued_data
+    assert "validation_prompt" not in queued_data
 
     stale_write = await client.post(
         f"/api/v1/projects/{project.id}/knowledge/batch",
@@ -794,6 +829,18 @@ async def test_batch_queue_and_ignore_are_revision_bound_and_reversible(
     )
     assert stale_write.status_code == 409
 
+    completed_job = await client.get(
+        f"/api/v1/projects/{project.id}/knowledge/validation-jobs/"
+        f"{queued_data['validation_job_id']}"
+    )
+    assert completed_job.status_code == 200
+    assert completed_job.json()["data"]["status"] == "completed"
+    assert completed_job.json()["data"]["items"][0]["status"] == "blocked"
+    current = await client.get(
+        f"/api/v1/projects/{project.id}/knowledge/{candidate['id']}"
+    )
+    current_entry = current.json()["data"]
+
     ignored = await client.post(
         f"/api/v1/projects/{project.id}/knowledge/batch",
         json={
@@ -801,7 +848,7 @@ async def test_batch_queue_and_ignore_are_revision_bound_and_reversible(
             "items": [
                 {
                     "entry_id": candidate["id"],
-                    "expected_active_revision_id": queued_entry["active_revision_id"],
+                    "expected_active_revision_id": current_entry["active_revision_id"],
                 }
             ],
             "reason": "与当前分析无关",
@@ -841,7 +888,7 @@ async def test_batch_queue_and_ignore_are_revision_bound_and_reversible(
     assert restored_entry["is_active"] is True
     assert restored_entry["validity"] == "unverified"
     assert restored_entry["active_revision_id"] != ignored_entry["active_revision_id"]
-    assert restored_entry["allowed_actions"] == ["ignore", "queue_validation"]
+    assert restored_entry["allowed_actions"] == ["ignore", "queue_validation", "attest"]
     legacy_after_restore = await client.get(f"/api/v1/projects/{project.id}/knowledge")
     assert [item["id"] for item in legacy_after_restore.json()["data"]] == [candidate["id"]]
 
@@ -883,12 +930,11 @@ async def test_large_validation_queue_returns_every_post_queue_revision_identity
     assert queued.status_code == 200, queued.text
     data = queued.json()["data"]
     assert len(data["items"]) == 25
-    assert len(data["validation_selection"]) == 25
+    assert data["validation_job_id"]
+    assert data["validation_status"] == "queued"
+    assert "validation_selection" not in data
+    assert "validation_prompt" not in data
     expected_selection = {item["id"]: item["active_revision_id"] for item in data["items"]}
-    assert {
-        item["entry_id"]: item["expected_active_revision_id"]
-        for item in data["validation_selection"]
-    } == expected_selection
     assert set(data["queued_entry_ids"]) == set(expected_selection)
     assert all(
         expected_selection[item["id"]] != original["active_revision_id"]
@@ -1000,6 +1046,49 @@ async def test_batch_remember_rejects_unverified_set_atomically_then_accepts_ver
         mutation_kind="observation_without_definition",
         actor_source="verified_analysis",
     )
+    legacy_definition = {
+        "version": 1,
+        "kind": "column_metric",
+        "source_id": str(uuid4()),
+        "column": "account_rep_code",
+    }
+    legacy_definition_hash = stable_payload_hash(legacy_definition)
+    legacy_run_id = str(uuid4())
+    legacy_verified = SemanticEntry(
+        project_id=project.id,
+        key="metric_candidate:legacy:account_rep_code",
+        value="account_rep_code 可能是金额指标",
+        entry_type="metric",
+        state="candidate",
+        confidence=0.65,
+        definition=legacy_definition,
+        validity="active",
+        execution_state="verified",
+        execution_details={
+            "version": 1,
+            "status": "verified",
+            "definition_hash": legacy_definition_hash,
+            "last_verified_run_id": legacy_run_id,
+        },
+        evidence=[
+            {
+                "kind": "semantic_execution_verification",
+                "status": "verified",
+                "analysis_run_id": legacy_run_id,
+                "definition_hash": legacy_definition_hash,
+            }
+        ],
+        source="inferred",
+        is_active=True,
+    )
+    db_session.add(legacy_verified)
+    await db_session.flush()
+    await append_semantic_revision(
+        db_session,
+        legacy_verified,
+        mutation_kind="execution_verified",
+        actor_source="system",
+    )
     await db_session.commit()
     original_verified_revision_id = verified.active_revision_id
 
@@ -1013,6 +1102,7 @@ async def test_batch_remember_rejects_unverified_set_atomically_then_accepts_ver
     assert actions_by_key[unverified["key"]] == ["ignore"]
     assert actions_by_key[verified.key] == ["ignore", "remember"]
     assert actions_by_key[verified_without_definition.key] == ["ignore"]
+    assert actions_by_key[legacy_verified.key] == ["ignore"]
 
     unsafe_batch = await client.post(
         f"/api/v1/projects/{project.id}/knowledge/batch",
@@ -1064,6 +1154,14 @@ async def test_user_can_edit_candidate_governance_without_bypassing_execution_va
 ):
     project = Project(name="候选治理门禁")
     db_session.add(project)
+    await db_session.flush()
+    await _add_relationship_source(
+        db_session,
+        project.id,
+        "orders",
+        "stores",
+        "shops",
+    )
     await db_session.commit()
     candidate = await _post_relationship_candidate(
         client,
@@ -1100,6 +1198,7 @@ async def test_user_can_edit_candidate_governance_without_bypassing_execution_va
     assert manually_confirmed_entry["state"] == "confirmed"
     assert manually_confirmed_entry["validity"] == "active"
     assert manually_confirmed_entry["execution_state"] == "needs_validation"
+    assert manually_confirmed_entry["allowed_actions"] == ["attest"]
     assert manually_confirmed_entry["active_revision_id"] != candidate["active_revision_id"]
 
     corrected_definition = _relationship_definition("orders", "shops")
@@ -1116,13 +1215,39 @@ async def test_user_can_edit_candidate_governance_without_bypassing_execution_va
     entry = corrected.json()["data"]
     assert entry["state"] == "confirmed"
     assert entry["validity"] == "active"
-    assert entry["definition"] == corrected_definition
+    assert all(
+        entry["definition"][key] == value
+        for key, value in corrected_definition.items()
+    )
+    assert entry["definition"]["business_name"] is None
+    assert entry["definition"]["description"] is None
+    assert entry["definition"]["example_questions"] == []
     assert entry["execution_state"] == "needs_validation"
     assert entry["active_revision_id"] != manually_confirmed_entry["active_revision_id"]
+    assert entry["allowed_actions"] == ["attest"]
+
+    attested = await client.post(
+        f"/api/v1/projects/{project.id}/knowledge/batch",
+        json={
+            "action": "attest",
+            "items": [
+                {
+                    "entry_id": candidate["id"],
+                    "expected_active_revision_id": entry["active_revision_id"],
+                }
+            ],
+        },
+    )
+    assert attested.status_code == 200, attested.text
+    attested_entry = attested.json()["data"]["items"][0]
+    assert attested_entry["state"] == "confirmed"
+    assert attested_entry["execution_state"] == "verified"
+    assert attested_entry["allowed_actions"] == []
+    assert "采用状态保持不变" in attested.json()["message"]
 
     fetched = await client.get(f"/api/v1/projects/{project.id}/knowledge/{candidate['id']}")
     assert fetched.status_code == 200, fetched.text
-    assert fetched.json()["data"]["active_revision_id"] == entry["active_revision_id"]
+    assert fetched.json()["data"]["active_revision_id"] == attested_entry["active_revision_id"]
 
     upsert_bypass = await client.post(
         f"/api/v1/projects/{project.id}/knowledge",
@@ -1143,10 +1268,10 @@ async def test_user_can_edit_candidate_governance_without_bypassing_execution_va
 
 
 @pytest.mark.asyncio
-async def test_inferred_relationship_generation_is_ranked_and_capped_but_keeps_declared_fk(
+async def test_preflight_only_suggests_catalog_verified_relationships(
     db_session: AsyncSession,
 ):
-    project = Project(name="候选关系上限")
+    project = Project(name="只保留有依据的数据关联")
     db_session.add(project)
     await db_session.flush()
     tables = [
@@ -1189,35 +1314,24 @@ async def test_inferred_relationship_generation_is_ranked_and_capped_but_keeps_d
         )
     )
     relationships = list(result.scalars())
-    declared = [
-        item
-        for item in relationships
-        if any(evidence.get("kind") == "declared_foreign_key" for evidence in item.evidence)
-    ]
-    inferred = [
-        item
-        for item in relationships
-        if any(evidence.get("kind") == "matching_column_names" for evidence in item.evidence)
-    ]
-    assert len(declared) == 1
-    assert "table_28.store_id" in declared[0].value
-    assert "table_29.store_id" in declared[0].value
-    assert len(inferred) == projects_api._MAX_INFERRED_RELATIONSHIPS_PER_COLUMN
-    groups = [item.evidence[0]["candidate_group"] for item in inferred]
-    assert {group["endpoint_count"] for group in groups} == {30}
-    assert {group["considered_endpoint_count"] for group in groups} == {
-        projects_api._MAX_RELATIONSHIP_ENDPOINTS_PER_COLUMN
-    }
-    assert sorted(group["pair_rank"] for group in groups) == list(
-        range(1, projects_api._MAX_INFERRED_RELATIONSHIPS_PER_COLUMN + 1)
+
+    assert len(relationships) == 1
+    declared = relationships[0]
+    assert "table_28.store_id" in declared.value
+    assert "table_29.store_id" in declared.value
+    assert [item["kind"] for item in declared.evidence] == ["declared_foreign_key"]
+    assert not any(
+        item.get("kind") == "matching_column_names"
+        for relationship in relationships
+        for item in relationship.evidence
     )
 
 
 @pytest.mark.asyncio
-async def test_preflight_prunes_only_unretained_untouched_name_matches(
+async def test_preflight_retires_only_untouched_legacy_column_candidates(
     db_session: AsyncSession,
 ):
-    project = Project(name="候选关系自动收敛")
+    project = Project(name="旧列候选淘汰")
     db_session.add(project)
     await db_session.flush()
     source = ProjectDataSource(
@@ -1231,62 +1345,150 @@ async def test_preflight_prunes_only_unretained_untouched_name_matches(
             "is_current": True,
             "tables": [
                 {
-                    "name": f"table_{index:02d}",
-                    "columns": [{"name": "store_id", "type": "TEXT"}],
+                    "name": "account_reps",
+                    "columns": [
+                        {"name": "account_rep_name", "type": "TEXT"},
+                        {"name": "account_rep_code", "type": "TEXT"},
+                    ],
                 }
-                for index in range(12)
             ],
             "preanalysis": {},
         },
     )
     db_session.add(source)
+    await db_session.flush()
+
+    async def legacy_candidate(
+        key: str,
+        *,
+        definition: dict | None = None,
+        execution_state: str = "definition_only",
+        evidence: list[dict] | None = None,
+        actor_source: str = "inferred",
+        state: str = "candidate",
+        source_kind: str = "inferred",
+    ) -> SemanticEntry:
+        entry = SemanticEntry(
+            project_id=project.id,
+            key=key,
+            value="旧版字段名候选",
+            entry_type="metric" if key.startswith("metric_candidate:") else "dimension",
+            state=state,
+            confidence=0.65,
+            definition=definition,
+            validity="active",
+            execution_state=execution_state,
+            evidence=evidence or [{"kind": "preflight", "source_id": str(source.id)}],
+            source=source_kind,
+            is_active=True,
+        )
+        db_session.add(entry)
+        await db_session.flush()
+        await append_semantic_revision(
+            db_session,
+            entry,
+            mutation_kind="candidate_created",
+            actor_source=actor_source,
+        )
+        return entry
+
+    verified = await legacy_candidate(
+        f"metric_candidate:{source.id}:account_rep_code",
+        definition={
+            "version": 1,
+            "kind": "column_metric",
+            "source_id": str(source.id),
+            "table": "account_reps",
+            "column": "account_rep_code",
+        },
+        execution_state="verified",
+        evidence=[
+            {"kind": "preflight", "source_id": str(source.id)},
+            {"kind": "semantic_execution_verification", "status": "verified"},
+            {"kind": "semantic_scope_reconciled"},
+        ],
+    )
+    grain = await legacy_candidate(f"grain:{source.id}")
+    user_touched = await legacy_candidate(
+        f"metric_candidate:{source.id}:account_rep_name",
+        actor_source="user",
+    )
+    confirmed = await legacy_candidate(
+        f"metric_candidate:{source.id}:confirmed_amount",
+        state="confirmed",
+        source_kind="user",
+    )
     await db_session.commit()
 
     await projects_api._persist_preflight_candidates(db_session, source)
     await db_session.commit()
-    generated_result = await db_session.execute(
-        select(SemanticEntry).where(
-            SemanticEntry.project_id == project.id,
-            SemanticEntry.entry_type == "relationship",
-            SemanticEntry.source == "inferred",
-            SemanticEntry.is_active.is_(True),
-        )
-    )
-    generated = list(generated_result.scalars())
-    assert len(generated) == projects_api._MAX_INFERRED_RELATIONSHIPS_PER_COLUMN
-    retained = generated[0]
-    retired_ids = {entry.id for entry in generated[1:]}
-    retired_revision_numbers = {entry.id: entry.revision_number for entry in generated[1:]}
-    retained.confidence = 0.55
-    await append_semantic_revision(
-        db_session,
-        retained,
-        mutation_kind="legacy_discovery_score",
-        actor_source="system",
-        expected_active_revision_id=retained.active_revision_id,
-    )
 
-    async def protected_candidate(
+    for entry in (verified, grain):
+        await db_session.refresh(entry)
+        assert entry.is_active is False
+        assert entry.validity == "stale"
+        assert entry.execution_state == "blocked"
+        revision = await db_session.get(SemanticEntryRevision, entry.active_revision_id)
+        assert revision is not None
+        assert revision.mutation_kind == "legacy_candidate_retired"
+
+    await db_session.refresh(user_touched)
+    await db_session.refresh(confirmed)
+    assert user_touched.is_active is True
+    assert user_touched.state == "candidate"
+    assert confirmed.is_active is True
+    assert confirmed.state == "confirmed"
+
+
+@pytest.mark.asyncio
+async def test_preflight_retires_legacy_name_matches_except_explicit_user_work(
+    db_session: AsyncSession,
+):
+    project = Project(name="淘汰同名字段关系")
+    db_session.add(project)
+    await db_session.flush()
+    source = ProjectDataSource(
+        project_id=project.id,
+        kind="connection",
+        name="经营库",
+        format="sqlite",
+        status="ready",
+        profile_data={
+            "logical_name": "经营库",
+            "is_current": True,
+            "tables": [],
+            "preanalysis": {},
+        },
+    )
+    db_session.add(source)
+    await db_session.flush()
+
+    async def legacy_relationship(
         key: str,
         *,
         state: str = "candidate",
         source_kind: str = "inferred",
         is_active: bool = True,
         validity: str = "unverified",
-        evidence: list[dict] | None = None,
-        actor_source: str = "system",
-        mutation_kind: str = "test_candidate_created",
+        actor_source: str = "inferred",
+        mutation_kind: str = "candidate_created",
+        extra_evidence: list[dict] | None = None,
     ) -> SemanticEntry:
         entry = SemanticEntry(
             project_id=project.id,
             key=key,
-            value="保留的人工处理候选",
+            value="同名字段可能可以关联",
             entry_type="relationship",
             state=state,
             confidence=0.55,
-            definition=_relationship_definition("manual_left", "manual_right"),
+            definition=_relationship_definition("left_table", "right_table"),
             validity=validity,
-            evidence=evidence or [{"kind": "matching_column_names"}],
+            execution_state="needs_validation",
+            evidence=[
+                {"kind": "matching_column_names"},
+                {"kind": "semantic_scope_reconciled"},
+                *(extra_evidence or []),
+            ],
             source=source_kind,
             is_active=is_active,
         )
@@ -1300,83 +1502,66 @@ async def test_preflight_prunes_only_unretained_untouched_name_matches(
         )
         return entry
 
-    user_edited = await protected_candidate(
-        "relationship_candidate:legacy:user-edited",
-        actor_source="user",
-    )
-    api_created = await protected_candidate(
-        "relationship_candidate:legacy:api-created",
-        mutation_kind="created",
-    )
-    queued = await protected_candidate(
+    untouched = await legacy_relationship("relationship_candidate:legacy:untouched")
+    queued = await legacy_relationship(
         "relationship_candidate:legacy:queued",
         source_kind="user",
-        evidence=[
-            {"kind": "matching_column_names"},
-            {"kind": "relationship_validation_requested"},
-        ],
+        actor_source="user",
+        mutation_kind="validation_queued",
+        extra_evidence=[{"kind": "relationship_validation_requested"}],
     )
-    confirmed = await protected_candidate(
+    user_edited = await legacy_relationship(
+        "relationship_candidate:legacy:user-edited",
+        source_kind="user",
+        actor_source="user",
+        mutation_kind="user_updated",
+    )
+    api_created = await legacy_relationship(
+        "relationship_candidate:legacy:api-created",
+        source_kind="user",
+        actor_source="user",
+        mutation_kind="created",
+    )
+    confirmed = await legacy_relationship(
         "relationship_candidate:legacy:confirmed",
         state="confirmed",
+        source_kind="user",
+        actor_source="user",
+        mutation_kind="verified_candidate_remembered",
     )
-    ignored = await protected_candidate(
+    ignored = await legacy_relationship(
         "relationship_candidate:legacy:ignored",
+        source_kind="user",
         is_active=False,
         validity="stale",
-        evidence=[
-            {"kind": "matching_column_names"},
-            {"kind": "semantic_candidate_ignored"},
-        ],
         actor_source="user",
+        mutation_kind="candidate_ignored",
     )
-    protected_revision_numbers = {
+    original_revisions = {
         entry.id: entry.revision_number
-        for entry in (user_edited, api_created, queued, confirmed, ignored)
+        for entry in (untouched, queued, user_edited, api_created, confirmed, ignored)
     }
     await db_session.commit()
 
-    retained_definition = retained.definition or {}
-    kept_tables = {str(retained_definition[side]["table_or_view"]) for side in ("left", "right")}
-    source.profile_data = {
-        "logical_name": "经营库",
-        "is_current": True,
-        "tables": [
-            {
-                "name": table_name,
-                "columns": [{"name": "store_id", "type": "TEXT"}],
-            }
-            for table_name in sorted(kept_tables)
-        ],
-        "preanalysis": {},
-    }
     await projects_api._persist_preflight_candidates(db_session, source)
     await db_session.commit()
 
-    await db_session.refresh(retained)
-    assert retained.is_active is True
-    assert retained.validity == "unverified"
-    assert retained.confidence == projects_api._relationship_candidate_score(
-        retained_definition["left"],
-        retained_definition["right"],
-    )
-    for entry_id in retired_ids:
-        entry = await db_session.get(SemanticEntry, entry_id)
-        assert entry is not None
+    for entry in (untouched, queued):
+        await db_session.refresh(entry)
         assert entry.is_active is False
         assert entry.validity == "stale"
         assert entry.execution_state == "blocked"
-        assert entry.revision_number == retired_revision_numbers[entry_id] + 1
+        assert entry.revision_number == original_revisions[entry.id] + 1
+        assert entry.evidence[-1]["kind"] == "legacy_name_match_relationship_retired"
         revision = await db_session.get(SemanticEntryRevision, entry.active_revision_id)
         assert revision is not None
-        assert revision.mutation_kind == "candidate_pruned"
+        assert revision.mutation_kind == "legacy_relationship_retired"
         assert revision.snapshot["is_active"] is False
 
-    for entry in (user_edited, api_created, queued, confirmed, ignored):
+    for entry in (user_edited, api_created, confirmed, ignored):
         await db_session.refresh(entry)
-        assert entry.revision_number == protected_revision_numbers[entry.id]
+        assert entry.revision_number == original_revisions[entry.id]
     assert user_edited.is_active is True
     assert api_created.is_active is True
-    assert queued.is_active is True
     assert confirmed.state == "confirmed"
     assert ignored.is_active is False

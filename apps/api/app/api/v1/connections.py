@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import encryptor
 from app.db import get_db
-from app.db.tables import Connection
+from app.db.tables import Connection, ProjectDataSource
 from app.models import APIResponse, ConnectionCreate, ConnectionResponse, ConnectionTest
 from app.services.database import ConnectionTestResult, DatabaseConfig, create_database_manager
 
@@ -19,6 +19,65 @@ router = APIRouter(prefix="/connections", tags=["connections"])
 
 def _stored_extra_options(conn_in: ConnectionCreate) -> dict[str, Any]:
     return conn_in.extra_options.model_dump(exclude_defaults=True, exclude_none=True)
+
+
+def _connection_scope_identity(
+    *,
+    driver: str,
+    host: str | None,
+    port: int | None,
+    username: str | None,
+    database: str | None,
+    extra_options: dict[str, Any] | None,
+) -> tuple[str, str, int | None, str, str, str]:
+    """Identify the database namespace that owns profiled table semantics."""
+
+    options = extra_options if isinstance(extra_options, dict) else {}
+    return (
+        driver.strip().casefold(),
+        str(host or "").strip().casefold(),
+        port,
+        str(username or "").strip(),
+        str(database or "").strip(),
+        str(options.get("schema") or "").strip(),
+    )
+
+
+async def _invalidate_linked_sources_after_scope_change(
+    db: AsyncSession,
+    *,
+    connection_id: UUID,
+) -> None:
+    """Fail closed when a saved connection starts pointing at another namespace."""
+
+    result = await db.execute(
+        select(ProjectDataSource).where(
+            ProjectDataSource.connection_id == connection_id,
+            ProjectDataSource.status != "superseded",
+        )
+    )
+    for source in result.scalars():
+        profile = dict(source.profile_data or {})
+        previous_issues = [
+            dict(item)
+            for item in profile.get("issues") or []
+            if isinstance(item, dict)
+            and item.get("code") != "database_connection_scope_changed"
+        ]
+        profile["is_current"] = False
+        profile["activation_state"] = "pending_confirmation"
+        profile["issues"] = [
+            *previous_issues,
+            {
+                "code": "database_connection_scope_changed",
+                "title": "数据库范围已经变化",
+                "detail": "请重新准备这个数据来源，核对数据表后再继续调查。",
+                "severity": "critical",
+                "automatic": False,
+            },
+        ]
+        source.profile_data = profile
+        source.status = "attached"
 
 
 async def _get_connection_or_404(db: AsyncSession, connection_id: UUID) -> Connection:
@@ -126,6 +185,24 @@ async def update_connection(
     """更新数据库连接"""
     connection = await _get_connection_or_404(db, connection_id)
 
+    previous_scope = _connection_scope_identity(
+        driver=connection.driver,
+        host=connection.host,
+        port=connection.port,
+        username=connection.username,
+        database=connection.database_name,
+        extra_options=connection.extra_options,
+    )
+    stored_options = _stored_extra_options(conn_in)
+    next_scope = _connection_scope_identity(
+        driver=conn_in.driver,
+        host=conn_in.host,
+        port=conn_in.port,
+        username=conn_in.username,
+        database=conn_in.database,
+        extra_options=stored_options,
+    )
+
     if conn_in.is_default and not connection.is_default:
         await _clear_default_connections(db, exclude_id=UUID(str(connection.id)))
 
@@ -136,9 +213,15 @@ async def update_connection(
     connection.username = conn_in.username
     connection.database_name = conn_in.database
     connection.is_default = conn_in.is_default
-    connection.extra_options = _stored_extra_options(conn_in)
+    connection.extra_options = stored_options
     if conn_in.password:
         connection.password_encrypted = encryptor.encrypt(conn_in.password)
+
+    if previous_scope != next_scope:
+        await _invalidate_linked_sources_after_scope_change(
+            db,
+            connection_id=connection.id,
+        )
 
     await db.commit()
     await db.refresh(connection)

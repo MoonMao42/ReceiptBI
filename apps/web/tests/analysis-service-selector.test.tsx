@@ -1,9 +1,11 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { NextIntlClientProvider } from "next-intl";
 import { describe, expect, it, vi } from "vitest";
 import {
   AnalysisServiceSelector,
   getAnalysisServicePresentation,
 } from "@/components/chat/AnalysisServiceSelector";
+import messages from "@/messages/zh.json";
 import type { ModelSummary } from "@/lib/types/api";
 
 const services: ModelSummary[] = [
@@ -44,12 +46,14 @@ describe("AnalysisServiceSelector", () => {
   it("shows business service names and health without provider details", () => {
     const onSelect = vi.fn();
     render(
-      <AnalysisServiceSelector
-        models={services}
-        selectedModelId="service-a"
-        onSelect={onSelect}
-        onManage={vi.fn()}
-      />
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <AnalysisServiceSelector
+          models={services}
+          selectedModelId="service-a"
+          onSelect={onSelect}
+          onManage={vi.fn()}
+        />
+      </NextIntlClientProvider>
     );
 
     fireEvent.click(screen.getByTestId("analysis-service-selector"));
@@ -67,17 +71,19 @@ describe("AnalysisServiceSelector", () => {
 
   it("locks the service after an investigation starts", () => {
     render(
-      <AnalysisServiceSelector
-        models={services}
-        selectedModelId="service-a"
-        onSelect={vi.fn()}
-        onManage={vi.fn()}
-        locked
-      />
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <AnalysisServiceSelector
+          models={services}
+          selectedModelId="service-a"
+          onSelect={vi.fn()}
+          onManage={vi.fn()}
+          locked
+        />
+      </NextIntlClientProvider>
     );
 
     const trigger = screen.getByTestId("analysis-service-selector");
-    expect(trigger).toHaveAccessibleName("本次调查使用分析服务：日常分析");
+    expect(trigger).toHaveAccessibleName("分析服务已固定为日常分析");
     fireEvent.click(trigger);
     expect(screen.queryByRole("listbox", { name: "分析服务" })).not.toBeInTheDocument();
   });

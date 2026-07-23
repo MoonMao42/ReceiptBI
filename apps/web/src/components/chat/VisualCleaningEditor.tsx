@@ -10,6 +10,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
 
 import type {
   DataRow,
@@ -26,32 +27,9 @@ export type VisualCleaningAction =
   | "normalize_currency"
   | "drop_exact_duplicates";
 
-const COLUMN_ACTIONS: Array<{
-  value: Exclude<VisualCleaningAction, "drop_exact_duplicates">;
-  label: string;
-  description: string;
-}> = [
-  {
-    value: "trim_text",
-    label: "去除首尾空格",
-    description: "清理文字前后多余的空格",
-  },
-  {
-    value: "fill_missing",
-    label: "空值填 0",
-    description: "把这一列的空白数值补为 0",
-  },
-  {
-    value: "normalize_datetime",
-    label: "统一日期",
-    description: "整理为统一的日期格式",
-  },
-  {
-    value: "normalize_currency",
-    label: "统一金额",
-    description: "去除金额符号与千分位差异",
-  },
-];
+type VisualCleaningTranslator = ReturnType<
+  typeof useTranslations<"visualCleaning">
+>;
 
 export function buildVisualCleaningOperation(
   action: VisualCleaningAction,
@@ -70,14 +48,6 @@ export function buildVisualCleaningOperation(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
-
-function cleaningErrorMessage(error: unknown, fallback: string): string {
-  if (!isRecord(error) || !isRecord(error.response)) return fallback;
-  const data = error.response.data;
-  if (!isRecord(data) || typeof data.detail !== "string") return fallback;
-  const detail = data.detail.trim();
-  return detail || fallback;
 }
 
 interface SavedVisualCleaningState {
@@ -203,51 +173,58 @@ function operationKey(operation: VisualCleaningOperation): string {
   return `${operation.operation}:${"column" in operation ? operation.column : "all"}`;
 }
 
-function operationLabel(operation: VisualCleaningOperation): string {
+function operationLabel(
+  operation: VisualCleaningOperation,
+  t: VisualCleaningTranslator,
+): string {
   const column = "column" in operation ? `“${operation.column}”` : "";
   switch (operation.operation) {
     case "trim_text":
-      return `${column} 去除首尾空格`;
+      return t("trimLabel", { column });
     case "fill_missing":
-      return `${column} 空值填 0`;
+      return t("fillZeroLabel", { column });
     case "normalize_datetime":
-      return `${column} 统一日期`;
+      return t("unifyDatesLabel", { column });
     case "normalize_currency":
-      return `${column} 统一金额`;
+      return t("unifyAmountsLabel", { column });
     case "drop_exact_duplicates":
-      return "移除完全重复的行";
+      return t("removeDuplicatesLabel");
   }
 }
 
-function readonlyOperationLabel(value: Record<string, unknown>): string {
+function readonlyOperationLabel(
+  value: Record<string, unknown>,
+  t: VisualCleaningTranslator,
+): string {
   const editable = editableSavedOperation(value);
-  if (editable) return operationLabel(editable);
+  if (editable) return operationLabel(editable, t);
   const operation = value.operation;
   if (operation === "fill_missing" && typeof value.column === "string") {
-    return `“${value.column}” 填补空值`;
+    return t("fillNullLabel", { column: `“${value.column}”` });
   }
   if (operation === "select_sheet" && typeof value.sheet === "string") {
-    return `选择工作表“${value.sheet}”`;
+    return t("selectSheetLabel", { sheet: value.sheet });
   }
   if (operation === "select_header" && typeof value.row === "number") {
-    return `第 ${value.row} 行作为表头`;
+    return t("headerRowLabel", { row: value.row });
   }
-  if (operation === "normalize_column_names") return "整理列名";
-  if (operation === "drop_empty") return "移除空白行列";
-  if (operation === "exclude_summary_rows") return "移除汇总行";
-  return "其他整理步骤";
+  if (operation === "normalize_column_names") return t("cleanHeadersLabel");
+  if (operation === "drop_empty") return t("removeEmptyLabel");
+  if (operation === "exclude_summary_rows") return t("removeSummaryLabel");
+  return t("otherStepLabel");
 }
 
 function readonlyRecipeOperations(
   recipeOperations: Record<string, unknown>[],
   manualOperationKeys: Set<string>,
+  t: VisualCleaningTranslator,
 ): ReadonlyCleaningOperation[] {
   const seen = new Set<string>();
   return recipeOperations.flatMap((operation) => {
     const key = rawOperationKey(operation);
     if (!key || manualOperationKeys.has(key) || seen.has(key)) return [];
     seen.add(key);
-    return [{ key, label: readonlyOperationLabel(operation) }];
+    return [{ key, label: readonlyOperationLabel(operation, t) }];
   });
 }
 
@@ -266,13 +243,18 @@ function SampleTable({
   title: string;
   snapshot: VisualCleaningSnapshot;
 }) {
+  const locale = useLocale();
+  const t = useTranslations("visualCleaning");
   const columns = sampleColumns(snapshot);
   return (
     <section className="min-w-0">
       <div className="mb-2 flex items-center justify-between gap-3">
         <h4 className="text-sm font-semibold text-foreground">{title}</h4>
         <span className="text-xs text-muted-foreground">
-          {snapshot.rows.toLocaleString()} 行 · {snapshot.columns} 列
+          {t("summaryCounts", {
+            rows: snapshot.rows.toLocaleString(locale),
+            columns: snapshot.columns,
+          })}
         </span>
       </div>
       <div className="max-h-64 overflow-auto border border-border bg-background">
@@ -301,8 +283,8 @@ function SampleTable({
                       title={String(row[column] ?? "")}
                     >
                       {row[column] === null || row[column] === ""
-                        ? "空"
-                        : String(row[column] ?? "空")}
+                        ? t("emptyCell")
+                        : String(row[column] ?? t("emptyCell"))}
                     </td>
                   ))}
                 </tr>
@@ -311,7 +293,7 @@ function SampleTable({
           </table>
         ) : (
           <div className="px-4 py-8 text-center text-xs text-muted-foreground">
-            没有可预览的样本
+            {t("noSample")}
           </div>
         )}
       </div>
@@ -332,6 +314,36 @@ export function VisualCleaningEditor({
   recipeOperations = [],
   onClose,
 }: VisualCleaningEditorProps) {
+  const locale = useLocale();
+  const t = useTranslations("visualCleaning");
+
+  const COLUMN_ACTIONS: Array<{
+    value: Exclude<VisualCleaningAction, "drop_exact_duplicates">;
+    label: string;
+    description: string;
+  }> = [
+    {
+      value: "trim_text",
+      label: t("trimWhitespace"),
+      description: t("trimWhitespaceDesc"),
+    },
+    {
+      value: "fill_missing",
+      label: t("fillZero"),
+      description: t("fillZeroDesc"),
+    },
+    {
+      value: "normalize_datetime",
+      label: t("unifyDates"),
+      description: t("unifyDatesDesc"),
+    },
+    {
+      value: "normalize_currency",
+      label: t("unifyAmounts"),
+      description: t("unifyAmountsDesc"),
+    },
+  ];
+
   const firstColumn = columns[0] || "";
   const savedState = inspectSavedVisualCleaningOperations(
     source.profile_data.visual_cleaning,
@@ -340,6 +352,7 @@ export function VisualCleaningEditor({
   const readonlyOperations = readonlyRecipeOperations(
     recipeOperations,
     savedState.operationKeys,
+    t,
   );
   const readonlyOperationKeys = new Set(
     readonlyOperations.map((operation) => operation.key),
@@ -400,20 +413,20 @@ export function VisualCleaningEditor({
 
   const addOperation = (action: VisualCleaningAction) => {
     if (hasUnsupportedSavedOperations) {
-      setFeedback("这套整理方法暂时不能在这里修改。");
+      setFeedback(t("lockedHint"));
       return;
     }
     const operation = buildVisualCleaningOperation(action, selectedColumn);
     if (!operation) {
-      setFeedback("请先选择要整理的列。");
+      setFeedback(t("pickColumn"));
       return;
     }
     if (operations.some((item) => operationKey(item) === operationKey(operation))) {
-      setFeedback("这个整理步骤已经添加了。");
+      setFeedback(t("stepAlreadyAdded"));
       return;
     }
     if (readonlyOperationKeys.has(operationKey(operation))) {
-      setFeedback("这一步已在导入时完成。");
+      setFeedback(t("stepDoneAtImport"));
       return;
     }
     changeOperations([...operations, operation]);
@@ -421,14 +434,14 @@ export function VisualCleaningEditor({
 
   const handlePreview = async () => {
     if (hasUnsupportedSavedOperations) {
-      setFeedback("这套整理方法暂时不能在这里修改。");
+      setFeedback(t("lockedHint"));
       return;
     }
     setFeedback(null);
     try {
       await previewSourceCleaning(source.id, operations);
-    } catch (error) {
-      setFeedback(cleaningErrorMessage(error, "暂时无法预览，请重试。"));
+    } catch {
+      setFeedback(t("previewFailed"));
     }
   };
 
@@ -438,17 +451,15 @@ export function VisualCleaningEditor({
 
   const handleApply = async () => {
     if (hasUnsupportedSavedOperations) {
-      setFeedback("这套整理方法暂时不能在这里修改。");
+      setFeedback(t("lockedHint"));
       return;
     }
     setFeedback(null);
     try {
       await applySourceCleaning(source.id, operations);
       onClose();
-    } catch (error) {
-      setFeedback(
-        cleaningErrorMessage(error, "数据可能已经更新，请重新预览后再应用。"),
-      );
+    } catch {
+      setFeedback(t("staleSnapshot"));
     }
   };
 
@@ -464,7 +475,7 @@ export function VisualCleaningEditor({
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-xs font-semibold text-primary">
               <Eraser size={15} />
-              整理数据
+              {t("sectionTitle")}
             </div>
             <h2 id="visual-cleaning-title" className="mt-1 truncate text-xl font-semibold text-foreground">
               {source.name}
@@ -474,7 +485,7 @@ export function VisualCleaningEditor({
             type="button"
             onClick={closeEditor}
             className="p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label="关闭整理数据"
+            aria-label={t("closeEditorAria")}
           >
             <X size={19} />
           </button>
@@ -482,12 +493,12 @@ export function VisualCleaningEditor({
 
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <section>
-            <h3 className="text-sm font-semibold text-foreground">添加整理步骤</h3>
+            <h3 className="text-sm font-semibold text-foreground">{t("addStep")}</h3>
             <div className="mt-3 grid gap-3 md:grid-cols-[minmax(180px,240px)_1fr]">
               <label className="text-xs font-medium text-muted-foreground">
-                选择列
+                {t("selectColumn")}
                 <select
-                  aria-label="选择要整理的列"
+                  aria-label={t("selectColumnAria")}
                   value={selectedColumn}
                   onChange={(event) => setSelectedColumn(event.target.value)}
                   className="mt-1.5 w-full border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none focus:border-primary"
@@ -526,7 +537,7 @@ export function VisualCleaningEditor({
               className="mt-3 inline-flex items-center gap-1.5 border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground hover:border-primary/60 hover:bg-primary/5 disabled:opacity-50"
             >
               <Plus size={13} />
-              移除完全重复行
+              {t("removeDuplicatesButton")}
             </button>
           </section>
 
@@ -535,15 +546,16 @@ export function VisualCleaningEditor({
               role="alert"
               className="mt-4 border border-warning/30 bg-warning/[0.06] px-3 py-2 text-xs text-warning"
             >
-              这套整理方法包含当前无法编辑的步骤，原有设置会继续保留。
+              {t("readonlyNotice")}
             </div>
           )}
 
           <section className="mt-6 border-y border-border py-4">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-foreground">
-                整理步骤 {operations.length + readonlyOperations.length
-                  ? `· ${operations.length + readonlyOperations.length}`
+                {t("stepsSectionTitle")}
+                {operations.length + readonlyOperations.length
+                  ? ` · ${t("stepsSectionCount", { count: operations.length + readonlyOperations.length })}`
                   : ""}
               </h3>
               {canPreview && !preview && (
@@ -558,7 +570,7 @@ export function VisualCleaningEditor({
                   ) : (
                     <ArrowRight size={13} />
                   )}
-                  预览变化
+                  {t("previewChanges")}
                 </button>
               )}
             </div>
@@ -570,7 +582,7 @@ export function VisualCleaningEditor({
                       {String(index + 1).padStart(2, "0")}
                     </span>
                     <span className="min-w-0 flex-1 text-sm text-foreground">
-                      {operationLabel(operation)}
+                      {operationLabel(operation, t)}
                     </span>
                     <button
                       type="button"
@@ -581,7 +593,7 @@ export function VisualCleaningEditor({
                         )
                       }
                       className="p-1.5 text-muted-foreground hover:text-destructive disabled:opacity-50"
-                      aria-label={`删除步骤：${operationLabel(operation)}`}
+                      aria-label={t("removeStepAria", { step: operationLabel(operation, t) })}
                     >
                       <Trash2 size={14} />
                     </button>
@@ -596,7 +608,7 @@ export function VisualCleaningEditor({
                       {operation.label}
                     </span>
                     <span className="shrink-0 text-[11px] text-muted-foreground">
-                      导入时已整理
+                      {t("importedNote")}
                     </span>
                   </li>
                 ))}
@@ -604,27 +616,35 @@ export function VisualCleaningEditor({
             ) : (
               <p className="mt-3 text-xs text-muted-foreground">
                 {hasUnsupportedSavedOperations
-                  ? "原有整理步骤已保留。"
+                  ? t("stepsKept")
                   : initialHadOperations
-                  ? "已移除全部步骤。预览后可确认更新。"
-                  : "选择一列并添加需要的整理方式。"}
+                  ? t("stepsCleared")
+                  : t("stepsPlaceholder")}
               </p>
             )}
           </section>
 
           {preview && (
-            <section className="mt-6" aria-label="整理结果预览">
+            <section className="mt-6" aria-label={t("previewAria")}>
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-semibold text-foreground">变化预览</h3>
+                  <h3 className="text-sm font-semibold text-foreground">{t("previewTitle")}</h3>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {changedCells.toLocaleString()} 个单元格会变化
+                    {t("previewChangedCells", {
+                      count: changedCells.toLocaleString(locale),
+                    })}
                     {preview.before.rows !== preview.after.rows
-                      ? `，行数从 ${preview.before.rows.toLocaleString()} 变为 ${preview.after.rows.toLocaleString()}`
-                      : "，行数不变"}
+                      ? t("previewRowsChange", {
+                          before: preview.before.rows.toLocaleString(locale),
+                          after: preview.after.rows.toLocaleString(locale),
+                        })
+                      : t("previewRowsUnchanged")}
                     {preview.before.columns !== preview.after.columns
-                      ? `，列数从 ${preview.before.columns} 变为 ${preview.after.columns}`
-                      : "，列数不变"}
+                      ? t("previewColumnsChange", {
+                          before: preview.before.columns,
+                          after: preview.after.columns,
+                        })
+                      : t("previewColumnsUnchanged")}
                   </p>
                 </div>
                 {preview.can_apply && (
@@ -639,7 +659,7 @@ export function VisualCleaningEditor({
                     ) : (
                       <Check size={14} />
                     )}
-                    应用整理
+                    {t("applyButton")}
                   </button>
                 )}
               </div>
@@ -650,14 +670,17 @@ export function VisualCleaningEditor({
                       key={change.column}
                       className="bg-success/[0.06] px-2.5 py-1 text-xs text-success"
                     >
-                      {change.column} · {change.changed_count.toLocaleString()} 处
+                      {t("columnChangeLabel", {
+                        column: change.column,
+                        count: change.changed_count.toLocaleString(locale),
+                      })}
                     </span>
                   ))}
                 </div>
               )}
               <div className="mt-4 grid gap-5 xl:grid-cols-2">
-                <SampleTable title="整理前" snapshot={preview.before} />
-                <SampleTable title="整理后" snapshot={preview.after} />
+                <SampleTable title={t("beforeLabel")} snapshot={preview.before} />
+                <SampleTable title={t("afterLabel")} snapshot={preview.after} />
               </div>
             </section>
           )}

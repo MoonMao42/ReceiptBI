@@ -68,6 +68,13 @@ def test_sqlite_value_preflight_profiles_bounded_aggregates_without_raw_sensitiv
 
     assert result.status == "ready"
     assert result.preanalysis["read_only"] is True
+    assert result.preanalysis["summary_code"] == "database_value_preflight"
+    assert result.preanalysis["summary_facts"] == {
+        "profiled_tables": 1,
+        "profiled_columns": 7,
+        "status": "ready",
+        "partial": False,
+    }
     assert result.preanalysis["shape"] == {
         "tables": 1,
         "profiled_tables": 1,
@@ -258,4 +265,108 @@ def test_catalog_budget_is_applied_before_full_schema_materialization(
         "columns_loaded": 3,
         "columns_truncated": True,
         "unread_columns_at_least": 2,
+    }
+
+
+def test_relation_index_lists_all_87_tables_without_expanding_deep_profile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(SIDECAR_ENV, raising=False)
+    database_path = tmp_path / "many-relations.db"
+    with sqlite3.connect(database_path) as conn:
+        for index in range(87):
+            conn.execute(f'CREATE TABLE "table_{index:03d}" (id INTEGER)')
+
+    manager = DatabaseManager(DatabaseConfig(driver="sqlite", database=str(database_path)))
+    result = run_database_value_preflight(
+        manager,
+        budget=DatabaseValuePreflightBudget(
+            max_tables=2,
+            max_relation_index=100,
+            max_columns_per_table=2,
+            max_total_columns=4,
+        ),
+    )
+
+    relation_index = result.preanalysis["relation_index"]
+    assert len(result.catalog) == 2
+    assert relation_index["relations_loaded"] == 87
+    assert relation_index["relations_total"] == 87
+    assert relation_index["relations_total_at_least"] == 87
+    assert relation_index["complete"] is True
+    assert relation_index["truncated"] is False
+    assert result.preanalysis["shape"]["tables"] == 87
+
+
+def test_relation_index_reports_truthful_lower_bound_above_hard_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(SIDECAR_ENV, raising=False)
+    database_path = tmp_path / "relation-index-limit.db"
+    with sqlite3.connect(database_path) as conn:
+        for index in range(6):
+            conn.execute(f'CREATE TABLE "table_{index}" (id INTEGER)')
+
+    manager = DatabaseManager(DatabaseConfig(driver="sqlite", database=str(database_path)))
+    result = run_database_value_preflight(
+        manager,
+        budget=DatabaseValuePreflightBudget(
+            max_tables=2,
+            max_relation_index=4,
+            max_columns_per_table=2,
+            max_total_columns=4,
+        ),
+    )
+
+    relation_index = result.preanalysis["relation_index"]
+    assert [item["name"] for item in relation_index["relations"]] == [
+        "table_0",
+        "table_1",
+        "table_2",
+        "table_3",
+    ]
+    assert relation_index["relations_loaded"] == 4
+    assert relation_index["relations_total"] is None
+    assert relation_index["relations_total_at_least"] == 5
+    assert relation_index["complete"] is False
+    assert relation_index["truncated"] is True
+    assert result.preanalysis["shape"]["tables"] == 5
+    assert result.preanalysis["shape"]["tables_are_lower_bound"] is True
+
+
+def test_relation_index_falls_back_for_legacy_manager_without_new_method() -> None:
+    class LegacyManager:
+        def get_schema_catalog(self):
+            return [
+                {
+                    "name": "orders",
+                    "schema": "legacy",
+                    "kind": "table",
+                    "comment": "订单",
+                    "columns": [{"name": "id", "type": "INTEGER"}],
+                }
+            ]
+
+        def sample_table(self, *_args: Any, **_kwargs: Any):
+            return QueryResult(data=[], rows_count=0)
+
+    result = run_database_value_preflight(LegacyManager())  # type: ignore[arg-type]
+
+    assert result.preanalysis["relation_index"] == {
+        "relations": [
+            {
+                "name": "orders",
+                "schema": "legacy",
+                "kind": "table",
+                "comment": "订单",
+            }
+        ],
+        "relations_loaded": 1,
+        "relations_total": 1,
+        "relations_total_at_least": 1,
+        "complete": True,
+        "truncated": False,
+        "unread_relations_at_least": 0,
     }

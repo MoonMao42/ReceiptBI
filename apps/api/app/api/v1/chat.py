@@ -142,6 +142,13 @@ async def _chat_stream_response(
     project_id: UUID | None = Query(default=None, description="项目 ID"),
     resume_run_id: UUID | None = Query(default=None, description="恢复的调查 ID"),
     correction_id: UUID | None = Query(default=None, description="本次重查必须使用的报告修正"),
+    client_stream_id: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+        description="本次流 ID",
+    ),
     language: str = Query(default="zh", description="语言"),
     context_rounds: int | None = Query(default=None, ge=1, le=20, description="上下文轮数"),
     db: AsyncSession = Depends(get_db),
@@ -205,7 +212,10 @@ async def _chat_stream_response(
                 project_id=str(effective_project_id) if effective_project_id else None,
             ).to_sse()
             return
-        query_key = active_query_registry.start(current_conversation_id)
+        query_key = active_query_registry.start(
+            current_conversation_id,
+            client_stream_id=client_stream_id,
+        )
         stream_attempt_id = uuid4().hex
         accumulator: ChatEventAccumulator | None = None
         assistant_message_persisted = False
@@ -260,6 +270,7 @@ async def _chat_stream_response(
                 conversation_id=current_conversation_id,
                 exclude_message_id=UUID(str(user_message.id)) if user_message else None,
                 stop_checker=active_query_registry.stop_checker(query_key),
+                finalization_guard=active_query_registry.finalization_guard(query_key),
                 resume_run_id=resume_run_id,
                 correction_id=correction_id,
             ):
@@ -282,6 +293,25 @@ async def _chat_stream_response(
                 )
                 accumulator.consume(incomplete_event)
                 yield incomplete_event.to_sse()
+
+            if (
+                accumulator.has_result
+                and not accumulator.has_error
+                and not active_query_registry.begin_finalization(query_key)
+            ):
+                cancelled_event = SSEEvent.error(
+                    "CANCELLED",
+                    t("error.cancelled", language),
+                    error_category="cancelled",
+                    failed_stage="finalization",
+                    conversation_id=str(current_conversation_id),
+                    analysis_run_id=accumulator.metadata.get("analysis_run_id"),
+                    project_id=accumulator.metadata.get("project_id"),
+                    analysis_state="needs_attention",
+                    resumable=bool(accumulator.metadata.get("resumable")),
+                )
+                accumulator.consume(cancelled_event)
+                yield cancelled_event.to_sse()
 
             metadata = accumulator.build_metadata()
             assistant_message = Message(
@@ -516,6 +546,13 @@ async def chat_stream(
     project_id: UUID | None = Query(default=None, description="项目 ID"),
     resume_run_id: UUID | None = Query(default=None, description="恢复的调查 ID"),
     correction_id: UUID | None = Query(default=None, description="本次重查必须使用的报告修正"),
+    client_stream_id: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+        description="本次流 ID",
+    ),
     language: str = Query(default="zh", description="语言"),
     context_rounds: int | None = Query(default=None, ge=1, le=20, description="上下文轮数"),
     db: AsyncSession = Depends(get_db),
@@ -530,6 +567,7 @@ async def chat_stream(
         project_id=project_id,
         resume_run_id=resume_run_id,
         correction_id=correction_id,
+        client_stream_id=client_stream_id,
         language=language,
         context_rounds=context_rounds,
         db=db,
@@ -551,6 +589,7 @@ async def chat_stream_post(
         project_id=request.project_id,
         resume_run_id=request.resume_run_id,
         correction_id=request.correction_id,
+        client_stream_id=request.client_stream_id,
         language=request.language,
         context_rounds=request.context_rounds,
         db=db,
@@ -561,7 +600,10 @@ async def chat_stream_post(
 @router.post("/stop", response_model=APIResponse[dict[str, Any]])
 async def stop_chat(request: ChatStopRequest) -> APIResponse[dict[str, Any]]:
     """停止正在执行的查询."""
-    if active_query_registry.stop(request.conversation_id):
+    if active_query_registry.stop(
+        request.conversation_id,
+        client_stream_id=request.client_stream_id,
+    ):
         return APIResponse.ok(
             data={"stopped": True},
             message=t("stop.sent", "zh"),

@@ -58,6 +58,88 @@ def test_active_query_registry_second_start_never_reactivates_old_query():
     assert registry.stop_checker(second)() is True
 
 
+def test_active_query_registry_late_stream_stop_does_not_stop_new_owner():
+    registry = ActiveQueryRegistry()
+    conversation_id = uuid4()
+
+    first = registry.start(conversation_id, client_stream_id="stream-a")
+    registry.release(first)
+    second = registry.start(conversation_id, client_stream_id="stream-b")
+
+    assert registry.stop(conversation_id, client_stream_id="stream-a") is False
+    assert registry.stop_checker(second)() is False
+    assert registry.stop(conversation_id, client_stream_id="stream-b") is True
+    assert registry.stop_checker(second)() is True
+
+    registry.release(second)
+
+
+def test_active_query_registry_remembers_exact_stop_before_start():
+    registry = ActiveQueryRegistry()
+    conversation_id = uuid4()
+
+    assert registry.stop(conversation_id, client_stream_id="stream-a") is True
+
+    query_key = registry.start(conversation_id, client_stream_id="stream-a")
+
+    assert registry.stop_checker(query_key)() is True
+    registry.release(query_key)
+
+
+def test_active_query_registry_finalization_and_stop_have_one_winner():
+    registry = ActiveQueryRegistry()
+    conversation_id = uuid4()
+    query_key = registry.start(conversation_id, client_stream_id="stream-a")
+
+    assert registry.begin_finalization(query_key) is True
+    assert registry.stop(conversation_id, client_stream_id="stream-a") is False
+    assert registry.stop_checker(query_key)() is False
+    assert registry.begin_finalization(query_key) is True
+
+    registry.release(query_key)
+
+
+@pytest.mark.asyncio
+async def test_stop_route_targets_the_requested_stream(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    conversation_id = uuid4()
+    observed: dict[str, str] = {}
+
+    def _stop(target_conversation_id, client_stream_id=None):
+        observed["conversation_id"] = str(target_conversation_id)
+        observed["client_stream_id"] = str(client_stream_id)
+        return True
+
+    monkeypatch.setattr(chat_api.active_query_registry, "stop", _stop)
+
+    response = await client.post(
+        "/api/v1/chat/stop",
+        json={
+            "conversation_id": str(conversation_id),
+            "client_stream_id": "stream-exact",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["stopped"] is True
+    assert observed == {
+        "conversation_id": str(conversation_id),
+        "client_stream_id": "stream-exact",
+    }
+
+
+@pytest.mark.asyncio
+async def test_stop_route_requires_exact_stream_generation(client: AsyncClient):
+    response = await client.post(
+        "/api/v1/chat/stop",
+        json={"conversation_id": str(uuid4())},
+    )
+
+    assert response.status_code == 422
+
+
 @pytest.mark.asyncio
 async def test_duplicate_resume_route_does_not_stop_the_running_owner(
     client: AsyncClient,

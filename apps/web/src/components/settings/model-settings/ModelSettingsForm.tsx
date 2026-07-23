@@ -8,7 +8,7 @@ import {
   type ModelFormData,
   type ModelPreset,
 } from "@/lib/settings/models";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 
 interface ModelSettingsFormProps {
   editingId: string | null;
@@ -36,51 +36,24 @@ export function ModelSettingsForm({
 }: ModelSettingsFormProps) {
   const t = useTranslations("modelSettings");
   const tc = useTranslations("common");
-  const isChinese = useLocale() === "zh";
-  const copy = isChinese
-    ? {
-        chooseService: "选择服务",
-        chooseServiceHint: "先选常用服务；地址或协议不同的服务可选“其他兼容服务”。",
-        serviceName: "显示名称",
-        serviceNameHint: "例如：日常分析服务",
-        model: "使用的模型",
-        serviceAddress: "服务地址",
-        serviceAddressHint: "官方服务可留空；兼容服务填写完整接口地址。",
-        accessKey: "访问密钥",
-        defaultService: "作为默认分析服务",
-        compatibility: "高级连接选项",
-        compatibilityHint: "仅在服务商要求特殊协议、请求头或连接测试方式时调整。",
-        serviceType: "服务类型",
-        protocol: "接口协议",
-        healthcheck: "连接测试方式",
-        noKey: "这个服务不需要访问密钥",
-        headers: "附加请求头（JSON）",
-        params: "附加请求参数（JSON）",
-        close: "关闭表单",
-      }
-    : {
-        chooseService: "Choose a service",
-        chooseServiceHint:
-          "Start with a common service. Choose Custom gateway when its address or protocol differs.",
-        serviceName: "Display name",
-        serviceNameHint: "e.g. Everyday analysis service",
-        model: "Model to use",
-        serviceAddress: "Service address",
-        serviceAddressHint:
-          "Leave blank for an official endpoint; enter the full endpoint for a compatible service.",
-        accessKey: "Access key",
-        defaultService: "Use as the default analysis service",
-        compatibility: "Advanced connection options",
-        compatibilityHint:
-          "Adjust these only when the service needs a special protocol, request headers, or connection check.",
-        serviceType: "Service type",
-        protocol: "Interface protocol",
-        healthcheck: "Connection check",
-        noKey: "This service does not require an access key",
-        headers: "Additional request headers (JSON)",
-        params: "Additional query parameters (JSON)",
-        close: "Close form",
-      };
+  const providerLabel = (key: string) => {
+    if (key === "openai") return t("presetOpenai");
+    if (key === "deepseek") return t("presetDeepseek");
+    if (key === "anthropic") return t("presetAnthropic");
+    if (key === "ollama") return t("presetOllama");
+    if (key === "custom") return t("presetCustom");
+    return key;
+  };
+  const apiFormatLabel = (value: ModelFormData["api_format"]) => {
+    if (value === "openai_compatible") return t("form.protocolOpenaiCompatible");
+    if (value === "anthropic_native") return t("form.protocolAnthropicNative");
+    if (value === "ollama_local") return t("form.protocolOllamaLocal");
+    return t("form.protocolCustom");
+  };
+  const healthcheckLabel = (value: ModelFormData["healthcheck_mode"]) =>
+    value === "models_list"
+      ? t("form.healthcheckModelList")
+      : t("form.healthcheckTestRequest");
 
   return (
     <form
@@ -93,12 +66,14 @@ export function ModelSettingsForm({
           <h3 className="text-base font-semibold text-foreground">
             {editingId ? t("editModel") : t("addModel")}
           </h3>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">{copy.chooseServiceHint}</p>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            {t("form.chooseServiceHint")}
+          </p>
         </div>
         <button
           type="button"
           onClick={onReset}
-          aria-label={copy.close}
+          aria-label={t("form.close")}
           className="p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <X size={18} />
@@ -107,7 +82,7 @@ export function ModelSettingsForm({
 
       <fieldset className="mt-5">
         <legend className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          {copy.chooseService}
+          {t("form.chooseService")}
         </legend>
         <div className="grid border-l border-t border-border sm:grid-cols-2 lg:grid-cols-5">
           {Object.entries(MODEL_PRESETS).map(([key, preset]) => (
@@ -144,7 +119,7 @@ export function ModelSettingsForm({
       <div className="mt-6 grid gap-5 md:grid-cols-2">
         <div>
           <label className="mb-1.5 block text-sm font-medium text-foreground">
-            {copy.serviceName}
+            {t("form.serviceName")}
           </label>
           <input
             type="text"
@@ -152,13 +127,13 @@ export function ModelSettingsForm({
             onChange={(event) => onChange({ ...formData, name: event.target.value })}
             data-testid="model-name-input"
             className={fieldClassName}
-            placeholder={copy.serviceNameHint}
+            placeholder={t("form.serviceNameHint")}
             required
           />
         </div>
         <div>
           <label className="mb-1.5 block text-sm font-medium text-foreground">
-            {copy.model}
+            {t("form.model")}
           </label>
           <input
             type="text"
@@ -172,7 +147,7 @@ export function ModelSettingsForm({
         </div>
         <div className="md:col-span-2">
           <label className="mb-1.5 block text-sm font-medium text-foreground">
-            {copy.serviceAddress}
+            {t("form.serviceAddress")}
           </label>
           <input
             type="url"
@@ -182,11 +157,13 @@ export function ModelSettingsForm({
             className={fieldClassName}
             placeholder="https://api.example.com/v1"
           />
-          <p className="mt-1.5 text-xs text-muted-foreground">{copy.serviceAddressHint}</p>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            {t("form.serviceAddressHint")}
+          </p>
         </div>
         <div className="md:col-span-2">
           <label className="mb-1.5 block text-sm font-medium text-foreground">
-            {copy.accessKey}{" "}
+            {t("form.accessKey")}{" "}
             {editingId && (
               <span className="font-normal text-muted-foreground">{t("apiKeyEditHint")}</span>
             )}
@@ -208,7 +185,7 @@ export function ModelSettingsForm({
             data-testid="model-default-checkbox"
             className="h-4 w-4 rounded text-primary"
           />
-          {copy.defaultService}
+          {t("form.defaultService")}
         </label>
       </div>
 
@@ -218,9 +195,9 @@ export function ModelSettingsForm({
       >
         <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-3 text-sm text-muted-foreground marker:content-none">
           <span>
-            <span className="font-medium text-foreground">{copy.compatibility}</span>
+            <span className="font-medium text-foreground">{t("form.compatibility")}</span>
             <span className="ml-2 hidden text-xs text-muted-foreground sm:inline">
-              {copy.compatibilityHint}
+              {t("form.compatibilityHint")}
             </span>
           </span>
           <ChevronDown size={16} className="transition-transform group-open:rotate-180" />
@@ -229,7 +206,7 @@ export function ModelSettingsForm({
         <div className="grid gap-5 border-t border-border bg-muted/40 px-4 py-5 md:grid-cols-2">
           <div>
             <label className="mb-1.5 block text-sm font-medium text-foreground">
-              {copy.serviceType}
+              {t("form.serviceType")}
             </label>
             <select
               value={formData.provider}
@@ -239,14 +216,14 @@ export function ModelSettingsForm({
             >
               {Object.keys(MODEL_PRESETS).map((key) => (
                 <option key={key} value={key}>
-                  {key}
+                  {providerLabel(key)}
                 </option>
               ))}
             </select>
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-foreground">
-              {copy.protocol}
+              {t("form.protocol")}
             </label>
             <select
               value={formData.api_format}
@@ -259,18 +236,22 @@ export function ModelSettingsForm({
               data-testid="model-api-format-select"
               className={fieldClassName}
             >
-              <option value="openai_compatible">openai_compatible</option>
-              <option value="anthropic_native">anthropic_native</option>
-              <option value="ollama_local">ollama_local</option>
-              <option value="custom">custom</option>
+              <option value="openai_compatible">
+                {apiFormatLabel("openai_compatible")}
+              </option>
+              <option value="anthropic_native">
+                {apiFormatLabel("anthropic_native")}
+              </option>
+              <option value="ollama_local">{apiFormatLabel("ollama_local")}</option>
+              <option value="custom">{apiFormatLabel("custom")}</option>
             </select>
             <p className="mt-1 text-xs text-muted-foreground">
-              {t("currentFormat")}: {activePreset.api_format}
+              {t("currentFormat")}: {apiFormatLabel(activePreset.api_format)}
             </p>
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-foreground">
-              {copy.healthcheck}
+              {t("form.healthcheck")}
             </label>
             <select
               value={formData.healthcheck_mode}
@@ -283,8 +264,10 @@ export function ModelSettingsForm({
               data-testid="model-healthcheck-mode-select"
               className={fieldClassName}
             >
-              <option value="chat_completion">chat_completion</option>
-              <option value="models_list">models_list</option>
+              <option value="chat_completion">
+                {healthcheckLabel("chat_completion")}
+              </option>
+              <option value="models_list">{healthcheckLabel("models_list")}</option>
             </select>
           </div>
           <label className="flex cursor-pointer items-center gap-2 self-end pb-2 text-sm text-foreground">
@@ -297,11 +280,11 @@ export function ModelSettingsForm({
               data-testid="model-api-key-optional-checkbox"
               className="h-4 w-4 rounded text-primary"
             />
-            {copy.noKey}
+            {t("form.noKey")}
           </label>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-foreground">
-              {copy.headers}
+              {t("form.headers")}
             </label>
             <textarea
               value={formData.headersText}
@@ -312,7 +295,7 @@ export function ModelSettingsForm({
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-foreground">
-              {copy.params}
+              {t("form.params")}
             </label>
             <textarea
               value={formData.queryParamsText}

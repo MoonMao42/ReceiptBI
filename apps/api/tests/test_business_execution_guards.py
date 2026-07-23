@@ -401,6 +401,7 @@ async def test_required_relationship_candidate_can_trial_and_complete_only_after
     definition_hash = "d" * 64
     candidate = {
         "id": "semantic-relationship",
+        "active_revision_id": "semantic-revision",
         "key": relationship_key,
         "value": "订单按 store_id 关联门店",
         "state": "candidate",
@@ -430,6 +431,7 @@ async def test_required_relationship_candidate_can_trial_and_complete_only_after
             "id": "correction-1",
             "source_run_id": "old-run",
             "semantic_entry_id": candidate["id"],
+            "expected_active_revision_id": candidate["active_revision_id"],
             "target_key": relationship_key,
             "text": "订单和门店应按 store_id 关联",
             "correction_type": "relationship_rule",
@@ -544,6 +546,154 @@ async def test_required_relationship_candidate_can_trial_and_complete_only_after
     assert receipt["status"] == "verified"
     assert receipt["application_result_name"] == "joined_orders"
     assert "final_result_revalidated_after_join" in receipt["checks"]
+
+
+@pytest.mark.asyncio
+async def test_ordinary_candidate_is_not_auto_selected_or_post_bound_by_join(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    candidate = {
+        "id": "semantic-candidate",
+        "active_revision_id": "candidate-revision",
+        "key": "relationship:orders:stores",
+        "value": "订单按 store_id 关联门店",
+        "state": "candidate",
+        "validity": "unverified",
+        "execution_state": "needs_validation",
+        "definition_hash": "a" * 64,
+        "definition": {
+            "version": 1,
+            "left": {"table_or_view": "orders", "column": "store_id"},
+            "right": {"table_or_view": "stores", "column": "store_id"},
+            "normalization": "identifier",
+            "cardinality": "many_to_one",
+            "default_join": "left",
+            "minimum_left_match_rate": 0.8,
+            "maximum_expansion_ratio": 1.2,
+        },
+        "resolved_sources": {
+            "left": {"source_id": "warehouse", "table_or_view": "orders"},
+            "right": {"source_id": "warehouse", "table_or_view": "stores"},
+        },
+        "evidence": [],
+    }
+    context = ProjectRuntimeContext(
+        name="普通候选关系门禁",
+        candidate_relationships=[candidate],
+    )
+    steps = [
+        (
+            "join_results",
+            {
+                "left_result": "orders",
+                "right_result": "stores",
+                "result_name": "implicit_join",
+                "purpose": "尝试自动采用候选关系",
+            },
+        ),
+        (
+            "join_results",
+            {
+                "left_result": "orders",
+                "right_result": "stores",
+                "result_name": "ad_hoc_join",
+                "purpose": "只按当前结果显式核对字段",
+                "left_key": "store_id",
+                "right_key": "store_id",
+                "normalization": "identifier",
+            },
+        ),
+        (
+            "validate_result",
+            {
+                "result_name": "ad_hoc_join",
+                "purpose": "核对当前关联结果",
+                "key_columns": ["order_id"],
+                "numeric_columns": ["amount"],
+            },
+        ),
+    ]
+    calls = 0
+
+    def model(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        if calls <= len(steps):
+            tool_name, arguments = steps[calls - 1]
+            return ModelResponse(parts=[ToolCallPart(tool_name, arguments)])
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    info.output_tools[0].name,
+                    {
+                        "status": "completed",
+                        "title": "当前结果关联",
+                        "summary": "已按当前结果中的明确字段完成关联和核对。",
+                        "primary_result": "ad_hoc_join",
+                    },
+                )
+            ]
+        )
+
+    monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", False)
+    monkeypatch.setattr(
+        analyst_runtime,
+        "build_pydantic_model",
+        lambda _config: FunctionModel(model),
+    )
+    runtime = PydanticAnalystRuntime(model_config={}, project_context=context)
+    runtime.deps.dataframes.update(
+        {
+            "orders": [{"order_id": "O-1", "store_id": "S-1", "amount": 32}],
+            "stores": [{"store_id": "S-1", "store_name": "一店"}],
+        }
+    )
+    runtime.deps.result_metadata.update(
+        {
+            "orders": {
+                "query_scope": "full",
+                "result_completeness": "complete",
+                "source_refs": [
+                    {
+                        "source_id": "warehouse",
+                        "table_or_view": "orders",
+                        "query_scope": "full",
+                    }
+                ],
+            },
+            "stores": {
+                "query_scope": "full",
+                "result_completeness": "complete",
+                "source_refs": [
+                    {
+                        "source_id": "warehouse",
+                        "table_or_view": "stores",
+                        "query_scope": "full",
+                    }
+                ],
+            },
+        }
+    )
+
+    with capture_run_messages() as messages:
+        _ = [event async for event in runtime.execute(query="关联订单与门店")]
+
+    joins = [item for item in runtime.deps.tool_history if item.get("kind") == "join"]
+    assert [item["result_name"] for item in joins] == ["ad_hoc_join"]
+    assert joins[0]["candidate_relationship_key"] is None
+    assert joins[0]["definition_hash"] is None
+    relationship_evidence = next(
+        item for item in runtime.deps.tool_history if item.get("kind") == "relationship_validation"
+    )
+    assert relationship_evidence["semantic_entry_id"] is None
+    assert relationship_evidence["active_revision_id"] is None
+    assert relationship_evidence["definition_hash"] is None
+    assert any(
+        getattr(part, "part_kind", None) == "retry-prompt"
+        and "不能自动采用待核对关系" in str(getattr(part, "content", ""))
+        for message in messages
+        for part in message.parts
+    )
 
 
 @pytest.mark.asyncio

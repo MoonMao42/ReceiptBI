@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -23,6 +24,7 @@ import {
 import type {
   ConnectionSummary,
   PreflightIssue,
+  PreflightReport,
   ProjectDataSource,
   SemanticEntry,
 } from "@/lib/types/api";
@@ -34,18 +36,12 @@ interface DataWorkspacePanelProps {
   open: boolean;
   onClose: () => void;
   onConfigureConnection: () => void;
+  preprocessingEnabled?: boolean;
+  settingsLoaded?: boolean;
+  onOpenPreprocessingSettings?: () => void;
   connections?: ConnectionSummary[];
   view?: "sources" | "understanding";
   onViewChange?: (view: "sources" | "understanding") => void;
-}
-
-function sourceStatus(status: string) {
-  if (status === "ready") return { label: "可以分析", tone: "text-success bg-success/[0.06]" };
-  if (status === "needs_confirmation") {
-    return { label: "有口径待确认", tone: "text-warning bg-warning/[0.06]" };
-  }
-  if (status === "error") return { label: "需要处理", tone: "text-destructive bg-destructive/[0.06]" };
-  return { label: "正在整理", tone: "text-muted-foreground bg-muted" };
 }
 
 function inferredColumnNames(schema: Record<string, unknown> | undefined): string[] {
@@ -60,81 +56,29 @@ function inferredColumnNames(schema: Record<string, unknown> | undefined): strin
     .filter(Boolean);
 }
 
-const FIELD_WORDS: Record<string, string> = {
-  unit: "单位",
-  price: "价格",
-  cost: "成本",
-  total: "总计",
-  amount: "金额",
-  revenue: "收入",
-  sales: "销售额",
-  order: "订单",
-  id: "编号",
-  date: "日期",
-  time: "时间",
-  store: "门店",
-  shop: "门店",
-  channel: "渠道",
-  category: "品类",
-  product: "商品",
-  quantity: "数量",
-  qty: "数量",
-  discount: "折扣",
-  refund: "退款",
-  profit: "利润",
-};
-
-function businessFieldLabel(value: string): string | null {
-  const normalized = value.trim().replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
-  const parts = normalized.split(/[_\s.-]+/).filter(Boolean);
-  if (!parts.length || !parts.every((part) => FIELD_WORDS[part])) return null;
-  return parts.map((part) => FIELD_WORDS[part]).join("");
-}
-
-function businessIssueTitle(issue: PreflightIssue): string {
-  const fieldMatch = issue.title.match(/^([^“”]+?)\s*中有\s*(\d+)\s*个(.+)$/);
-  if (fieldMatch) {
-    const [, rawField, count, description] = fieldMatch;
-    const label = businessFieldLabel(rawField);
-    if (label) return `${label}有 ${count} 个${description}`;
-    if (issue.code === "possible_outliers") return `发现 ${count} 个明显偏离的数值`;
-    if (issue.code === "invalid_currency_values") return `发现 ${count} 个无法识别的金额`;
-    if (issue.code === "invalid_date_values") return `发现 ${count} 个无法识别的日期`;
-  }
-  const duplicateKeyMatch = issue.title.match(/^(.+?)\s+有\s+(\d+)\s+条重复出现$/);
-  if (duplicateKeyMatch && issue.code === "duplicate_business_keys") {
-    const [, rawField, count] = duplicateKeyMatch;
-    const label = businessFieldLabel(rawField);
-    return label
-      ? `${label}有 ${count} 条重复出现`
-      : `发现 ${count} 条可能重复的业务编号`;
-  }
-  return issue.title;
-}
-
-function businessColumnSummary(values: unknown): string | null {
-  if (!Array.isArray(values) || !values.length) return null;
-  const known = Array.from(
-    new Set(
-      values
-        .map((value) => businessFieldLabel(String(value)))
-        .filter((value): value is string => Boolean(value))
-    )
-  );
-  const hiddenCount = values.length - known.length;
-  return [known.join("、"), hiddenCount > 0 ? `另有 ${hiddenCount} 项` : ""]
-    .filter(Boolean)
-    .join("，");
-}
-
-function knowledgeKindLabel(kind: SemanticEntry["entry_type"]): string {
-  if (kind === "metric") return "指标口径";
-  if (kind === "dimension") return "数据粒度";
-  if (kind === "relationship") return "数据关联";
-  if (kind === "cleaning_rule") return "整理方式";
-  if (kind === "verified_query") return "已验证方法";
-  return "业务口径";
-}
+const FIELD_WORD_KEYS = [
+  "unit",
+  "price",
+  "cost",
+  "total",
+  "amount",
+  "revenue",
+  "sales",
+  "order",
+  "id",
+  "date",
+  "time",
+  "store",
+  "shop",
+  "channel",
+  "category",
+  "product",
+  "quantity",
+  "qty",
+  "discount",
+  "refund",
+  "profit",
+];
 
 function isBusinessFacingKnowledge(entry: SemanticEntry): boolean {
   if (entry.entry_type === "verified_query") return false;
@@ -154,127 +98,393 @@ export function getPendingUnderstandingCount(knowledge: SemanticEntry[]): number
   return visibleKnowledge.filter((entry) => entry.state === "candidate").length;
 }
 
-function knowledgeDisplayValue(entry: SemanticEntry): string {
-  if (entry.entry_type === "relationship" && entry.state === "candidate") {
-    return "发现两份数据可能可以关联；第一次使用前会检查匹配率和重复扩张。";
-  }
-  return entry.value.replace(/\b[a-zA-Z][a-zA-Z0-9_.-]*\b/g, (token) => {
-    const lastPart = token.split(".").at(-1) || token;
-    const businessLabel = businessFieldLabel(lastPart);
-    if (businessLabel) return businessLabel;
-    return token.includes("_") || token.includes(".") || /[a-z][A-Z]/.test(token)
-      ? "相关字段"
-      : token;
-  });
-}
-
-function revisionTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "时间待确认";
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(date);
-}
-
-function UnderstandingMap({
-  sources,
-  knowledgeCount,
-  relationshipCount,
-}: {
-  sources: ProjectDataSource[];
-  knowledgeCount: number;
-  relationshipCount: number;
-}) {
-  const firstSource = sources[0];
-  const secondSource = sources[1];
-
-  if (!firstSource) {
-    return (
-      <button
-        type="button"
-        className="flex min-h-40 w-full items-center justify-center border border-dashed border-border bg-background/70 px-6 text-center text-xs leading-5 text-muted-foreground"
-      >
-        加入数据后，这里会展示 ReceiptBI 理解到的来源、关联和业务口径。
-      </button>
-    );
-  }
-
-  return (
-    <div className="overflow-x-auto border border-border bg-background/70">
-      <div className="relative h-[220px] min-w-[590px]" aria-label="项目数据理解关系图">
-        <svg
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 h-full w-full text-primary/45"
-          viewBox="0 0 590 220"
-          preserveAspectRatio="none"
-        >
-          <path
-            d="M 180 72 C 226 72, 224 142, 270 142"
-            fill="none"
-            stroke="currentColor"
-            strokeDasharray="6 6"
-            strokeLinecap="round"
-            strokeWidth="1.5"
-          />
-          {secondSource && (
-            <path
-              d="M 420 72 C 374 72, 376 142, 330 142"
-              fill="none"
-              stroke="currentColor"
-              strokeDasharray="6 6"
-              strokeLinecap="round"
-              strokeWidth="1.5"
-            />
-          )}
-        </svg>
-
-        {[firstSource, secondSource]
-          .filter((source): source is ProjectDataSource => Boolean(source))
-          .map((source, index) => (
-          <div
-            key={`${source.id}-${index}`}
-            className={cn(
-              "absolute top-7 w-[160px] border border-primary/20 bg-card px-3.5 py-3",
-              index === 0 ? "left-5" : "right-5"
-            )}
-          >
-            <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.12em] text-muted-foreground">
-              {source.kind === "connection" ? <Database size={13} /> : <FileSpreadsheet size={13} />}
-              数据来源
-            </div>
-            <div className="mt-2 truncate text-sm font-semibold text-foreground">{source.name}</div>
-            <div className="mt-1 text-[11px] text-success">可以分析</div>
-          </div>
-          ))}
-
-        <div className="absolute bottom-6 left-1/2 w-[180px] -translate-x-1/2 border border-success/40 bg-success/[0.06] px-4 py-3">
-          <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.12em] text-success">
-            <BookOpenText size={13} />
-            项目理解
-          </div>
-          <div className="mt-2 text-sm font-semibold text-foreground">{knowledgeCount} 条项目理解</div>
-          <div className="mt-1 text-[11px] text-muted-foreground">
-            {relationshipCount ? `${relationshipCount} 条关联路径` : "关联会在用到时验证"}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function DataWorkspacePanel({
   open,
   onClose,
   onConfigureConnection,
+  preprocessingEnabled = true,
+  settingsLoaded = true,
   connections,
   view,
   onViewChange,
 }: DataWorkspacePanelProps) {
+  const locale = useLocale();
+  const t = useTranslations("dataWorkspace");
+  const fieldWordsRaw = t("fieldWords").split(",").map((s) => s.trim());
+  const FIELD_WORDS: Record<string, string> = Object.fromEntries(
+    FIELD_WORD_KEYS.map((key, i) => [key, fieldWordsRaw[i] || key]),
+  );
+
+  const sourceStatus = (status: string) => {
+    if (status === "ready") return { label: t("statusReady"), tone: "text-success bg-success/[0.06]" };
+    if (status === "needs_confirmation") {
+      return { label: t("statusNeedsReview"), tone: "text-warning bg-warning/[0.06]" };
+    }
+    if (status === "error") return { label: t("statusNeedsAttention"), tone: "text-destructive bg-destructive/[0.06]" };
+    if (status === "attached") return { label: t("statusAwaitingPreparation"), tone: "text-muted-foreground bg-muted" };
+    return { label: t("statusSanitizing"), tone: "text-muted-foreground bg-muted" };
+  };
+
+  const businessFieldLabel = (value: string): string | null => {
+    const normalized = value.trim().replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+    const parts = normalized.split(/[_\s.-]+/).filter(Boolean);
+    if (!parts.length || !parts.every((part) => FIELD_WORDS[part])) return null;
+    return parts.map((part) => FIELD_WORDS[part]).join("");
+  };
+
+  const businessIssueTitle = (issue: PreflightIssue): string => {
+    const fieldMatch = issue.title.match(/^([^“”]+?)\s*中有\s*(\d+)\s*个(.+)$/);
+    const duplicateKeyMatch = issue.title.match(/^(.+?)\s+有\s+(\d+)\s+条重复出现$/);
+    const rawField = fieldMatch?.[1] || duplicateKeyMatch?.[1];
+    const field = rawField
+      ? businessFieldLabel(rawField) || rawField.trim().slice(0, 80)
+      : null;
+    const countValue =
+      typeof issue.count === "number" && Number.isFinite(issue.count)
+        ? issue.count
+        : Number(fieldMatch?.[2] || duplicateKeyMatch?.[2] || 0);
+    const count = Math.max(0, countValue).toLocaleString(locale);
+
+    switch (issue.code) {
+      case "possible_outliers":
+        return field
+          ? t("issueOutliersField", { field, count })
+          : t("issueOutliers", { count });
+      case "invalid_currency_values":
+        return field
+          ? t("issueAmountsField", { field, count })
+          : t("issueAmounts", { count });
+      case "invalid_date_values":
+        return field
+          ? t("issueDatesField", { field, count })
+          : t("issueDates", { count });
+      case "duplicate_business_keys":
+        return field
+          ? t("issueDuplicates", { label: field, count })
+          : t("issueDuplicateKeys", { count });
+      case "header_offset":
+        return t("issueHeaderOffset", {
+          row: (Math.max(0, countValue) + 1).toLocaleString(locale),
+        });
+      case "empty_regions":
+        return t("issueEmptyRegions");
+      case "summary_rows":
+        return t("issueSummaryRows", { count });
+      case "duplicate_rows":
+      case "drop_exact_duplicates":
+        return t("issueDuplicateRows", { count });
+      case "missing_values":
+        return t("issueMissingValues", { count });
+      case "recipe_replay_drift":
+      case "recipe_input_changed":
+        return t("issueRecipeChanged", { count });
+      case "recipe_replayed":
+        return t("issueRecipeReplayed", { count });
+      case "imported_recipe_candidate":
+        return t("issueImportedRecipe");
+      case "schema_drift":
+      case "replacement_pending":
+        return t("issueSchemaChanged");
+      case "replacement_accepted":
+        return t("issueReplacementAccepted");
+      case "sanitation_reverted":
+        return t("issueSanitationReverted");
+      case "confirmed_knowledge_reused":
+        return t("issueKnowledgeReused");
+      case "database_table_budget_reached":
+      case "database_catalog_column_budget_reached":
+      case "database_table_column_budget_reached":
+      case "database_column_budget_reached":
+        return t("issueDatabaseScopeLimited");
+      case "database_sample_byte_budget_reached":
+      case "database_preflight_time_budget_reached":
+      case "database_preflight_byte_budget_reached":
+        return t("issueDatabaseSampleLimited");
+      case "database_tables_partially_unavailable":
+      case "no_profileable_columns":
+        return t("issueDatabasePartial");
+      case "database_catalog_unavailable":
+      case "database_preflight_failed":
+      case "preflight_failed":
+        return t("issuePreparationFailed");
+      default:
+        if (issue.severity === "critical") return t("issueUnknownFailed");
+        return issue.automatic
+          ? t("issueUnknownPrepared")
+          : t("issueUnknownReview");
+    }
+  };
+
+  const businessPreflightSummary = (
+    report: PreflightReport | undefined,
+    source: ProjectDataSource,
+  ): string => {
+    const asRecord = (value: unknown): Record<string, unknown> =>
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+    const asCount = (value: unknown): number | null =>
+      typeof value === "number" && Number.isFinite(value) && value >= 0
+        ? value
+        : null;
+    const format = (value: number) => value.toLocaleString(locale);
+    const snapshot = asRecord(report?.source_snapshot);
+    const sourcePreanalysis = asRecord(source.profile_data.preanalysis);
+    const preanalysis = asRecord(snapshot.preanalysis);
+    const effectivePreanalysis = Object.keys(preanalysis).length
+      ? preanalysis
+      : sourcePreanalysis;
+    const summaryCode = String(
+      snapshot.summary_code ?? effectivePreanalysis.summary_code ?? "",
+    );
+    const summaryFacts = asRecord(
+      snapshot.summary_facts ?? effectivePreanalysis.summary_facts,
+    );
+    const shape = asRecord(effectivePreanalysis.shape);
+    const legacySummary = String(
+      report?.summary ?? source.profile_data.summary ?? "",
+    ).trim();
+    const legacySummaryMatchesLocale =
+      !summaryCode &&
+      legacySummary.length > 0 &&
+      (locale.startsWith("zh")
+        ? /[\u3400-\u9fff]/u.test(legacySummary)
+        : !/[\u3400-\u9fff]/u.test(legacySummary));
+
+    if (source.kind === "connection") {
+      const tables = asCount(summaryFacts.profiled_tables ?? shape.profiled_tables);
+      const columns = asCount(summaryFacts.profiled_columns ?? shape.columns);
+      const relationIndex = asRecord(
+        source.profile_data.relation_index ?? sourcePreanalysis.relation_index,
+      );
+      const indexedRelations = Array.isArray(relationIndex.relations)
+        ? relationIndex.relations
+        : [];
+      const catalogTables =
+        asCount(relationIndex.relations_total) ??
+        asCount(relationIndex.relations_total_at_least) ??
+        asCount(relationIndex.relations_loaded) ??
+        (indexedRelations.length ? indexedRelations.length : null);
+      const catalogComplete =
+        relationIndex.complete !== false && relationIndex.truncated !== true;
+      const profileStatus = String(
+        summaryFacts.status ??
+          snapshot.profile_status ??
+          source.profile_data.profile_status ??
+          report?.status ??
+          source.status,
+      );
+      if (profileStatus === "error" || source.status === "error") {
+        return t("preflightDatabaseFailed");
+      }
+      if (
+        catalogTables !== null &&
+        tables !== null &&
+        catalogTables !== tables
+      ) {
+        return t(
+          catalogComplete
+            ? "preflightDatabaseCatalogReady"
+            : "preflightDatabaseCatalogPartial",
+          {
+            tables: format(catalogTables),
+            checked: format(tables),
+          },
+        );
+      }
+      if (tables !== null && columns !== null) {
+        const parts = [
+          t("preflightDatabaseReady", {
+            tables: format(tables),
+            columns: format(columns),
+          }),
+        ];
+        if (summaryFacts.partial === true || profileStatus === "partial") {
+          parts.push(t("preflightDatabasePartial"));
+        }
+        return parts.join(" · ");
+      }
+      if (legacySummaryMatchesLocale) return legacySummary;
+      return t("preflightDatabasePrepared");
+    }
+
+    if (source.status === "error" || report?.status === "error") {
+      return t("preflightFileFailed");
+    }
+    const rows = asCount(summaryFacts.rows ?? snapshot.ready_rows ?? shape.rows);
+    const columns = asCount(
+      summaryFacts.columns ?? snapshot.ready_columns ?? shape.columns,
+    );
+    if (rows === null || columns === null) {
+      if (legacySummaryMatchesLocale) return legacySummary;
+      return source.status === "attached"
+        ? t("sourceAwaitingPreparation")
+        : t("preflightFilePrepared");
+    }
+    const parts = [
+      t("preflightFileReady", {
+        rows: format(rows),
+        columns: format(columns),
+      }),
+    ];
+    const automaticCount =
+      asCount(summaryFacts.automatic_issue_count) ??
+      report?.issues.filter((issue) => issue.automatic).length ??
+      0;
+    const ambiguityCount =
+      asCount(summaryFacts.ambiguity_count) ?? report?.ambiguities.length ?? 0;
+    if (automaticCount > 0) {
+      parts.push(t("preflightAutomaticHandled", { count: format(automaticCount) }));
+    }
+    if (ambiguityCount > 0) {
+      parts.push(t("preflightDefinitionsPending", { count: format(ambiguityCount) }));
+    }
+    const recipeSteps = asCount(summaryFacts.recipe_step_count) ?? 0;
+    const recipeDrift = asCount(summaryFacts.recipe_drift_count) ?? 0;
+    if (recipeDrift > 0) {
+      parts.push(t("preflightRecipeChanged"));
+    } else if (recipeSteps > 0) {
+      parts.push(t("preflightRecipeChecked"));
+    }
+    return parts.join(" · ");
+  };
+
+  const dedupeBusinessIssues = (issues: PreflightIssue[]): PreflightIssue[] => {
+    const unique = new Map<string, PreflightIssue>();
+    for (const issue of issues) {
+      const label = businessIssueTitle(issue);
+      const previous = unique.get(label);
+      if (!previous || (previous.automatic && !issue.automatic)) {
+        unique.set(label, issue);
+      }
+    }
+    return Array.from(unique.values());
+  };
+
+  const businessColumnSummary = (values: unknown): string | null => {
+    if (!Array.isArray(values) || !values.length) return null;
+    const known = Array.from(
+      new Set(
+        values
+          .map((value) => businessFieldLabel(String(value)))
+          .filter((value): value is string => Boolean(value))
+      )
+    );
+    const hiddenCount = values.length - known.length;
+    const knownLabel = new Intl.ListFormat(locale, {
+      style: "short",
+      type: "conjunction",
+    }).format(known);
+    return hiddenCount > 0
+      ? t("columnSummaryWithHidden", {
+          known: knownLabel,
+          hidden: t("hiddenItems", { count: hiddenCount }),
+        })
+      : knownLabel;
+  };
+
+  const knowledgeKindLabel = (kind: SemanticEntry["entry_type"]): string => {
+    if (kind === "metric") return t("knowledgeMetric");
+    if (kind === "dimension") return t("knowledgeGranularity");
+    if (kind === "relationship") return t("knowledgeRelation");
+    if (kind === "cleaning_rule") return t("knowledgeMethod");
+    if (kind === "verified_query") return t("knowledgeVerified");
+    return t("knowledgeDefinition");
+  };
+
+  const knowledgeDisplayValue = (entry: SemanticEntry): string => {
+    if (entry.entry_type === "relationship" && entry.state === "candidate") {
+      return t("relationPreviewHint");
+    }
+    return entry.value.replace(/\b[a-zA-Z][a-zA-Z0-9_.-]*\b/g, (token) => {
+      const lastPart = token.split(".").at(-1) || token;
+      const businessLabel = businessFieldLabel(lastPart);
+      if (businessLabel) return businessLabel;
+      return token.includes("_") || token.includes(".") || /[a-z][A-Z]/.test(token)
+        ? t("relatedFields")
+        : token;
+    });
+  };
+
+  const revisionTime = (value: string): string => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return t("timeUnconfirmed");
+    return new Intl.DateTimeFormat(locale, {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(date);
+  };
+
+  const UnderstandingMap = ({
+    sources,
+    knowledgeCount,
+    relationshipCount,
+  }: {
+    sources: ProjectDataSource[];
+    knowledgeCount: number;
+    relationshipCount: number;
+  }) => {
+    if (!sources.length) {
+      return (
+        <button
+          type="button"
+          className="flex min-h-40 w-full items-center justify-center border border-dashed border-border bg-background/70 px-6 text-center text-xs leading-5 text-muted-foreground"
+        >
+          {t("emptyUnderstandingHint")}
+        </button>
+      );
+    }
+
+    return (
+      <div
+        className="border border-border bg-background/70 p-3"
+        aria-label={t("understandingMapAria")}
+      >
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {sources.map((source) => (
+            <div
+              key={source.id}
+              data-source-overview-node={source.id}
+              className="min-w-0 border border-primary/20 bg-card px-3.5 py-3"
+            >
+              <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.12em] text-muted-foreground">
+                {source.kind === "connection" ? (
+                  <Database size={13} />
+                ) : (
+                  <FileSpreadsheet size={13} />
+                )}
+                {t("dataSourcesTab")}
+              </div>
+              <div className="mt-2 truncate text-sm font-semibold text-foreground">
+                {source.name}
+              </div>
+              <div className="mt-1 text-[11px] text-success">{t("readyBadge")}</div>
+            </div>
+          ))}
+        </div>
+
+        <div
+          data-understanding-summary
+          className="mt-3 flex flex-wrap items-center justify-between gap-3 border border-success/30 bg-success/[0.05] px-4 py-3"
+        >
+          <div className="flex items-center gap-2 text-xs font-semibold text-success">
+            <BookOpenText size={14} />
+            {t("knowledgeCount", { count: knowledgeCount })}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {relationshipCount
+              ? t("relationsCount", { count: relationshipCount })
+              : t("relationsOnDemand")}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [localView, setLocalView] = useState<"sources" | "understanding">("sources");
@@ -359,7 +569,7 @@ export function DataWorkspacePanel({
       setSourceFeedback({
         sourceId,
         tone: "error",
-        message: "这次处理没有完成，请查看上方提示后重试。",
+        message: t("sanitationFailed"),
       });
     }
   };
@@ -389,7 +599,7 @@ export function DataWorkspacePanel({
       setPendingRecipeRestore(null);
       setRecipeHistoryFeedback({
         recipeId,
-        message: "已恢复这套整理方法；点击“重新应用”后才会用于当前分析。",
+        message: t("sanitationRestored"),
       });
     } catch {
       setPendingRecipeRestore(null);
@@ -404,7 +614,7 @@ export function DataWorkspacePanel({
       setTemplateFeedback({
         templateId,
         tone: "error",
-        message: "没有完成试运行，当前分析数据保持不变。",
+        message: t("sanitationNotDryRun"),
       });
     }
   };
@@ -416,13 +626,13 @@ export function DataWorkspacePanel({
       setTemplateFeedback({
         templateId,
         tone: "success",
-        message: "已用于这份数据；原文件没有改变。",
+        message: t("sanitationAppliedNoTouch"),
       });
     } catch {
       setTemplateFeedback({
         templateId,
         tone: "error",
-        message: "数据刚刚发生了变化，请重新查看后再应用。",
+        message: t("sanitationChanged"),
       });
     }
   };
@@ -467,13 +677,13 @@ export function DataWorkspacePanel({
         <div className="flex items-start justify-between px-5 py-5">
           <div>
             <h2 className="text-lg font-semibold text-foreground">
-              {activeView === "sources" ? "数据" : "数据理解"}
+              {activeView === "sources" ? t("panelTitleSources") : t("panelTitleUnderstanding")}
             </h2>
           </div>
           <button
             onClick={onClose}
             className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label="关闭数据工作区"
+            aria-label={t("closeWorkspaceAria")}
           >
             <X size={18} />
           </button>
@@ -492,7 +702,7 @@ export function DataWorkspacePanel({
                 : "border-transparent text-muted-foreground hover:text-foreground"
             )}
           >
-            数据来源
+            {t("dataSourcesTab")}
           </button>
           <button
             type="button"
@@ -506,7 +716,7 @@ export function DataWorkspacePanel({
                 : "border-transparent text-muted-foreground hover:text-foreground"
             )}
           >
-            数据理解
+            {t("understandingTab")}
             {pendingKnowledgeCount > 0 && (
               <span className="ml-1.5 bg-warning/15 px-1.5 py-0.5 text-[10px] text-warning">
                 {pendingKnowledgeCount}
@@ -552,10 +762,10 @@ export function DataWorkspacePanel({
               <UploadCloud className="text-primary" size={24} />
             )}
             <span className="mt-3 text-sm font-semibold text-foreground">
-              {isUploading ? "正在识别、整理和检查…" : "加入一份文件"}
+              {t("uploadHint", { state: isUploading ? t("uploadBusy") : t("uploadIdle") })}
             </span>
             <span className="mt-1 text-xs text-muted-foreground">
-              Excel、CSV、Parquet、JSON
+              {t("uploadFormats")}
             </span>
           </button>
 
@@ -571,14 +781,14 @@ export function DataWorkspacePanel({
               <div className="mb-3 flex items-end justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">
-                    项目记住的整理方法
+                    {t("recipeSectionTitle")}
                   </h3>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    先看变化，确认后才会用于当前分析。
+                    {t("recipeSectionDesc")}
                   </p>
                 </div>
                 <span className="shrink-0 text-xs text-muted-foreground">
-                  {recipeTemplates.length} 套
+                  {t("recipeCount", { count: recipeTemplates.length })}
                 </span>
               </div>
               <div className="space-y-2">
@@ -614,7 +824,7 @@ export function DataWorkspacePanel({
                             {template.name}
                           </div>
                           <div className="mt-1 text-xs text-muted-foreground">
-                            保留了 {template.revision_count} 次调整记录
+                            {t("recipeRevisions", { count: template.revision_count })}
                           </div>
                         </div>
                       </div>
@@ -623,7 +833,7 @@ export function DataWorkspacePanel({
                         <div className="mt-3 space-y-2 border-t border-border pt-3">
                           {compatibleSources.length > 1 && (
                             <label className="block text-xs text-muted-foreground">
-                              用于哪份数据
+                              {t("recipeForData")}
                               <select
                                 value={selectedSourceId}
                                 onChange={(event) =>
@@ -656,7 +866,7 @@ export function DataWorkspacePanel({
                               ) : (
                                 <RefreshCw size={13} />
                               )}
-                              看看会有什么变化
+                              {t("recipePreviewButton")}
                             </button>
                           )}
 
@@ -664,27 +874,42 @@ export function DataWorkspacePanel({
                             <div className="border border-success/30 bg-success/[0.05] px-3 py-3">
                               <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                  <div className="text-[11px] text-muted-foreground">整理前</div>
+                                  <div className="text-[11px] text-muted-foreground">{t("recipePreviewBefore")}</div>
                                   <div className="mt-1 text-sm font-semibold text-foreground">
-                                    {visiblePreview.before.rows.toLocaleString()} 行 · {visiblePreview.before.columns} 项内容
+                                    {t("recipePreviewRows", {
+                                      count: visiblePreview.before.rows.toLocaleString(locale),
+                                      items: visiblePreview.before.columns,
+                                    })}
                                   </div>
                                 </div>
                                 <div>
-                                  <div className="text-[11px] text-muted-foreground">整理后</div>
+                                  <div className="text-[11px] text-muted-foreground">{t("recipePreviewAfter")}</div>
                                   <div className="mt-1 text-sm font-semibold text-foreground">
-                                    {visiblePreview.after.rows.toLocaleString()} 行 · {visiblePreview.after.columns} 项内容
+                                    {t("recipePreviewRows", {
+                                      count: visiblePreview.after.rows.toLocaleString(locale),
+                                      items: visiblePreview.after.columns,
+                                    })}
                                   </div>
                                 </div>
                               </div>
                               <div className="mt-2 text-xs leading-5 text-muted-foreground">
                                 {rowsRemoved > 0
-                                  ? `会排除 ${rowsRemoved.toLocaleString()} 行不进入分析。`
-                                  : "记录数量不会改变。"}
+                                  ? t("recipeExcludeRows", { count: rowsRemoved.toLocaleString(locale) })
+                                  : t("recipeKeepRows")}
                                 {columnsChanged !== 0
-                                  ? ` 内容项会${columnsChanged > 0 ? "增加" : "减少"} ${Math.abs(columnsChanged)} 项。`
-                                  : " 内容项数量不会改变。"}
+                                  ? t("recipeColumnChange", {
+                                      verb: t(
+                                        columnsChanged > 0
+                                          ? "recipeColumnAdd"
+                                          : "recipeColumnRemove"
+                                      ),
+                                      count: Math.abs(columnsChanged),
+                                    })
+                                  : t("recipeKeepColumns")}
                               </div>
-                              {visiblePreview.issues.slice(0, 4).map((issue, index) => (
+                              {dedupeBusinessIssues(visiblePreview.issues)
+                                .slice(0, 4)
+                                .map((issue, index) => (
                                 <div
                                   key={`${issue.code}-${index}`}
                                   className="mt-1.5 flex items-start gap-1.5 text-xs leading-5 text-muted-foreground"
@@ -695,9 +920,9 @@ export function DataWorkspacePanel({
                                   />
                                   {businessIssueTitle(issue)}
                                 </div>
-                              ))}
+                                ))}
                               <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
-                                当前分析数据尚未改变。
+                                {t("recipeNoChange")}
                               </p>
                               <div className="mt-3 flex flex-wrap gap-3">
                                 {visiblePreview.can_apply && (
@@ -712,8 +937,8 @@ export function DataWorkspacePanel({
                                     ) : (
                                       <Check size={13} />
                                     )}
-                                    使用这套方法
-                                  </button>
+{t("recipeApply")}
+                                    </button>
                                 )}
                                 <button
                                   type="button"
@@ -723,7 +948,7 @@ export function DataWorkspacePanel({
                                   }
                                   className="text-xs font-semibold text-muted-foreground hover:text-primary disabled:opacity-50"
                                 >
-                                  重新查看
+                                  {t("recipeRecheck")}
                                 </button>
                               </div>
                             </div>
@@ -731,7 +956,7 @@ export function DataWorkspacePanel({
                         </div>
                       ) : (
                         <p className="mt-3 border-t border-border pt-3 text-xs leading-5 text-muted-foreground">
-                          当前没有需要绑定的数据；这套方法仍会留在项目中供新数据复用。
+                          {t("recipeNoData")}
                         </p>
                       )}
 
@@ -757,8 +982,8 @@ export function DataWorkspacePanel({
 
           <section>
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-foreground">项目里的数据</h3>
-              <span className="text-xs text-muted-foreground">{sources.length} 项</span>
+              <h3 className="text-sm font-semibold text-foreground">{t("projectSourcesTitle")}</h3>
+              <span className="text-xs text-muted-foreground">{t("projectSourcesCount", { count: sources.length })}</span>
             </div>
             <div className="space-y-2">
               {sources.map((source) => {
@@ -783,7 +1008,7 @@ export function DataWorkspacePanel({
                       replacement.replaces_source_id || replacement.active_source_id
                     ));
                 const status = isPendingReplacement
-                  ? { label: "等你选择", tone: "text-warning bg-warning/[0.06]" }
+                  ? { label: t("sourceStatusWaiting"), tone: "text-warning bg-warning/[0.06]" }
                   : sourceStatus(source.status);
                 const needsAction =
                   source.status === "needs_confirmation" || source.status === "error";
@@ -791,6 +1016,9 @@ export function DataWorkspacePanel({
                 const removing = removingSourceId === source.id;
                 const busy = sourceAction?.sourceId === source.id;
                 const drift = report?.source_snapshot?.schema_drift;
+                const displayedIssues = report
+                  ? dedupeBusinessIssues(report.issues)
+                  : [];
                 return (
                   <div key={source.id} className="border border-border bg-background px-3 py-3">
                     <div className="flex items-start gap-3">
@@ -806,7 +1034,7 @@ export function DataWorkspacePanel({
                           {source.name}
                         </div>
                         <div className="mt-1 text-xs leading-5 text-muted-foreground">
-                          {report?.summary || source.profile_data.summary || "正在了解这份数据"}
+                          {businessPreflightSummary(report, source)}
                         </div>
                       </div>
                       <span className={cn("shrink-0 px-2 py-1 text-[11px]", status.tone)}>
@@ -814,7 +1042,7 @@ export function DataWorkspacePanel({
                       </span>
                     </div>
 
-                    {source.kind === "file" && (
+                    {source.kind === "file" && source.status !== "attached" && (
                       <div className="mt-3 border-t border-border pt-3">
                         <button
                           type="button"
@@ -822,7 +1050,7 @@ export function DataWorkspacePanel({
                           className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
                         >
                           <FileSpreadsheet size={13} />
-                          整理数据
+                          {t("sourceCleanButton")}
                         </button>
                       </div>
                     )}
@@ -831,12 +1059,12 @@ export function DataWorkspacePanel({
                       <div className="mt-3 border-t border-border pt-3">
                         <button
                           type="button"
-                          disabled={busy}
+                          disabled={busy || !settingsLoaded || !preprocessingEnabled}
                           onClick={() =>
                             void performSourceAction(
                               source.id,
                               () => profileSource(source.id),
-                              "已经了解完这份数据。"
+                              t("sourcePrepared")
                             )
                           }
                           className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline disabled:opacity-50"
@@ -846,8 +1074,15 @@ export function DataWorkspacePanel({
                           ) : (
                             <Database size={13} />
                           )}
-                          了解这份数据
+                          {!settingsLoaded
+                            ? t("preprocessingLoading")
+                            : t("sourcePrepareButton")}
                         </button>
+                        {settingsLoaded && !preprocessingEnabled && (
+                          <div className="mt-2 border-l-2 border-warning/50 bg-warning/[0.06] px-3 py-2 text-xs leading-5 text-muted-foreground">
+                            <p>{t("preprocessingDisabled")}</p>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -856,7 +1091,7 @@ export function DataWorkspacePanel({
                         {isPendingReplacement && (
                           <div className="mb-3 border border-warning/30 bg-warning/[0.06] px-3 py-3 text-xs leading-5 text-warning">
                             <p>
-                              这版数据还没有用于分析。看过变化后，请明确选择以后使用哪一版。
+                              {t("sourceNotInUse")}
                             </p>
                             <div className="mt-2 flex flex-wrap gap-2">
                               <button
@@ -866,7 +1101,7 @@ export function DataWorkspacePanel({
                                   void performSourceAction(
                                     source.id,
                                     () => acceptReplacement(source.id),
-                                    "已接受这版；今后的调查会使用它，上个可信版本仍保留在历史中。"
+                                    t("sourceAcceptConfirm")
                                   )
                                 }
                                 className="inline-flex items-center gap-1.5 bg-primary px-3 py-2 font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
@@ -876,7 +1111,7 @@ export function DataWorkspacePanel({
                                 ) : (
                                   <Check size={13} />
                                 )}
-                                接受这版并用于以后
+                                {t("sourceAcceptButton")}
                               </button>
                               <button
                                 type="button"
@@ -885,7 +1120,7 @@ export function DataWorkspacePanel({
                                   void performSourceAction(
                                     source.id,
                                     () => keepTrustedSource(source.id),
-                                    "已继续使用上个可信版本；这版不会用于调查。"
+                                    t("sourceRejectConfirm")
                                   )
                                 }
                                 className="inline-flex items-center gap-1.5 border border-warning/40 bg-background px-3 py-2 font-semibold text-foreground hover:border-primary hover:text-primary disabled:opacity-50"
@@ -895,7 +1130,7 @@ export function DataWorkspacePanel({
                                 ) : (
                                   <RotateCcw size={13} />
                                 )}
-                                继续使用上个可信版本
+                                {t("sourceRejectButton")}
                               </button>
                             </div>
                           </div>
@@ -913,17 +1148,17 @@ export function DataWorkspacePanel({
                               size={13}
                               className={cn("transition-transform", detailsOpen && "rotate-180")}
                             />
-                            查看变化
+                            {t("sourceReviewChanges")}
                           </button>
                           <button
                             type="button"
                             disabled={busy}
-                            title="只会重新检查和整理，不会启用这版数据"
+                            title={t("sourceReviewOnly")}
                             onClick={() =>
                               void performSourceAction(
                                 source.id,
                                 () => reorganizeSource(source.id),
-                                "已重新尝试整理；如果变化仍会影响结论，仍需你明确选择。"
+                                t("sourceRetryHint")
                               )
                             }
                             className="inline-flex items-center gap-1 text-muted-foreground hover:text-primary disabled:opacity-50"
@@ -933,7 +1168,7 @@ export function DataWorkspacePanel({
                             ) : (
                               <RefreshCw size={12} />
                             )}
-                            重新整理
+                            {t("sourceRetryButton")}
                           </button>
                           <button
                             type="button"
@@ -942,14 +1177,14 @@ export function DataWorkspacePanel({
                             className="inline-flex items-center gap-1 text-muted-foreground hover:text-destructive disabled:opacity-50"
                           >
                             <Trash2 size={12} />
-                            移除来源
+                            {t("sourceRemoveButton")}
                           </button>
                         </div>
 
                         {removing && (
                           <div className="mt-3 border border-destructive/30 bg-destructive/[0.06] px-3 py-3 text-xs leading-5 text-destructive">
                             <p>
-                              只会移除 ReceiptBI 保存的工作副本和项目记录；原始文件或数据库不会改变。
+                              {t("sourceRemoveHint")}
                             </p>
                             <div className="mt-2 flex gap-3">
                               <button
@@ -962,7 +1197,7 @@ export function DataWorkspacePanel({
                                       await removeSource(source.id);
                                       setRemovingSourceId(null);
                                     },
-                                    "来源已移除。"
+                                    t("sourceRemoved")
                                   )
                                 }
                                 className="inline-flex items-center gap-1 font-semibold text-destructive hover:underline disabled:opacity-50"
@@ -970,7 +1205,7 @@ export function DataWorkspacePanel({
                                 {busy && sourceAction?.kind === "remove" && (
                                   <Loader2 size={12} className="animate-spin" />
                                 )}
-                                确认移除
+                                {t("sourceRemoveConfirm")}
                               </button>
                               <button
                                 type="button"
@@ -978,7 +1213,7 @@ export function DataWorkspacePanel({
                                 onClick={() => setRemovingSourceId(null)}
                                 className="text-muted-foreground hover:text-foreground disabled:opacity-50"
                               >
-                                取消
+                                {t("sourceRemoveCancel")}
                               </button>
                             </div>
                           </div>
@@ -1000,14 +1235,16 @@ export function DataWorkspacePanel({
                       </div>
                     )}
 
-                    {report?.issues?.length && (!needsAction || detailsOpen) ? (
+                    {displayedIssues.length && (!needsAction || detailsOpen) ? (
                       <div className="mt-3 border-t border-border pt-2">
                         {needsAction && (
                           <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                            {source.status === "error" ? "没有完成的原因" : "这次发现的变化"}
+                            {source.status === "error" ? t("sourceDriftTitleError") : t("sourceDriftTitleChanges")}
                           </div>
                         )}
-                        {report.issues.slice(0, needsAction ? 8 : 3).map((issue, issueIndex) => (
+                        {displayedIssues
+                          .slice(0, needsAction ? 8 : 3)
+                          .map((issue, issueIndex) => (
                           <div
                             key={`${issue.code}-${issue.title}-${issueIndex}`}
                             className={cn(
@@ -1028,39 +1265,35 @@ export function DataWorkspacePanel({
                             )}
                             {businessIssueTitle(issue)}
                           </div>
-                        ))}
+                          ))}
                         {drift && detailsOpen && (
                           <div className="mt-2 border-l-2 border-primary/40 bg-muted/40 px-2.5 py-2 text-xs leading-5 text-muted-foreground">
                             {businessColumnSummary(drift.added_columns) ? (
-                              <div>新增内容：{businessColumnSummary(drift.added_columns)}</div>
+                              <div>{t("sourceDriftAdded")}{businessColumnSummary(drift.added_columns)}</div>
                             ) : null}
                             {businessColumnSummary(drift.removed_columns) ? (
-                              <div>本期缺少：{businessColumnSummary(drift.removed_columns)}</div>
+                              <div>{t("sourceDriftMissing")}{businessColumnSummary(drift.removed_columns)}</div>
                             ) : null}
                             {drift.type_changes?.length ? (
                               <div>
-                                记录方式变化：
+                                {t("sourceDriftRenamed")}
                                 {businessColumnSummary(
                                   drift.type_changes.map((item) => item.column).filter(Boolean)
-                                ) || `${drift.type_changes.length} 项`}
+                                ) || t("sourceDriftChangesCount", { count: drift.type_changes.length })}
                               </div>
                             ) : null}
                           </div>
                         )}
-                        {report.ambiguities?.length ? (
+                        {report?.ambiguities?.length ? (
                           <div className="mt-2 flex items-start gap-2 border-l-2 border-warning/50 bg-warning/[0.06] px-2.5 py-2 text-xs leading-5 text-warning">
                             <AlertCircle size={13} className="mt-0.5 shrink-0 text-warning" />
                             <span>
-                              发现 {report.ambiguities.length} 项可能影响结论的业务口径；
-                              只有当前调查用到时才会请你确认。
+                              {t("sourceAmbiguitiesHint", {
+                                count: report?.ambiguities.length ?? 0,
+                              })}
                             </span>
                           </div>
                         ) : null}
-                        {needsAction && detailsOpen && (
-                          <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
-                            ReceiptBI 只在工作副本中整理；原始文件和数据库保持不变。
-                          </p>
-                        )}
                       </div>
                     ) : null}
 
@@ -1074,7 +1307,7 @@ export function DataWorkspacePanel({
                             className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground hover:text-primary"
                           >
                             <History size={12} />
-                            整理方法记录
+                            {t("recipeHistoryTitle")}
                             {recipeRevisions.length ? ` ${recipeRevisions.length}` : ""}
                             <ChevronDown
                               size={12}
@@ -1091,7 +1324,7 @@ export function DataWorkspacePanel({
                               void performSourceAction(
                                 source.id,
                                 () => reorganizeSource(source.id),
-                                "已按当前整理方法重新检查；影响结论的变化仍会等你确认。"
+                                t("recipeReapplied")
                               )
                             }
                             className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary disabled:opacity-50"
@@ -1101,7 +1334,7 @@ export function DataWorkspacePanel({
                             ) : (
                               <RefreshCw size={12} />
                             )}
-                            重新应用
+                            {t("recipeReapplyButton")}
                           </button>
                         </div>
 
@@ -1113,7 +1346,7 @@ export function DataWorkspacePanel({
                                 className="flex items-center gap-2 py-2 text-xs text-muted-foreground"
                               >
                                 <Loader2 size={13} className="animate-spin" />
-                                正在读取整理方法记录…
+                                {t("recipeHistoryLoading")}
                               </div>
                             )}
                             {!recipeRevisionLoadingByRecipe[recipe.id] &&
@@ -1132,7 +1365,7 @@ export function DataWorkspacePanel({
                                     }
                                     className="mt-1 font-semibold hover:underline"
                                   >
-                                    重试
+                                    {t("recipeHistoryRetry")}
                                   </button>
                                 </div>
                               )}
@@ -1154,10 +1387,10 @@ export function DataWorkspacePanel({
                                     const summary =
                                       revision.reason ||
                                       (revision.state === "candidate"
-                                        ? "这版整理方法仍在等待核对。"
+                                        ? t("recipeStatusPending")
                                         : revision.state === "reverted"
-                                          ? "恢复了一套较早的整理方法。"
-                                          : "这版整理方法已经核对。");
+                                          ? t("recipeStatusReverted")
+                                          : t("recipeStatusVerified"));
                                     return (
                                       <li key={revision.id} className="relative">
                                         <span
@@ -1174,8 +1407,8 @@ export function DataWorkspacePanel({
                                           {current && (
                                             <span className="bg-success/[0.06] px-1.5 py-0.5 text-success">
                                               {recipe.status === "reverted"
-                                                ? "待重新应用"
-                                                : "当前方法"}
+                                                ? t("recipeBadgePending")
+                                                : t("recipeBadgeCurrent")}
                                             </span>
                                           )}
                                         </div>
@@ -1186,7 +1419,9 @@ export function DataWorkspacePanel({
                                           <button
                                             type="button"
                                             disabled={Boolean(restoring)}
-                                            aria-label={`恢复 ${formattedTime} 的整理方法`}
+                                            aria-label={t("restoreRecipeAria", {
+                                              time: formattedTime,
+                                            })}
                                             onClick={() =>
                                               setPendingRecipeRestore({
                                                 recipeId: recipe.id,
@@ -1195,13 +1430,13 @@ export function DataWorkspacePanel({
                                             }
                                             className="mt-1 text-[11px] font-semibold text-primary hover:underline disabled:opacity-50"
                                           >
-                                            恢复这一版
+                                            {t("recipeRestoreButton")}
                                           </button>
                                         )}
                                         {pending && (
                                           <div className="mt-2 border border-warning/30 bg-warning/[0.06] px-2.5 py-2 text-[11px] leading-5 text-warning">
                                             <p>
-                                              恢复后不会立刻改变当前分析；你还需要点击“重新应用”。
+                                              {t("recipeRestoreHint")}
                                             </p>
                                             <div className="mt-1.5 flex gap-3">
                                               <button
@@ -1216,8 +1451,8 @@ export function DataWorkspacePanel({
                                                 className="font-semibold text-primary hover:underline disabled:opacity-50"
                                               >
                                                 {restoring === revision.id
-                                                  ? "正在恢复…"
-                                                  : "确认恢复"}
+                                                  ? t("recipeRestoring")
+                                                  : t("recipeRestoreConfirm")}
                                               </button>
                                               <button
                                                 type="button"
@@ -1227,7 +1462,7 @@ export function DataWorkspacePanel({
                                                 }
                                                 className="text-muted-foreground hover:text-foreground disabled:opacity-50"
                                               >
-                                                取消
+                                                {t("recipeRestoreCancel")}
                                               </button>
                                             </div>
                                           </div>
@@ -1254,7 +1489,7 @@ export function DataWorkspacePanel({
               })}
               {!sources.length && (
                 <div className="border border-border px-4 py-5 text-center text-xs leading-5 text-muted-foreground">
-                  暂无数据
+                  {t("emptyData")}
                 </div>
               )}
             </div>
@@ -1262,7 +1497,7 @@ export function DataWorkspacePanel({
 
           {connections?.some((item) => !attachedConnections.has(item.id)) && (
             <section>
-              <h3 className="mb-3 text-sm font-semibold text-foreground">连接现有数据库</h3>
+              <h3 className="mb-3 text-sm font-semibold text-foreground">{t("connectExistingDb")}</h3>
               <div className="space-y-2">
                 {connections
                   .filter((connection) => !attachedConnections.has(connection.id))
@@ -1291,9 +1526,9 @@ export function DataWorkspacePanel({
 
           {!connections?.length && (
             <section className="border border-border bg-background px-4 py-4">
-              <h3 className="text-sm font-semibold text-foreground">需要查询数据库？</h3>
+              <h3 className="text-sm font-semibold text-foreground">{t("connectDbPrompt")}</h3>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                先建立一个只读连接，再回到这里把它加入当前项目。
+                {t("connectDbHint")}
               </p>
               <button
                 type="button"
@@ -1301,7 +1536,7 @@ export function DataWorkspacePanel({
                 className="mt-3 inline-flex items-center gap-2 bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"
               >
                 <Plus size={14} />
-                连接数据库
+                {t("connectDbButton")}
               </button>
             </section>
           )}
@@ -1313,10 +1548,10 @@ export function DataWorkspacePanel({
                   <BookOpenText size={18} className="mt-0.5 shrink-0 text-primary" />
                   <div>
                     <h3 className="text-sm font-semibold text-foreground">
-                      项目理解
+                      {t("understandingTitle")}
                     </h3>
                     <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                      当前项目的口径与关联。
+                      {t("understandingDesc")}
                     </p>
                   </div>
                 </div>
@@ -1325,19 +1560,19 @@ export function DataWorkspacePanel({
                     <div className="text-lg font-semibold text-foreground">
                       {knowledgeTotal}
                     </div>
-                    <div className="text-[10px] text-muted-foreground">全部</div>
+                    <div className="text-[10px] text-muted-foreground">{t("understandingFilterAll")}</div>
                   </div>
                   <div>
                     <div className="text-lg font-semibold text-foreground">
                       {pendingKnowledgeCount}
                     </div>
-                    <div className="text-[10px] text-muted-foreground">待核对</div>
+                    <div className="text-[10px] text-muted-foreground">{t("understandingFilterPending")}</div>
                   </div>
                   <div>
                     <div className="text-lg font-semibold text-foreground">
                       {relationshipKnowledgeCount}
                     </div>
-                    <div className="text-[10px] text-muted-foreground">关联</div>
+                    <div className="text-[10px] text-muted-foreground">{t("understandingFilterRelations")}</div>
                   </div>
                 </div>
                 {currentProjectId && (
@@ -1345,21 +1580,18 @@ export function DataWorkspacePanel({
                     href={`/projects/${currentProjectId}/understanding`}
                     className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-primary hover:underline"
                   >
-                    查看全部
+                    {t("understandingViewAll")}
                     <ArrowRight size={13} />
                   </Link>
                 )}
               </section>
 
               <section>
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-foreground">关系概览</h3>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      来源、关联和口径都在当前项目内维护。
-                    </p>
-                  </div>
-                  <span className="text-[11px] text-muted-foreground">横向滑动查看</span>
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-foreground">{t("relationsTitle")}</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t("relationsDesc")}
+                  </p>
                 </div>
                 <UnderstandingMap
                   sources={sources}
@@ -1368,10 +1600,10 @@ export function DataWorkspacePanel({
                 />
               </section>
 
-              <section className="space-y-3" aria-label="项目理解预览">
+              <section className="space-y-3" aria-label={t("understandingPreviewAria")}>
                 <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold text-foreground">最近内容</h3>
-                  <span className="text-[11px] text-muted-foreground">最多显示 8 条</span>
+                  <h3 className="text-sm font-semibold text-foreground">{t("recentTitle")}</h3>
+                  <span className="text-[11px] text-muted-foreground">{t("recentHint")}</span>
                 </div>
 
                 {displayedKnowledge.map((entry) => (
@@ -1385,12 +1617,12 @@ export function DataWorkspacePanel({
                       </div>
                       <span className="shrink-0 text-[10px] text-muted-foreground">
                         {entry.validity === "stale"
-                          ? "未采用"
+                          ? t("ruleStatusIgnored")
                           : entry.state === "locked"
-                            ? "已锁定"
+                            ? t("ruleStatusLocked")
                             : entry.state === "confirmed"
-                              ? "已记住"
-                              : "待核对"}
+                              ? t("ruleStatusMemorized")
+                              : t("ruleStatusPending")}
                       </span>
                     </div>
                     <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-foreground">
@@ -1403,7 +1635,7 @@ export function DataWorkspacePanel({
                   <div className="border-y border-border px-4 py-6 text-center">
                     <BookOpenText size={20} className="mx-auto text-primary" />
                     <div className="mt-2 text-sm font-medium text-foreground">
-                      暂无项目理解
+                      {t("noUnderstanding")}
                     </div>
                   </div>
                 )}
@@ -1413,7 +1645,7 @@ export function DataWorkspacePanel({
                     href={`/projects/${currentProjectId}/understanding`}
                     className="inline-flex w-full items-center justify-center gap-2 bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
                   >
-                    管理项目理解
+                    {t("manageUnderstanding")}
                     <ArrowRight size={14} />
                   </Link>
                 )}

@@ -118,6 +118,8 @@ class AppSettings(Base, TimestampMixin):
     python_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     diagnostics_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     auto_repair_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    preprocessing_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    self_analysis_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class Project(Base, UUIDMixin, TimestampMixin):
@@ -136,7 +138,16 @@ class Project(Base, UUIDMixin, TimestampMixin):
     semantic_entries: Mapped[list["SemanticEntry"]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
+    semantic_scope_nodes: Mapped[list["SemanticScopeNode"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
     semantic_revisions: Mapped[list["SemanticEntryRevision"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
+    semantic_validation_jobs: Mapped[list["SemanticValidationJob"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
+    semantic_inventory_jobs: Mapped[list["SemanticInventoryJob"]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
     reports: Mapped[list["ReportDocument"]] = relationship(
@@ -166,6 +177,9 @@ class ProjectDataSource(Base, UUIDMixin, TimestampMixin):
 
     project: Mapped["Project"] = relationship(back_populates="data_sources")
     connection: Mapped["Connection | None"] = relationship()
+    semantic_inventory_jobs: Mapped[list["SemanticInventoryJob"]] = relationship(
+        back_populates="source", cascade="all, delete-orphan"
+    )
 
 
 class PreflightReportRecord(Base, UUIDMixin, TimestampMixin):
@@ -257,6 +271,64 @@ class SanitationRecipeRevisionRecord(Base, UUIDMixin):
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, index=True)
 
 
+class SemanticScopeNode(Base, UUIDMixin, TimestampMixin):
+    """One direct node in the governed project -> source -> table hierarchy."""
+
+    __tablename__ = "semantic_scope_nodes"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "stable_key",
+            name="uq_semantic_scope_project_stable_key",
+        ),
+        CheckConstraint(
+            "kind IN ('project', 'source', 'table', 'context', 'period')",
+            name="ck_semantic_scope_kind",
+        ),
+        CheckConstraint(
+            "(kind = 'project' AND parent_id IS NULL) OR "
+            "(kind != 'project' AND parent_id IS NOT NULL)",
+            name="ck_semantic_scope_parent_shape",
+        ),
+        CheckConstraint(
+            "kind != 'table' OR "
+            "(source_logical_name IS NOT NULL AND table_or_view IS NOT NULL)",
+            name="ck_semantic_scope_table_binding",
+        ),
+    )
+
+    project_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    parent_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("semantic_scope_nodes.id", ondelete="CASCADE"),
+        index=True,
+    )
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    stable_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    business_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    source_logical_name: Mapped[str | None] = mapped_column(String(255))
+    table_or_view: Mapped[str | None] = mapped_column(String(255))
+    context_facts: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+
+    project: Mapped["Project"] = relationship(back_populates="semantic_scope_nodes")
+    parent: Mapped["SemanticScopeNode | None"] = relationship(
+        remote_side="SemanticScopeNode.id",
+        back_populates="children",
+    )
+    children: Mapped[list["SemanticScopeNode"]] = relationship(
+        back_populates="parent",
+        cascade="all, delete-orphan",
+    )
+    semantic_entries: Mapped[list["SemanticEntry"]] = relationship(back_populates="scope")
+
+
 class SemanticEntry(Base, UUIDMixin, TimestampMixin):
     """Three-level project knowledge: candidate, confirmed or locked."""
 
@@ -265,6 +337,11 @@ class SemanticEntry(Base, UUIDMixin, TimestampMixin):
 
     project_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    scope_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("semantic_scope_nodes.id", ondelete="SET NULL"),
+        index=True,
     )
     key: Mapped[str] = mapped_column(String(160), nullable=False)
     value: Mapped[str] = mapped_column(Text, nullable=False)
@@ -283,8 +360,12 @@ class SemanticEntry(Base, UUIDMixin, TimestampMixin):
     # Semantic revisions are immutable, so a successfully written pointer cannot dangle
     # unless the whole project is removed.
     active_revision_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), index=True)
+    recommendation_batch_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), index=True
+    )
 
     project: Mapped["Project"] = relationship(back_populates="semantic_entries")
+    scope: Mapped["SemanticScopeNode | None"] = relationship(back_populates="semantic_entries")
 
 
 class SemanticEntryRevision(Base, UUIDMixin):
@@ -326,6 +407,204 @@ class SemanticEntryRevision(Base, UUIDMixin):
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, index=True)
 
     project: Mapped["Project"] = relationship(back_populates="semantic_revisions")
+
+
+class SemanticValidationJob(Base, UUIDMixin, TimestampMixin):
+    """Durable, model-free validation of exact semantic revision heads."""
+
+    __tablename__ = "semantic_validation_jobs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'running', 'completed', 'failed')",
+            name="ck_semantic_validation_job_status",
+        ),
+    )
+
+    project_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    requested_by: Mapped[str] = mapped_column(String(30), default="user")
+    reason: Mapped[str | None] = mapped_column(Text)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    project: Mapped["Project"] = relationship(back_populates="semantic_validation_jobs")
+    items: Mapped[list["SemanticValidationJobItem"]] = relationship(
+        back_populates="job",
+        cascade="all, delete-orphan",
+        order_by="SemanticValidationJobItem.created_at",
+    )
+
+
+class SemanticValidationJobItem(Base, UUIDMixin, TimestampMixin):
+    """One immutable validation target plus its terminal machine-readable result."""
+
+    __tablename__ = "semantic_validation_job_items"
+    __table_args__ = (
+        UniqueConstraint(
+            "job_id",
+            "semantic_entry_id",
+            name="uq_semantic_validation_job_entry",
+        ),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'verified', 'blocked', 'failed')",
+            name="ck_semantic_validation_item_status",
+        ),
+    )
+
+    job_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("semantic_validation_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    semantic_entry_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("semantic_entries.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    semantic_revision_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("semantic_entry_revisions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    definition_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    code: Mapped[str | None] = mapped_column(String(80))
+    facts: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    job: Mapped["SemanticValidationJob"] = relationship(back_populates="items")
+
+
+class SemanticInventoryJob(Base, UUIDMixin, TimestampMixin):
+    """Durable user-requested profiling and semantic recommendation work."""
+
+    __tablename__ = "semantic_inventory_jobs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'running', 'completed', "
+            "'completed_with_errors', 'cancelled', 'failed')",
+            name="ck_semantic_inventory_job_status",
+        ),
+        CheckConstraint(
+            "depth IN ('structure', 'sampled')",
+            name="ck_semantic_inventory_job_depth",
+        ),
+        CheckConstraint(
+            "locale IN ('zh', 'en')",
+            name="ck_semantic_inventory_job_locale",
+        ),
+    )
+
+    project_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("project_data_sources.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(30), default="queued", index=True)
+    depth: Mapped[str] = mapped_column(String(20), nullable=False)
+    locale: Mapped[str] = mapped_column(String(5), nullable=False)
+    model_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("models.id", ondelete="SET NULL"), index=True
+    )
+    tables: Mapped[list[str]] = mapped_column(JSON, default=list)
+    relation_index_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    selection_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    lease_owner: Mapped[str | None] = mapped_column(String(160))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    project: Mapped["Project"] = relationship(back_populates="semantic_inventory_jobs")
+    source: Mapped["ProjectDataSource"] = relationship(
+        back_populates="semantic_inventory_jobs"
+    )
+    model: Mapped["Model | None"] = relationship()
+    items: Mapped[list["SemanticInventoryJobItem"]] = relationship(
+        back_populates="job",
+        cascade="all, delete-orphan",
+        order_by="SemanticInventoryJobItem.ordinal",
+    )
+
+
+class SemanticInventoryJobItem(Base, UUIDMixin, TimestampMixin):
+    """One independently retryable table in a semantic inventory job."""
+
+    __tablename__ = "semantic_inventory_job_items"
+    __table_args__ = (
+        UniqueConstraint(
+            "job_id",
+            "table_name",
+            name="uq_semantic_inventory_job_table",
+        ),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')",
+            name="ck_semantic_inventory_item_status",
+        ),
+        CheckConstraint(
+            "phase IN ('structure', 'sample', 'recommend', 'complete')",
+            name="ck_semantic_inventory_item_phase",
+        ),
+        CheckConstraint(
+            "ordinal >= 0",
+            name="ck_semantic_inventory_item_ordinal",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0",
+            name="ck_semantic_inventory_item_attempt_count",
+        ),
+        CheckConstraint(
+            "candidate_count >= 0",
+            name="ck_semantic_inventory_item_candidate_count",
+        ),
+    )
+
+    job_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("semantic_inventory_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    table_name: Mapped[str] = mapped_column(String(512), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    phase: Mapped[str] = mapped_column(String(20), default="structure")
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
+    retryable: Mapped[bool] = mapped_column(Boolean, default=True)
+    code: Mapped[str | None] = mapped_column(String(80))
+    message: Mapped[str | None] = mapped_column(Text)
+    profile_result: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    recommendation_batch_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), index=True
+    )
+    candidate_count: Mapped[int] = mapped_column(Integer, default=0)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    job: Mapped["SemanticInventoryJob"] = relationship(back_populates="items")
 
 
 class AnalysisCorrection(Base, UUIDMixin, TimestampMixin):

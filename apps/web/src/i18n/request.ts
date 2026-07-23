@@ -1,6 +1,6 @@
 import { getRequestConfig } from "next-intl/server";
-import { cookies } from "next/headers";
-import { defaultLocale, locales, type Locale } from "./config";
+import { cookies, headers } from "next/headers";
+import { localeCookieName, resolveLocale } from "./config";
 
 const messageImports = {
   en: () => import("../messages/en.json"),
@@ -8,9 +8,11 @@ const messageImports = {
 } as const;
 
 export default getRequestConfig(async () => {
-  const cookieStore = await cookies();
-  const stored = cookieStore.get("locale")?.value;
-  const locale = locales.includes(stored as Locale) ? (stored as Locale) : defaultLocale;
+  const [cookieStore, headerStore] = await Promise.all([cookies(), headers()]);
+  const locale = resolveLocale(
+    cookieStore.get(localeCookieName)?.value,
+    headerStore.get("accept-language")
+  );
   return {
     locale,
     messages: (await messageImports[locale]()).default,

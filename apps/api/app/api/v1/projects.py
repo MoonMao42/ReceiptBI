@@ -10,17 +10,25 @@ import re
 import shutil
 import zipfile
 from datetime import UTC, datetime
-from itertools import combinations
 from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from pydantic_ai import Agent
 from sqlalchemy import case, delete, func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core import encryptor
 from app.core.config import settings
@@ -37,6 +45,7 @@ from app.db.tables import (
     SanitationRecipeRevisionRecord,
     SemanticEntry,
     SemanticEntryRevision,
+    SemanticValidationJob,
 )
 from app.models import (
     AnalysisCorrectionCreate,
@@ -75,6 +84,9 @@ from app.models import (
     SemanticEntryRestoreRequest,
     SemanticEntryRevisionResponse,
     SemanticEntryUpdate,
+    SemanticInventoryJobItemPageResponse,
+    SemanticInventoryJobRequest,
+    SemanticInventoryJobResponse,
     StandingAnalysisResponse,
     SuggestedQuestion,
     SuggestedQuestionsRequest,
@@ -89,15 +101,22 @@ from app.models.workspace import (
     AnalysisPlaybookStructuredQueryPlan,
     MetricColumnCorrectionSelection,
     ProjectUpdate,
+    RelationIndexRefreshResponse,
+    ScopePresentationDefinition,
     SemanticEntryBatchRequest,
     SemanticEntryBatchResponse,
     SemanticEntryPageResponse,
     SemanticEntrySummaryResponse,
+    SemanticRecommendationRequest,
+    SemanticRecommendationResponse,
+    SemanticScopeNodeResponse,
     SemanticSourceRef,
+    SemanticValidationJobResponse,
     SourceCleaningApplyRequest,
     SourceCleaningApplyResponse,
     SourceCleaningPreviewRequest,
     SourceCleaningPreviewResponse,
+    is_executable_semantic_definition,
     validate_semantic_definition_compatibility,
 )
 from app.services.analysis_checkpoint import stable_payload_hash
@@ -117,12 +136,15 @@ from app.services.data_preflight import (
     run_preflight,
 )
 from app.services.database import create_database_manager
-from app.services.database_value_preflight import run_database_value_preflight
+from app.services.database_value_preflight import (
+    DEFAULT_DATABASE_RELATION_INDEX_LIMIT,
+    bounded_relation_index_snapshot,
+    run_database_value_preflight,
+)
 from app.services.dependency_manager import ProjectDependencyManager
 from app.services.execution_context import ExecutionContextResolver
 from app.services.golden_regression import normalize_query_key
 from app.services.project_context import (
-    _canonical_column,
     _view_name,
     load_project_context,
     resolve_confirmed_ambiguity,
@@ -142,7 +164,30 @@ from app.services.sanitation_revisions import (
     sanitation_fingerprint_contract,
     sanitation_revision_or_none,
 )
+from app.services.semantic_inventory import (
+    SemanticInventoryError,
+    create_semantic_inventory_job,
+    get_current_semantic_inventory_job,
+    get_semantic_inventory_job,
+    request_semantic_inventory_cancel,
+    retry_semantic_inventory_job,
+    schedule_semantic_inventory_job,
+    semantic_inventory_job_items_response,
+    semantic_inventory_job_response,
+)
 from app.services.semantic_learning import compile_report_correction
+from app.services.semantic_recommendation_ai import (
+    build_semantic_recommendation_enhancer,
+)
+from app.services.semantic_recommendation_store import (
+    persist_semantic_recommendation_batch,
+)
+from app.services.semantic_recommendations import (
+    SemanticRecommendationBatch,
+    SemanticRecommendationEnhancer,
+    SemanticRecommendationError,
+    generate_semantic_recommendations,
+)
 from app.services.semantic_revisions import (
     SemanticRevisionConflictError,
     append_semantic_revision,
@@ -152,12 +197,27 @@ from app.services.semantic_revisions import (
     semantic_entry_snapshot,
     semantic_revision_or_none,
 )
+from app.services.semantic_scopes import (
+    SemanticScopeResolutionError,
+    ensure_semantic_scope_tree,
+    get_semantic_scope_node,
+    resolve_semantic_entry_scope,
+    semantic_scope_node_responses,
+    semantic_scope_path,
+)
 from app.services.semantic_source_scope import (
     SemanticSourceCatalog,
     SemanticSourceResolution,
     SemanticSourceScopeFilter,
     resolution_matches_scope,
     resolve_semantic_source_scope,
+)
+from app.services.semantic_validation import (
+    SemanticValidationQueueError,
+    queue_semantic_validation_job,
+    retry_semantic_validation_job,
+    run_semantic_validation_job,
+    semantic_validation_job_response,
 )
 from app.services.standing_workspace import (
     StandingWorkspaceCorruptError,
@@ -171,11 +231,9 @@ from app.services.standing_workspace import (
 router = APIRouter(prefix="/projects", tags=["projects"])
 logger = logging.getLogger(__name__)
 
+_RELATION_INDEX_REFRESH_TIMEOUT_SECONDS = 15.0
 _MAX_ACTIVE_TRUSTED_REFERENCES = 20
 _MAX_STORED_TRUSTED_REFERENCES = 100
-_MAX_RELATIONSHIP_ENDPOINTS_PER_COLUMN = 24
-_MAX_INFERRED_RELATIONSHIPS_PER_COLUMN = 6
-_MAX_INFERRED_RELATIONSHIPS_PER_PROJECT = 80
 _TRUSTED_EVIDENCE_KINDS = {
     "validation",
     "relationship_validation",
@@ -260,6 +318,23 @@ async def _source_or_404(db: AsyncSession, project_id: UUID, source_id: UUID) ->
     if source is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="数据源不存在")
     return source
+
+
+def _database_manager_for_connection(connection: Connection):
+    password = (
+        encryptor.decrypt(connection.password_encrypted) if connection.password_encrypted else ""
+    )
+    return create_database_manager(
+        {
+            "driver": connection.driver,
+            "host": connection.host,
+            "port": connection.port,
+            "user": connection.username,
+            "password": password,
+            "database": connection.database_name,
+            "extra_options": connection.extra_options or {},
+        }
+    )
 
 
 def _safe_filename(filename: str | None) -> str:
@@ -1668,14 +1743,6 @@ async def _upsert_candidate_knowledge(
             and existing.source == "user"
         ):
             return
-        reactivate_pruned_name_match = (
-            existing.state == "candidate"
-            and existing.source == "inferred"
-            and existing.is_active is False
-            and _is_pure_inferred_name_match_evidence(existing.evidence)
-            and entry_type == "relationship"
-            and _is_pure_inferred_name_match_evidence(evidence)
-        )
         next_confidence = max(float(existing.confidence or 0), confidence)
         if (
             existing.value == value
@@ -1683,7 +1750,6 @@ async def _upsert_candidate_knowledge(
             and existing.evidence == evidence
             and existing.definition == definition
             and existing.validity == validity
-            and not reactivate_pruned_name_match
         ):
             return
         existing.value = value
@@ -1691,9 +1757,6 @@ async def _upsert_candidate_knowledge(
         existing.evidence = evidence
         existing.definition = definition
         existing.validity = validity
-        if reactivate_pruned_name_match:
-            existing.is_active = True
-            reset_semantic_execution_proof(existing)
         await append_semantic_revision(
             db,
             existing,
@@ -1785,48 +1848,120 @@ def _relationship_definition_pair_identity(
     return _relationship_pair_identity(left, right)
 
 
-def _relationship_candidate_score(
-    left_endpoint: dict[str, Any],
-    right_endpoint: dict[str, Any],
-) -> float:
-    """Rank bounded name matches without treating them as validated joins."""
-
-    score = 0.55
-    left_column = str(left_endpoint.get("column") or "")
-    right_column = str(right_endpoint.get("column") or "")
-    if left_column.casefold() == right_column.casefold():
-        score += 0.08
-    if left_column.casefold().endswith("id") and right_column.casefold().endswith("id"):
-        score += 0.04
-    left_type = str(left_endpoint.get("data_type") or "unknown").casefold()
-    right_type = str(right_endpoint.get("data_type") or "unknown").casefold()
-    if left_type == right_type and left_type not in {"", "unknown"}:
-        score += 0.04
-    if left_endpoint.get("table_or_view") != right_endpoint.get("table_or_view"):
-        score += 0.02
-    if left_endpoint.get("source_logical_name") != right_endpoint.get(
-        "source_logical_name"
-    ):
-        score += 0.02
-    return round(min(score, 0.75), 6)
+_RELATIONSHIP_USER_GOVERNANCE_MUTATIONS = frozenset(
+    {
+        "created",
+        "user_upsert",
+        "user_updated",
+        "candidate_restored",
+        "explicit_confirmation",
+        "verified_candidate_remembered",
+    }
+)
 
 
-def _is_pure_inferred_name_match_evidence(evidence: object) -> bool:
-    """Only untouched name-match evidence is eligible for automatic pruning."""
+def _is_legacy_name_match_relationship(entry: SemanticEntry) -> bool:
+    """Recognize the old relationship suggestions created from names alone."""
 
-    return bool(evidence) and isinstance(evidence, list) and all(
-        isinstance(item, dict) and item.get("kind") == "matching_column_names"
+    evidence = entry.evidence if isinstance(entry.evidence, list) else []
+    kinds = {
+        str(item.get("kind") or "")
         for item in evidence
-    )
+        if isinstance(item, dict)
+    }
+    return "matching_column_names" in kinds and "declared_foreign_key" not in kinds
 
 
-async def _retire_unretained_inferred_relationship_candidates(
+async def _retire_legacy_name_match_relationship_candidates(
     db: AsyncSession,
     *,
     project_id: UUID,
-    retained_keys: set[str],
 ) -> None:
-    """Tombstone obsolete discovery-only heads without touching governed work."""
+    """Tombstone name-only joins while preserving explicit user governance."""
+
+    user_revision_result = await db.execute(
+        select(SemanticEntryRevision.semantic_entry_id).where(
+            SemanticEntryRevision.project_id == project_id,
+            SemanticEntryRevision.mutation_kind.in_(
+                _RELATIONSHIP_USER_GOVERNANCE_MUTATIONS
+            ),
+        )
+    )
+    user_governed_ids = set(user_revision_result.scalars())
+    result = await db.execute(
+        select(SemanticEntry)
+        .where(
+            SemanticEntry.project_id == project_id,
+            SemanticEntry.entry_type == "relationship",
+            SemanticEntry.state == "candidate",
+            SemanticEntry.is_active.is_(True),
+        )
+        .with_for_update()
+    )
+    for entry in result.scalars():
+        if (
+            entry.id in user_governed_ids
+            or entry.execution_state == "verified"
+            or not _is_legacy_name_match_relationship(entry)
+        ):
+            continue
+        previous_revision_id = entry.active_revision_id
+        entry.is_active = False
+        entry.validity = "stale"
+        reset_semantic_execution_proof(entry)
+        entry.evidence = [
+            *list(entry.evidence or []),
+            {
+                "kind": "legacy_name_match_relationship_retired",
+                "reason": "同名字段不足以证明数据表可以安全关联",
+            },
+        ]
+        await append_semantic_revision(
+            db,
+            entry,
+            mutation_kind="legacy_relationship_retired",
+            actor_source="system",
+            reason="淘汰旧版仅凭同名字段生成的数据关联候选",
+            expected_active_revision_id=previous_revision_id,
+        )
+
+
+def _is_legacy_preflight_column_candidate(
+    entry: SemanticEntry,
+    *,
+    source_id: UUID,
+) -> bool:
+    """Recognize only the obsolete, untyped column suggestions we created."""
+
+    if not (
+        entry.key == f"grain:{source_id}"
+        or entry.key.startswith(f"metric_candidate:{source_id}:")
+    ):
+        return False
+    definition = entry.definition if isinstance(entry.definition, dict) else None
+    if definition is not None and definition.get("kind") not in {
+        "column_metric",
+        "grain_key",
+    }:
+        return False
+    allowed_evidence = {
+        "preflight",
+        "semantic_execution_verification",
+        "semantic_scope_reconciled",
+    }
+    return all(
+        isinstance(item, dict) and item.get("kind") in allowed_evidence
+        for item in (entry.evidence or [])
+    )
+
+
+async def _retire_legacy_preflight_column_candidates(
+    db: AsyncSession,
+    *,
+    project_id: UUID,
+    source_id: UUID,
+) -> None:
+    """Tombstone obsolete name-only candidates while preserving user decisions."""
 
     user_revision_result = await db.execute(
         select(SemanticEntryRevision.semantic_entry_id).where(
@@ -1842,30 +1977,36 @@ async def _retire_unretained_inferred_relationship_candidates(
         select(SemanticEntry)
         .where(
             SemanticEntry.project_id == project_id,
-            SemanticEntry.entry_type == "relationship",
             SemanticEntry.state == "candidate",
             SemanticEntry.source == "inferred",
             SemanticEntry.is_active.is_(True),
+            SemanticEntry.entry_type.in_(("metric", "dimension")),
         )
         .with_for_update()
     )
     for entry in result.scalars():
-        if (
-            entry.key in retained_keys
-            or entry.id in user_touched_ids
-            or not _is_pure_inferred_name_match_evidence(entry.evidence)
+        if entry.id in user_touched_ids or not _is_legacy_preflight_column_candidate(
+            entry,
+            source_id=source_id,
         ):
             continue
         previous_revision_id = entry.active_revision_id
         entry.is_active = False
         entry.validity = "stale"
         reset_semantic_execution_proof(entry)
+        entry.evidence = [
+            *list(entry.evidence or []),
+            {
+                "kind": "legacy_preflight_candidate_retired",
+                "reason": "旧版候选没有类型化定义，已由表级语义推荐流程取代",
+            },
+        ]
         await append_semantic_revision(
             db,
             entry,
-            mutation_kind="candidate_pruned",
+            mutation_kind="legacy_candidate_retired",
             actor_source="system",
-            reason="当前数据预检未保留这项低证据关联候选",
+            reason="淘汰旧版仅凭字段名生成的列候选",
             expected_active_revision_id=previous_revision_id,
         )
 
@@ -1875,50 +2016,15 @@ async def _persist_preflight_candidates(
     source: ProjectDataSource,
 ) -> None:
     profile = source.profile_data or {}
-    evidence = [{"source_id": str(source.id), "source": source.name, "kind": "preflight"}]
-    grain = sorted(
-        (
-            profile.get("schema", {}).get("candidate_grain", [])
-            or profile.get("preanalysis", {}).get("candidate_grain", [])
-        ),
-        key=lambda item: (
-            int(item.get("evidence_priority", 9)),
-            -float(item.get("uniqueness", 0)),
-        ),
+    await _retire_legacy_preflight_column_candidates(
+        db,
+        project_id=source.project_id,
+        source_id=source.id,
     )
-    if grain:
-        best = grain[0]
-        grain_column = str(best.get("column") or "")
-        grain_label = (
-            f"{best.get('table')}.{grain_column}"
-            if best.get("table")
-            else grain_column
-        )
-        await _upsert_candidate_knowledge(
-            db,
-            project_id=source.project_id,
-            key=f"grain:{source.id}",
-            value=(
-                f"{source.name} 每行可能由“{grain_label}”标识，"
-                f"唯一率 {float(best.get('uniqueness', 0)):.1%}"
-            ),
-            entry_type="dimension",
-            confidence=min(0.9, float(best.get("uniqueness", 0))),
-            evidence=evidence,
-        )
-    amount_hints = ("amount", "revenue", "sales", "gmv", "金额", "收入", "销售", "实付")
-    for column in _profile_column_details(profile):
-        column_name = str(column.get("name") or "")
-        if any(hint in column_name.lower() for hint in amount_hints):
-            await _upsert_candidate_knowledge(
-                db,
-                project_id=source.project_id,
-                key=f"metric_candidate:{source.id}:{column_name}",
-                value=f"{source.name} 的“{column_name}”可能是金额指标，具体收入口径仍需业务确认",
-                entry_type="metric",
-                confidence=0.65,
-                evidence=evidence,
-            )
+    await _retire_legacy_name_match_relationship_candidates(
+        db,
+        project_id=source.project_id,
+    )
 
     governed_result = await db.execute(
         select(SemanticEntry).where(
@@ -1934,8 +2040,6 @@ async def _persist_preflight_candidates(
         if (pair_identity := _relationship_definition_pair_identity(item.definition))
         is not None
     }
-    declared_relationship_pairs: set[str] = set()
-    declared_portable_pairs: set[str] = set()
     logical_name = str(profile.get("logical_name") or source.name)
     tables = [item for item in profile.get("tables") or [] if isinstance(item, dict)]
     for relationship in profile.get("preanalysis", {}).get("relationship_evidence", []):
@@ -2012,9 +2116,7 @@ async def _persist_preflight_candidates(
             left_source_id=source.id,
             right_source_id=source.id,
         )
-        declared_relationship_pairs.add(pair_identity)
         portable_pair_identity = _relationship_pair_identity(left_endpoint, right_endpoint)
-        declared_portable_pairs.add(portable_pair_identity)
         if portable_pair_identity in governed_relationship_pairs:
             # The governed head already represents this declared FK. Keep it
             # untouched and avoid a second candidate for the same logical pair.
@@ -2058,179 +2160,6 @@ async def _persist_preflight_candidates(
             ],
         )
 
-    source_result = await db.execute(
-        select(ProjectDataSource).where(
-            ProjectDataSource.project_id == source.project_id,
-            ProjectDataSource.status != "superseded",
-        )
-    )
-    column_sources: dict[str, list[dict[str, Any]]] = {}
-    for item in source_result.scalars():
-        if (item.profile_data or {}).get("is_current") is False:
-            continue
-        for column in _profile_column_details(item.profile_data or {}):
-            column_name = str(column.get("name") or "")
-            normalized = _canonical_column(column_name)
-            if normalized:
-                table = str(column.get("table") or "") or None
-                profile = item.profile_data or {}
-                logical_name = str(profile.get("logical_name") or item.name)
-                endpoint = {
-                    "source_logical_name": logical_name,
-                    "source_kind": item.kind,
-                    "table_or_view": table or _view_name(item),
-                    "column": column_name,
-                    "data_type": str(column.get("type") or column.get("dtype") or "unknown"),
-                    "schema_signature": _profile_schema_signature(profile, table),
-                }
-                column_sources.setdefault(normalized, []).append(
-                    {
-                        "endpoint": endpoint,
-                        "source_id": str(item.id),
-                        "label": (f"{item.name}.{table + '.' if table else ''}{column_name}"),
-                    }
-                )
-    ranked_inferred_candidates: list[dict[str, Any]] = []
-    for normalized, candidates in sorted(column_sources.items()):
-        unique_candidates_by_identity = {
-            json.dumps(
-                {
-                    "endpoint": item["endpoint"],
-                    "source_id": item["source_id"],
-                },
-                sort_keys=True,
-                ensure_ascii=False,
-            ): item
-            for item in candidates
-        }
-        unique_candidates = [
-            unique_candidates_by_identity[key]
-            for key in sorted(unique_candidates_by_identity)
-        ]
-        endpoint_count = len(unique_candidates)
-        considered_candidates = unique_candidates[:_MAX_RELATIONSHIP_ENDPOINTS_PER_COLUMN]
-        ranked_group: list[dict[str, Any]] = []
-        for left, right in combinations(considered_candidates, 2):
-            left_endpoint = left["endpoint"]
-            right_endpoint = right["endpoint"]
-            if (
-                left_endpoint["source_logical_name"]
-                == right_endpoint["source_logical_name"]
-                and left_endpoint["source_kind"] == right_endpoint["source_kind"]
-                and left["source_id"] != right["source_id"]
-            ):
-                # A portable relationship cannot distinguish two active sources
-                # with the same logical role. Runtime resolution also fails closed,
-                # so do not create a misleading same-role name-match candidate.
-                continue
-            pair_identity = _relationship_pair_identity(
-                left_endpoint,
-                right_endpoint,
-                left_source_id=left["source_id"],
-                right_source_id=right["source_id"],
-            )
-            if pair_identity in declared_relationship_pairs:
-                continue
-            portable_pair_identity = _relationship_pair_identity(
-                left_endpoint,
-                right_endpoint,
-            )
-            if portable_pair_identity in (
-                declared_portable_pairs | governed_relationship_pairs
-            ):
-                continue
-            pair_hash = hashlib.sha256(pair_identity.encode("utf-8")).hexdigest()[:12]
-            definition = {
-                "version": 1,
-                "left": left_endpoint,
-                "right": right_endpoint,
-                "normalization": (
-                    "exact"
-                    if left_endpoint["column"].casefold() == right_endpoint["column"].casefold()
-                    else "auto"
-                ),
-                "cardinality": None,
-                "default_join": "left",
-                "minimum_left_match_rate": 0.8,
-                "maximum_expansion_ratio": 1.2,
-            }
-            ranked_group.append(
-                {
-                    "normalized": normalized,
-                    "pair_identity": pair_identity,
-                    "pair_hash": pair_hash,
-                    "left": left,
-                    "right": right,
-                    "definition": definition,
-                    "score": _relationship_candidate_score(
-                        left_endpoint,
-                        right_endpoint,
-                    ),
-                    "endpoint_count": endpoint_count,
-                    "considered_endpoint_count": len(considered_candidates),
-                    "possible_pair_count": endpoint_count * (endpoint_count - 1) // 2,
-                }
-            )
-        ranked_group.sort(key=lambda item: (-item["score"], item["pair_identity"]))
-        retained_group = ranked_group[:_MAX_INFERRED_RELATIONSHIPS_PER_COLUMN]
-        for rank, item in enumerate(retained_group, start=1):
-            item["group_rank"] = rank
-            item["group_retained_count"] = len(retained_group)
-            ranked_inferred_candidates.append(item)
-
-    ranked_inferred_candidates.sort(
-        key=lambda item: (
-            -item["score"],
-            item["normalized"],
-            item["pair_identity"],
-        )
-    )
-    retained_inferred_candidates = ranked_inferred_candidates[
-        :_MAX_INFERRED_RELATIONSHIPS_PER_PROJECT
-    ]
-    retained_inferred_keys: set[str] = set()
-    for project_rank, item in enumerate(
-        retained_inferred_candidates,
-        start=1,
-    ):
-        left = item["left"]
-        right = item["right"]
-        candidate_key = f"relationship_candidate:{item['normalized']}:{item['pair_hash']}"
-        retained_inferred_keys.add(candidate_key[:160])
-        await _upsert_candidate_knowledge(
-            db,
-            project_id=source.project_id,
-            key=candidate_key,
-            value=f"可能的关联字段：{left['label']} ↔ {right['label']}",
-            entry_type="relationship",
-            confidence=item["score"],
-            definition=item["definition"],
-            validity="unverified",
-            evidence=[
-                {
-                    "kind": "matching_column_names",
-                    "source_ids": [left["source_id"], right["source_id"]],
-                    "sources": [left["label"], right["label"]],
-                    "candidate_group": {
-                        "canonical_column": item["normalized"],
-                        "endpoint_count": item["endpoint_count"],
-                        "considered_endpoint_count": item["considered_endpoint_count"],
-                        "possible_pair_count": item["possible_pair_count"],
-                        "retained_pair_count": item["group_retained_count"],
-                        "pair_rank": item["group_rank"],
-                        "project_rank": project_rank,
-                        "per_column_cap": _MAX_INFERRED_RELATIONSHIPS_PER_COLUMN,
-                        "project_cap": _MAX_INFERRED_RELATIONSHIPS_PER_PROJECT,
-                    },
-                    "note": "实际使用前仍需检查匹配率和唯一性",
-                }
-            ],
-        )
-    await _retire_unretained_inferred_relationship_candidates(
-        db,
-        project_id=source.project_id,
-        retained_keys=retained_inferred_keys,
-    )
 
 
 def _candidate_mentions_source(entry: SemanticEntry, source: ProjectDataSource) -> bool:
@@ -2592,62 +2521,149 @@ def _suggestion_context(sources: list[ProjectDataSource]) -> dict[str, Any]:
     return {"sources": compact_sources}
 
 
-def _fallback_suggestions(context: dict[str, Any]) -> list[SuggestedQuestion]:
+_SUGGESTION_FALLBACK_COPY: dict[str, dict[str, Any]] = {
+    "zh": {
+        "current_data": "当前数据",
+        "source_separator": "、",
+        "overview": (
+            "先找出最值得关注的问题",
+            "请自主分析 {sources}，找出最值得我关注的异常、变化和可能原因。",
+            "从当前数据整体开始，不预设固定图表或结论",
+        ),
+        "time_measure": (
+            "看看变化从哪里开始",
+            "分析 {sources} 随时间发生的主要变化，指出转折点并调查可能原因。",
+            "当前数据包含时间和数值信息",
+        ),
+        "measure": (
+            "核对异常值和业务影响",
+            "检查 {sources} 中数值异常最明显的地方，说明它们是否会影响业务结论。",
+            "当前数据包含可比较的数值信息",
+        ),
+        "dimension_measure": (
+            "比较不同业务分组",
+            "比较 {sources} 中不同业务分组的表现，找出差异最大和最值得跟进的部分。",
+            "当前数据可以按业务维度比较",
+        ),
+        "quality": (
+            "检查数据能回答什么",
+            "先检查 {sources} 的数据质量和口径，再告诉我目前可以可靠回答哪些经营问题。",
+            "先确认数据边界，避免把样例当成结论",
+        ),
+        "data_risks": (
+            "找出可能影响判断的数据问题",
+            "检查 {sources} 中会明显影响业务判断的缺失、重复或异常记录，并说明应该怎样处理。",
+            "先排除会改变结论的数据风险",
+        ),
+        "next_steps": (
+            "建议下一步调查方向",
+            "根据 {sources} 当前能支持的分析范围，提出最值得优先调查的三个业务方向并说明理由。",
+            "从真实数据范围决定下一步，不预设业务故事",
+        ),
+    },
+    "en": {
+        "current_data": "the current data",
+        "source_separator": " and ",
+        "overview": (
+            "Find the most important issue",
+            "Analyze {sources} and identify the anomalies, changes, and likely causes that deserve the most attention.",
+            "Start from the overall data without assuming a chart or conclusion",
+        ),
+        "time_measure": (
+            "See where the change began",
+            "Analyze the main changes over time in {sources}, identify turning points, and investigate likely causes.",
+            "The current data includes time and numeric measures",
+        ),
+        "measure": (
+            "Check outliers and business impact",
+            "Find the most significant numeric outliers in {sources} and explain whether they could affect the business conclusions.",
+            "The current data includes comparable numeric measures",
+        ),
+        "dimension_measure": (
+            "Compare business groups",
+            "Compare performance across business groups in {sources}, then identify the largest differences and the areas most worth following up.",
+            "The current data supports comparisons across business dimensions",
+        ),
+        "quality": (
+            "Check what the data can answer",
+            "First check the data quality and definitions in {sources}, then explain which business questions can currently be answered reliably.",
+            "Confirm the data boundaries before treating examples as conclusions",
+        ),
+        "data_risks": (
+            "Find data issues that could affect decisions",
+            "Check {sources} for missing, duplicate, or anomalous records that could materially affect business decisions, and explain how to handle them.",
+            "Rule out data risks that could change the conclusion",
+        ),
+        "next_steps": (
+            "Suggest the next investigation",
+            "Based on the analysis supported by {sources}, propose the three business directions most worth investigating first and explain why.",
+            "Let the real data scope determine the next step instead of assuming a business story",
+        ),
+    },
+}
+
+
+_SUGGESTION_AI_INSTRUCTIONS: dict[str, str] = {
+    "zh": (
+        "你为普通运营、财务或销售人员生成三个可直接开始的数据调查问题。"
+        "问题必须只基于给定的数据轮廓，不得假设不存在的业务。"
+        "如果给出了已确认业务口径，建议必须遵守这些口径。"
+        "使用中文业务语言，但原样保留数据源名称和用户提供的业务术语。"
+        "不要暴露字段名、SQL、Python、schema 或语义层。"
+        "三个方向要明显不同：整体诊断、变化或异常、分组或关系。"
+        "不要强制指定热力图等图表，是否可视化交给后续分析决定。"
+        "label 是简短入口，prompt 是可直接执行的完整任务，reason 说明为何适合当前数据。"
+    ),
+    "en": (
+        "Generate three data-investigation questions that an operations, finance, or sales "
+        "user can start directly. Base every question only on the supplied data profile and "
+        "do not assume a business that is not present. Follow any confirmed business "
+        "definitions in the context. Use clear English business language while preserving "
+        "source names and user-provided business terms exactly as supplied. Do not expose "
+        "column names, SQL, Python, schemas, or the semantic layer. Make the three directions "
+        "clearly distinct: overall diagnosis, change or anomaly, and grouping or relationship. "
+        "Do not prescribe a specific chart; later analysis should decide whether to visualize. "
+        "Use label for a short entry point, prompt for the complete executable task, and reason "
+        "to explain why it fits the current data."
+    ),
+}
+
+
+def _fallback_suggestions(
+    context: dict[str, Any],
+    locale: Literal["zh", "en"] = "zh",
+) -> list[SuggestedQuestion]:
     sources = list(context.get("sources") or [])
     if not sources:
         return []
-    source_names = "、".join(str(item.get("name") or "当前数据") for item in sources[:2])
+    copy = _SUGGESTION_FALLBACK_COPY[locale]
+    source_names = copy["source_separator"].join(
+        str(item.get("name") or copy["current_data"]) for item in sources[:2]
+    )
     roles = [role for source in sources for role in list(source.get("candidate_roles") or [])]
     has_time = any(item.get("role") == "time" for item in roles)
     has_measure = any(item.get("role") == "measure" for item in roles)
     has_dimension = any(item.get("role") in {"dimension", "identifier"} for item in roles)
-    items = [
-        SuggestedQuestion(
-            label="先找出最值得关注的问题",
-            prompt=f"请自主分析 {source_names}，找出最值得我关注的异常、变化和可能原因。",
-            reason="从当前数据整体开始，不预设固定图表或结论",
+
+    def suggestion(key: str) -> SuggestedQuestion:
+        label, prompt, reason = copy[key]
+        return SuggestedQuestion(
+            label=label,
+            prompt=prompt.format(sources=source_names),
+            reason=reason,
         )
-    ]
+
+    items = [suggestion("overview")]
     if has_time and has_measure:
-        items.append(
-            SuggestedQuestion(
-                label="看看变化从哪里开始",
-                prompt=f"分析 {source_names} 随时间发生的主要变化，指出转折点并调查可能原因。",
-                reason="当前数据包含时间和数值信息",
-            )
-        )
+        items.append(suggestion("time_measure"))
     elif has_measure:
-        items.append(
-            SuggestedQuestion(
-                label="核对异常值和业务影响",
-                prompt=f"检查 {source_names} 中数值异常最明显的地方，说明它们是否会影响业务结论。",
-                reason="当前数据包含可比较的数值信息",
-            )
-        )
+        items.append(suggestion("measure"))
     if has_dimension and has_measure:
-        items.append(
-            SuggestedQuestion(
-                label="比较不同业务分组",
-                prompt=f"比较 {source_names} 中不同业务分组的表现，找出差异最大和最值得跟进的部分。",
-                reason="当前数据可以按业务维度比较",
-            )
-        )
+        items.append(suggestion("dimension_measure"))
     generic_fallbacks = [
-        SuggestedQuestion(
-            label="检查数据能回答什么",
-            prompt=f"先检查 {source_names} 的数据质量和口径，再告诉我目前可以可靠回答哪些经营问题。",
-            reason="先确认数据边界，避免把样例当成结论",
-        ),
-        SuggestedQuestion(
-            label="找出可能影响判断的数据问题",
-            prompt=f"检查 {source_names} 中会明显影响业务判断的缺失、重复或异常记录，并说明应该怎样处理。",
-            reason="先排除会改变结论的数据风险",
-        ),
-        SuggestedQuestion(
-            label="建议下一步调查方向",
-            prompt=f"根据 {source_names} 当前能支持的分析范围，提出最值得优先调查的三个业务方向并说明理由。",
-            reason="从真实数据范围决定下一步，不预设业务故事",
-        ),
+        suggestion("quality"),
+        suggestion("data_risks"),
+        suggestion("next_steps"),
     ]
     for fallback in generic_fallbacks:
         if len(items) >= 3:
@@ -2692,15 +2708,7 @@ async def _ai_suggestions(
     agent = Agent(
         build_pydantic_model(model_config),
         output_type=_SuggestedQuestionSet,
-        instructions=(
-            "你为普通运营、财务或销售人员生成三个可直接开始的数据调查问题。"
-            "问题必须只基于给定的数据轮廓，不得假设不存在的业务。"
-            "如果给出了已确认业务口径，建议必须遵守这些口径。"
-            "使用业务语言，不暴露字段名、SQL、Python、schema 或语义层。"
-            "三个方向要明显不同：整体诊断、变化或异常、分组或关系。"
-            "不要强制指定热力图等图表，是否可视化交给后续分析决定。"
-            "label 是简短入口，prompt 是可直接执行的完整任务，reason 说明为何适合当前数据。"
-        ),
+        instructions=_SUGGESTION_AI_INSTRUCTIONS[payload.locale],
         retries={"output": 2},
     )
     try:
@@ -2712,6 +2720,19 @@ async def _ai_suggestions(
         logger.info("AI suggestions unavailable, using preflight fallback: %s", exc)
         return None
     return result.output.items
+
+
+async def _semantic_recommendation_enhancer(
+    db: AsyncSession,
+    payload: SemanticRecommendationRequest,
+) -> SemanticRecommendationEnhancer | None:
+    """Compatibility wrapper around the shared inventory/API enhancer."""
+
+    return await build_semantic_recommendation_enhancer(
+        db,
+        locale=payload.locale,
+        model_id=payload.model_id,
+    )
 
 
 @router.get("", response_model=APIResponse[list[ProjectResponse]])
@@ -2763,6 +2784,12 @@ async def suggested_questions(
     db: AsyncSession = Depends(get_db),
 ):
     await _project_or_404(db, project_id)
+    app_settings = await get_or_create_app_settings(db)
+    if not app_settings.self_analysis_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="分析建议已在设置中关闭，请先开启后再手动生成",
+        )
     result = await db.execute(
         select(ProjectDataSource)
         .where(
@@ -2794,7 +2821,7 @@ async def suggested_questions(
     signature = hashlib.sha256(
         json.dumps(context, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest()
-    fallback = _fallback_suggestions(context)
+    fallback = _fallback_suggestions(context, payload.locale)
     if not fallback:
         return APIResponse.ok(
             data=SuggestedQuestionsResponse(
@@ -2988,6 +3015,314 @@ async def attach_connection_source(
     )
 
 
+@router.post(
+    "/{project_id}/sources/{source_id}/relation-index",
+    response_model=APIResponse[RelationIndexRefreshResponse],
+)
+async def refresh_source_relation_index(
+    project_id: UUID,
+    source_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Refresh a bounded table/view directory without sampling business rows."""
+
+    await _project_or_404(db, project_id)
+    source = await _source_or_404(db, project_id, source_id)
+    if source.kind != "connection":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="只有数据库数据源可以刷新数据目录",
+        )
+    if source.status != "ready":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="请先完成数据库数据源准备，再刷新数据目录",
+        )
+    if source.connection_id is None:
+        raise HTTPException(status_code=404, detail="数据库连接已失效")
+    connection = await db.get(Connection, source.connection_id)
+    if connection is None:
+        raise HTTPException(status_code=404, detail="数据库连接已失效")
+
+    try:
+        manager = _database_manager_for_connection(connection)
+        relation_index = await asyncio.wait_for(
+            asyncio.to_thread(
+                manager.get_bounded_relation_index,
+                max_relations=DEFAULT_DATABASE_RELATION_INDEX_LIMIT,
+            ),
+            timeout=_RELATION_INDEX_REFRESH_TIMEOUT_SECONDS,
+        )
+    except TimeoutError as exc:
+        await db.rollback()
+        logger.warning(
+            "Database relation index refresh timed out",
+            extra={"project_id": str(project_id), "source_id": str(source_id)},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="数据库目录读取超时，请检查连接后重试",
+        ) from exc
+    except Exception as exc:
+        await db.rollback()
+        logger.exception(
+            "Database relation index refresh failed",
+            extra={"project_id": str(project_id), "source_id": str(source_id)},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="数据库目录暂时无法读取，请检查连接后重试",
+        ) from exc
+
+    locked_result = await db.execute(
+        select(ProjectDataSource)
+        .where(
+            ProjectDataSource.id == source_id,
+            ProjectDataSource.project_id == project_id,
+        )
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    source = locked_result.scalar_one_or_none()
+    if source is None:
+        raise HTTPException(status_code=404, detail="数据源不存在")
+    if (
+        source.kind != "connection"
+        or source.status != "ready"
+        or source.connection_id != connection.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="数据源状态已发生变化，请重新打开后再刷新",
+        )
+
+    relation_index_data = bounded_relation_index_snapshot(relation_index)
+    profile = dict(source.profile_data or {})
+    stored_preanalysis = profile.get("preanalysis")
+    preanalysis = dict(stored_preanalysis) if isinstance(stored_preanalysis, dict) else {}
+    stored_shape = preanalysis.get("shape")
+    shape = dict(stored_shape) if isinstance(stored_shape, dict) else {}
+    shape["tables"] = relation_index_data["relations_total_at_least"]
+    if relation_index_data["truncated"]:
+        shape["tables_are_lower_bound"] = True
+    else:
+        shape.pop("tables_are_lower_bound", None)
+    preanalysis["relation_index"] = relation_index_data
+    preanalysis["shape"] = shape
+    profile["relation_index"] = relation_index_data
+    profile["preanalysis"] = preanalysis
+    source.profile_data = profile
+
+    try:
+        await db.flush()
+        nodes = await ensure_semantic_scope_tree(db, project_id)
+        semantic_scope_table_count = sum(
+            1
+            for node in nodes
+            if node.kind == "table"
+            and node.is_active
+            and str((node.context_facts or {}).get("source_id") or "") == str(source.id)
+        )
+        await db.commit()
+    except SemanticScopeResolutionError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"数据目录已读取，但项目层级无法更新：{exc}",
+        ) from exc
+    except Exception as exc:
+        await db.rollback()
+        logger.exception(
+            "Database relation index persistence failed",
+            extra={"project_id": str(project_id), "source_id": str(source_id)},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="数据目录已读取，但暂时无法更新项目层级，请重试",
+        ) from exc
+
+    return APIResponse.ok(
+        data=RelationIndexRefreshResponse(
+            source_id=source.id,
+            relation_index=relation_index_data,
+            semantic_scope_table_count=semantic_scope_table_count,
+        ),
+        message="数据目录已更新",
+    )
+
+
+def _raise_semantic_inventory_error(exc: SemanticInventoryError) -> None:
+    raise HTTPException(
+        status_code=getattr(exc, "status_code", status.HTTP_409_CONFLICT),
+        detail={
+            "code": getattr(exc, "code", "semantic_inventory_unavailable"),
+            "message": str(exc),
+        },
+    ) from exc
+
+
+@router.post(
+    "/{project_id}/sources/{source_id}/semantic-inventory-jobs",
+    response_model=APIResponse[SemanticInventoryJobResponse],
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_source_semantic_inventory_job(
+    project_id: UUID,
+    source_id: UUID,
+    payload: SemanticInventoryJobRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Start only after an explicit user request; never from source attachment."""
+
+    try:
+        job = await create_semantic_inventory_job(
+            db,
+            project_id=project_id,
+            source_id=source_id,
+            request=payload,
+        )
+        await db.commit()
+        await db.refresh(job)
+        response = await semantic_inventory_job_response(db, job)
+    except SemanticInventoryError as exc:
+        await db.rollback()
+        _raise_semantic_inventory_error(exc)
+    schedule_semantic_inventory_job(job.id)
+    return APIResponse.ok(data=response, message="已开始整理所选数据")
+
+
+@router.get(
+    "/{project_id}/sources/{source_id}/semantic-inventory-jobs/current",
+    response_model=APIResponse[SemanticInventoryJobResponse],
+)
+async def current_source_semantic_inventory_job(
+    project_id: UUID,
+    source_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        job = await get_current_semantic_inventory_job(
+            db,
+            project_id=project_id,
+            source_id=source_id,
+        )
+        response = await semantic_inventory_job_response(db, job)
+    except SemanticInventoryError as exc:
+        _raise_semantic_inventory_error(exc)
+    return APIResponse.ok(data=response)
+
+
+@router.get(
+    "/{project_id}/sources/{source_id}/semantic-inventory-jobs/{job_id}",
+    response_model=APIResponse[SemanticInventoryJobResponse],
+)
+async def source_semantic_inventory_job(
+    project_id: UUID,
+    source_id: UUID,
+    job_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        job = await get_semantic_inventory_job(
+            db,
+            project_id=project_id,
+            source_id=source_id,
+            job_id=job_id,
+        )
+        response = await semantic_inventory_job_response(db, job)
+    except SemanticInventoryError as exc:
+        _raise_semantic_inventory_error(exc)
+    return APIResponse.ok(data=response)
+
+
+@router.get(
+    "/{project_id}/sources/{source_id}/semantic-inventory-jobs/{job_id}/items",
+    response_model=APIResponse[SemanticInventoryJobItemPageResponse],
+)
+async def source_semantic_inventory_job_items(
+    project_id: UUID,
+    source_id: UUID,
+    job_id: UUID,
+    limit: int = Query(default=20, ge=1, le=100),
+    after_ordinal: int | None = Query(default=None, ge=0),
+    table: str | None = Query(default=None, min_length=1, max_length=512),
+    reviewable: bool = Query(default=False),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        job = await get_semantic_inventory_job(
+            db,
+            project_id=project_id,
+            source_id=source_id,
+            job_id=job_id,
+        )
+        response = await semantic_inventory_job_items_response(
+            db,
+            job,
+            limit=limit,
+            after_ordinal=after_ordinal,
+            table=table,
+            reviewable=reviewable,
+        )
+    except SemanticInventoryError as exc:
+        _raise_semantic_inventory_error(exc)
+    return APIResponse.ok(data=response)
+
+
+@router.post(
+    "/{project_id}/sources/{source_id}/semantic-inventory-jobs/{job_id}/retry",
+    response_model=APIResponse[SemanticInventoryJobResponse],
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def retry_source_semantic_inventory_job(
+    project_id: UUID,
+    source_id: UUID,
+    job_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        job = await retry_semantic_inventory_job(
+            db,
+            project_id=project_id,
+            source_id=source_id,
+            job_id=job_id,
+        )
+        await db.commit()
+        await db.refresh(job)
+        response = await semantic_inventory_job_response(db, job)
+    except SemanticInventoryError as exc:
+        await db.rollback()
+        _raise_semantic_inventory_error(exc)
+    schedule_semantic_inventory_job(job.id)
+    return APIResponse.ok(data=response, message="已重新处理未完成的数据")
+
+
+@router.post(
+    "/{project_id}/sources/{source_id}/semantic-inventory-jobs/{job_id}/cancel",
+    response_model=APIResponse[SemanticInventoryJobResponse],
+)
+async def cancel_source_semantic_inventory_job(
+    project_id: UUID,
+    source_id: UUID,
+    job_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        job = await request_semantic_inventory_cancel(
+            db,
+            project_id=project_id,
+            source_id=source_id,
+            job_id=job_id,
+        )
+        await db.commit()
+        await db.refresh(job)
+        response = await semantic_inventory_job_response(db, job)
+    except SemanticInventoryError as exc:
+        await db.rollback()
+        _raise_semantic_inventory_error(exc)
+    return APIResponse.ok(data=response, message="已停止后续整理")
+
+
 async def _record_preflight_failure(
     db: AsyncSession,
     *,
@@ -3072,6 +3407,12 @@ async def preflight_source(
     replay_recipe_id: UUID | None = None,
     db: AsyncSession = Depends(get_db),
 ):
+    app_settings = await get_or_create_app_settings(db)
+    if not app_settings.preprocessing_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="数据预处理已在设置中关闭，请先开启后再手动检查并准备数据",
+        )
     try:
         return await _preflight_source_impl(
             project_id,
@@ -3455,22 +3796,7 @@ async def _preflight_source_impl(
         connection = await db.get(Connection, source.connection_id)
         if connection is None:
             raise HTTPException(status_code=404, detail="数据库连接已失效")
-        password = (
-            encryptor.decrypt(connection.password_encrypted)
-            if connection.password_encrypted
-            else ""
-        )
-        manager = create_database_manager(
-            {
-                "driver": connection.driver,
-                "host": connection.host,
-                "port": connection.port,
-                "user": connection.username,
-                "password": password,
-                "database": connection.database_name,
-                "extra_options": connection.extra_options or {},
-            }
-        )
+        manager = _database_manager_for_connection(connection)
         try:
             value_profile = await asyncio.to_thread(
                 run_database_value_preflight,
@@ -4600,12 +4926,13 @@ def _semantic_entry_order_by() -> tuple[Any, ...]:
             else_=9,
         ),
         case(
-            (SemanticEntry.entry_type == "relationship", 0),
+            (SemanticEntry.entry_type == "scope_presentation", 0),
             (SemanticEntry.entry_type == "metric", 1),
             (SemanticEntry.entry_type == "dimension", 2),
-            (SemanticEntry.entry_type == "business_rule", 3),
-            (SemanticEntry.entry_type == "cleaning_rule", 4),
-            (SemanticEntry.entry_type == "verified_query", 5),
+            (SemanticEntry.entry_type == "relationship", 3),
+            (SemanticEntry.entry_type == "business_rule", 4),
+            (SemanticEntry.entry_type == "cleaning_rule", 5),
+            (SemanticEntry.entry_type == "verified_query", 6),
             else_=9,
         ),
         func.lower(SemanticEntry.key),
@@ -4670,6 +4997,29 @@ async def _remember_candidate_rejection(
 ) -> str | None:
     """Return why this head cannot safely become governed knowledge."""
 
+    if entry.entry_type == "scope_presentation":
+        try:
+            ScopePresentationDefinition.model_validate(entry.definition)
+        except (TypeError, ValueError):
+            return "候选缺少可核对的数据源或表范围"
+        if entry.validity == "stale" or not entry.is_active:
+            return "候选当前已经失效"
+        if entry.active_revision_id is None:
+            return "候选缺少可绑定的当前版本"
+        revision = await db.get(SemanticEntryRevision, entry.active_revision_id)
+        if (
+            revision is None
+            or revision.project_id != entry.project_id
+            or revision.semantic_entry_id != entry.id
+            or revision.snapshot != semantic_entry_snapshot(entry)
+        ):
+            return "候选当前版本已经变化，请刷新后重新核对"
+        # Display metadata is adopted by explicit human review. It is never
+        # sent through the system's data-execution validation pipeline.
+        return None
+
+    if not is_executable_semantic_definition(entry.definition):
+        return "候选还不是可执行的指标、维度或关联定义，请重新生成或补充定义"
     if entry.execution_state != "verified" or not entry.definition:
         return "候选尚未通过真实执行验证"
     if entry.validity != "active":
@@ -4691,21 +5041,39 @@ async def _remember_candidate_rejection(
     if (
         details.get("status") != "verified"
         or details.get("definition_hash") != definition_hash
-        or not details.get("last_verified_run_id")
+        or not (
+            details.get("last_verified_run_id")
+            or details.get("last_validation_job_id")
+        )
         or (details.get("value_hash") and details.get("value_hash") != value_hash)
     ):
         return "候选验证摘要不属于当前定义或当前值"
 
-    verified_run_id = str(details["last_verified_run_id"])
+    verified_run_id = str(details.get("last_verified_run_id") or "")
+    validation_job_id = str(details.get("last_validation_job_id") or "")
+    validation_item_id = str(details.get("last_validation_item_id") or "")
     matching_proof = False
     for item in entry.evidence or []:
         if not isinstance(item, dict):
             continue
         if str(item.get("definition_hash") or "") != definition_hash:
             continue
+        kind = str(item.get("kind") or "")
+        if kind == "semantic_validation_result":
+            if (
+                item.get("status") == "verified"
+                and str(item.get("semantic_entry_id") or "") == str(entry.id)
+                and str(item.get("validation_job_id") or "") == validation_job_id
+                and (
+                    not validation_item_id
+                    or str(item.get("validation_item_id") or "") == validation_item_id
+                )
+            ):
+                matching_proof = True
+                break
+            continue
         if str(item.get("analysis_run_id") or "") != verified_run_id:
             continue
-        kind = str(item.get("kind") or "")
         if kind == "deterministic_aggregate_metric_observation":
             matching_proof = bool(item.get("result_hash"))
             if matching_proof:
@@ -4761,291 +5129,45 @@ async def _restore_candidate_target(
     return target
 
 
-_NUMERIC_TYPE_HINTS = (
-    "int",
-    "float",
-    "double",
-    "decimal",
-    "numeric",
-    "real",
-    "number",
-)
-
-
-def _probe_quote(identifier: str) -> str:
-    return '"' + identifier.replace('"', '""') + '"'
-
-
-def _probe_coerce(value: Any) -> Any:
-    if isinstance(value, (int, str, bool)) or value is None:
-        return value
-    if isinstance(value, float):
-        return round(value, 6)
-    if isinstance(value, (datetime,)):
-        return value.isoformat()
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return str(value)
-
-
-def _run_file_probe(working_uri: str, select_sql: str) -> dict[str, Any]:
-    import duckdb
-
-    escaped_path = working_uri.replace("'", "''")
-    relation = duckdb.sql(f"SELECT {select_sql} FROM read_parquet('{escaped_path}')")
-    row = relation.fetchone()
-    if row is None:
-        return {}
-    return {
-        column[0]: _probe_coerce(value)
-        for column, value in zip(relation.description, row)
-    }
-
-
-async def _probe_column_candidate(
-    db: AsyncSession,
-    *,
-    project_id: UUID,
-    entry: SemanticEntry,
-) -> None:
-    """Verify a metric/dimension candidate with a deterministic probe query.
-
-    Relationship candidates earn verification through analyst-run joins. Column
-    candidates (``metric_candidate:<source>:<column>`` / ``grain:<source>``) get
-    the same real-execution bar via a direct aggregate probe against their bound
-    source, then record the exact evidence shape ``remember`` already trusts.
-    """
-    key_parts = entry.key.split(":", 2)
-    source_id: str
-    column = ""
-    table: str | None = None
-    if (
-        entry.entry_type == "metric"
-        and len(key_parts) == 3
-        and key_parts[0] == "metric_candidate"
-    ):
-        source_id, column = key_parts[1], key_parts[2]
-    elif entry.entry_type == "dimension" and key_parts[0] == "grain" and len(key_parts) == 2:
-        source_id = key_parts[1]
-    else:
-        raise HTTPException(
-            status_code=409,
-            detail=f"{entry.key} 缺少可探测的字段绑定，暂时无法系统验证",
-        )
-
-    try:
-        source_uuid = UUID(source_id)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail=f"{entry.key} 的来源标识无效，无法系统验证",
-        ) from exc
-    source = await db.get(ProjectDataSource, source_uuid)
-    if (
-        source is None
-        or source.project_id != project_id
-        or source.status == "superseded"
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail="候选绑定的数据源已失效，无法系统验证",
-        )
-    profile = source.profile_data or {}
-
-    if entry.entry_type == "dimension":
-        grain = sorted(
-            (
-                profile.get("schema", {}).get("candidate_grain", [])
-                or profile.get("preanalysis", {}).get("candidate_grain", [])
-            ),
-            key=lambda item: (
-                int(item.get("evidence_priority", 9)),
-                -float(item.get("uniqueness", 0)),
-            ),
-        )
-        if not grain:
-            raise HTTPException(
-                status_code=409,
-                detail="预检中没有可探测的粒度字段，无法系统验证",
-            )
-        column = str(grain[0].get("column") or "")
-        table = str(grain[0].get("table") or "") or None
-
-    column_details = [
-        item
-        for item in _profile_column_details(profile)
-        if str(item.get("name") or "") == column
-    ]
-    if not column or not column_details:
-        raise HTTPException(
-            status_code=409,
-            detail=f"当前数据里找不到字段“{column}”，无法系统验证",
-        )
-    declared_type = str(
-        column_details[0].get("type") or column_details[0].get("dtype") or ""
-    ).lower()
-    is_numeric = any(hint in declared_type for hint in _NUMERIC_TYPE_HINTS)
-
-    if source.kind == "connection":
-        if table is None:
-            table = str(column_details[0].get("table") or "") or None
-        if table is None:
-            raise HTTPException(
-                status_code=409,
-                detail=f"无法确定字段“{column}”所属的数据表，无法系统验证",
-            )
-
-    quoted_column = _probe_quote(column)
-    select_parts = [
-        "COUNT(*) AS total_rows",
-        f"COUNT({quoted_column}) AS non_null_rows",
-        f"COUNT(DISTINCT {quoted_column}) AS distinct_values",
-    ]
-    if entry.entry_type == "metric":
-        select_parts.append(f"MIN({quoted_column}) AS min_value")
-        select_parts.append(f"MAX({quoted_column}) AS max_value")
-        if is_numeric:
-            select_parts.append(f"AVG({quoted_column}) AS avg_value")
-    select_sql = ", ".join(select_parts)
-
-    if source.kind == "file":
-        if not source.working_uri or not Path(source.working_uri).is_file():
-            raise HTTPException(
-                status_code=409,
-                detail="可信数据副本不可用，无法系统验证",
-            )
-        stats = await asyncio.to_thread(
-            _run_file_probe, source.working_uri, select_sql
-        )
-    else:
-        connection = await db.get(Connection, source.connection_id)
-        if connection is None:
-            raise HTTPException(
-                status_code=409,
-                detail="数据库连接已失效，无法系统验证",
-            )
-        password = (
-            encryptor.decrypt(connection.password_encrypted)
-            if connection.password_encrypted
-            else ""
-        )
-        manager = create_database_manager(
-            {
-                "driver": connection.driver,
-                "host": connection.host,
-                "port": connection.port,
-                "user": connection.username,
-                "password": password,
-                "database": connection.database_name,
-                "extra_options": connection.extra_options or {},
-            }
-        )
-        sql = f"SELECT {select_sql} FROM {_probe_quote(str(table))}"
-        try:
-            result = await asyncio.to_thread(
-                manager.execute_query, sql, True, 10
-            )
-        except Exception as exc:
-            raise HTTPException(
-                status_code=409,
-                detail=f"探测查询没有执行成功：{exc}",
-            ) from exc
-        stats = {
-            key: _probe_coerce(value)
-            for key, value in (result.data[0] if result.data else {}).items()
-        }
-
-    total_rows = int(stats.get("total_rows") or 0)
-    non_null_rows = int(stats.get("non_null_rows") or 0)
-    distinct_values = int(stats.get("distinct_values") or 0)
-    if total_rows <= 0:
-        raise HTTPException(
-            status_code=409,
-            detail="探测到的数据为空，无法系统验证",
-        )
-
-    if entry.entry_type == "metric":
-        summary = (
-            f"系统探测：{column} 共 {total_rows} 行、非空 {non_null_rows} 行、"
-            f"去重 {distinct_values} 个取值"
-        )
-        if "min_value" in stats:
-            summary += f"，范围 {stats['min_value']} ~ {stats['max_value']}"
-        if "avg_value" in stats:
-            summary += f"，均值 {stats['avg_value']}"
-    else:
-        uniqueness = distinct_values / total_rows if total_rows else 0
-        summary = (
-            f"系统探测：{column} 唯一率 {uniqueness:.1%}"
-            f"（{distinct_values}/{total_rows}）"
-        )
-
-    definition = {
-        "version": 1,
-        "kind": "column_metric" if entry.entry_type == "metric" else "grain_key",
-        "source_id": str(source.id),
-        "table": table,
-        "column": column,
-    }
-    definition_hash = stable_payload_hash(definition)
-    probe_run_id = uuid4()
-    verified_at = datetime.now(UTC).isoformat()
-    previous_revision_id = entry.active_revision_id
-    entry.definition = definition
-    entry.execution_state = "verified"
-    entry.execution_details = {
-        "version": 1,
-        "status": "verified",
-        "definition_hash": definition_hash,
-        "last_verified_run_id": str(probe_run_id),
-        "verified_at": verified_at,
-        "checks": [{"name": key, "value": value} for key, value in stats.items()],
-        "summary": summary,
-    }
-    entry.evidence = [
-        *list(entry.evidence or []),
-        {
-            "kind": "semantic_execution_verification",
-            "status": "verified",
-            "semantic_entry_id": str(entry.id),
-            "definition_hash": definition_hash,
-            "analysis_run_id": str(probe_run_id),
-            "rule_value": entry.value,
-            "recorded_at": verified_at,
-            "probe": stats,
-        },
-    ]
-    await append_semantic_revision(
-        db,
-        entry,
-        mutation_kind="execution_verified",
-        actor_source="system",
-        reason="系统探测查询已在真实数据上验证该候选",
-        expected_active_revision_id=previous_revision_id,
-    )
-
-
 async def _semantic_entry_allowed_actions(
     db: AsyncSession,
     entry: SemanticEntry,
 ) -> list[str]:
-    if entry.state != "candidate":
-        return []
     if not entry.is_active:
-        return ["restore"] if await _restore_candidate_target(db, entry) is not None else []
+        return (
+            ["restore"]
+            if entry.state == "candidate"
+            and await _restore_candidate_target(db, entry) is not None
+            else []
+        )
 
-    actions = ["ignore"]
-    if entry.validity != "stale" and entry.execution_state != "verified":
+    actions = ["ignore"] if entry.state == "candidate" else []
+    needs_current_version_validation = (
+        entry.validity != "stale" and entry.execution_state != "verified"
+    )
+    validation_is_queued = (
+        isinstance(entry.execution_details, dict)
+        and entry.execution_details.get("code") == "semantic_validation_queued"
+    )
+    if validation_is_queued:
+        return []
+    if (
+        needs_current_version_validation
+        and entry.state == "candidate"
+        and not validation_is_queued
+    ):
         if entry.entry_type == "relationship" and entry.definition:
             actions.append("queue_validation")
-        elif entry.entry_type in {"metric", "dimension"} and (
-            entry.key.startswith("metric_candidate:") or entry.key.startswith("grain:")
+        elif entry.entry_type in {"metric", "dimension"} and is_executable_semantic_definition(
+            entry.definition
         ):
             actions.append("queue_validation")
-    if entry.execution_state != "verified" and entry.definition:
+    if (
+        needs_current_version_validation
+        and is_executable_semantic_definition(entry.definition)
+    ):
         actions.append("attest")
-    if await _remember_candidate_rejection(db, entry) is None:
+    if entry.state == "candidate" and await _remember_candidate_rejection(db, entry) is None:
         actions.append("remember")
     return actions
 
@@ -5067,6 +5189,15 @@ async def _semantic_entry_response(
         for source_ref in resolution.source_refs
     ]
     response.source_scope = resolution.source_scope
+    if entry.scope_id is not None:
+        scope_node = await get_semantic_scope_node(
+            db,
+            entry.project_id,
+            entry.scope_id,
+            include_inactive=True,
+        )
+        if scope_node is not None:
+            response.scope_path = await semantic_scope_path(db, scope_node)
     return response
 
 
@@ -5083,6 +5214,342 @@ async def _semantic_source_catalog(
         )
     )
     return SemanticSourceCatalog.from_rows(result.all())
+
+
+_SEMANTIC_RECOMMENDATION_PROTECTED_EVIDENCE = frozenset(
+    {
+        "semantic_candidate_ignored",
+        "semantic_candidate_restored",
+        "relationship_validation_requested",
+        "semantic_validation_requested",
+        "semantic_validation_queued",
+        "semantic_validation_result",
+        "semantic_human_attestation",
+        "verified_candidate_remembered",
+    }
+)
+
+
+def _semantic_recommendation_is_user_governed(
+    entry: SemanticEntry,
+    *,
+    user_revision_entry_ids: set[UUID],
+) -> bool:
+    """Protect every head whose lifecycle has moved beyond an untouched suggestion."""
+
+    is_scope_presentation = entry.entry_type == "scope_presentation"
+    expected_execution_state = (
+        "definition_only" if is_scope_presentation else "needs_validation"
+    )
+
+    if (
+        entry.id in user_revision_entry_ids
+        or entry.state in {"confirmed", "locked"}
+        or not entry.is_active
+        or entry.source != "inferred"
+        or entry.validity != "unverified"
+        or entry.execution_state != expected_execution_state
+    ):
+        return True
+    allowed_codes = {
+        None,
+        (
+            "semantic_scope_presentation_needs_review"
+            if is_scope_presentation
+            else "semantic_recommendation_needs_validation"
+        ),
+    }
+    if (
+        isinstance(entry.execution_details, dict)
+        and entry.execution_details.get("code") not in allowed_codes
+    ):
+        return True
+    return any(
+        isinstance(item, dict)
+        and item.get("kind") in _SEMANTIC_RECOMMENDATION_PROTECTED_EVIDENCE
+        for item in (entry.evidence or [])
+    )
+
+
+def _semantic_recommendation_binding_slot(definition: object) -> str | None:
+    """Identify one direct physical field independently of its suggested role."""
+
+    if not isinstance(definition, dict) or definition.get("kind") not in {
+        "aggregate_metric",
+        "dimension",
+    }:
+        return None
+    source = definition.get("source")
+    if not isinstance(source, dict):
+        return None
+    fields = (
+        "source_logical_name",
+        "source_kind",
+        "table_or_view",
+        "action_column",
+    )
+    if any(not str(source.get(field) or "").strip() for field in fields):
+        return None
+    return json.dumps(
+        {field: str(source[field]).strip().casefold() for field in fields},
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+async def _retire_superseded_semantic_recommendations(
+    db: AsyncSession,
+    *,
+    existing_entries: list[SemanticEntry],
+    persisted_entries: list[SemanticEntry],
+    user_revision_entry_ids: set[UUID],
+) -> None:
+    """Keep one untouched current recommendation per directly bound field."""
+
+    current_by_slot = {
+        slot: entry
+        for entry in persisted_entries
+        if (slot := _semantic_recommendation_binding_slot(entry.definition)) is not None
+    }
+    if not current_by_slot:
+        return
+    current_ids = {entry.id for entry in persisted_entries}
+    for entry in existing_entries:
+        slot = _semantic_recommendation_binding_slot(entry.definition)
+        if (
+            entry.id in current_ids
+            or slot not in current_by_slot
+            or _semantic_recommendation_is_user_governed(
+                entry,
+                user_revision_entry_ids=user_revision_entry_ids,
+            )
+        ):
+            continue
+        replacement = current_by_slot[slot]
+        previous_revision_id = entry.active_revision_id
+        entry.is_active = False
+        entry.validity = "stale"
+        reset_semantic_execution_proof(entry)
+        entry.evidence = [
+            *list(entry.evidence or []),
+            {
+                "kind": "semantic_recommendation_superseded",
+                "replacement_entry_id": str(replacement.id),
+                "reason": "当前字段画像产生了新的业务角色建议",
+            },
+        ]
+        await append_semantic_revision(
+            db,
+            entry,
+            mutation_kind="recommendation_superseded",
+            actor_source="system",
+            reason="停用同一字段的旧版语义建议",
+            expected_active_revision_id=previous_revision_id,
+        )
+
+
+def _semantic_recommendation_execution_details(
+    batch: SemanticRecommendationBatch,
+    *,
+    locale: Literal["zh", "en"],
+    entry_type: str,
+) -> dict[str, Any]:
+    if entry_type == "scope_presentation":
+        return {
+            "version": 1,
+            "status": "definition_only",
+            "code": "semantic_scope_presentation_needs_review",
+            "details": {
+                "recommendation_batch_id": str(batch.batch_id),
+                "generated_by": batch.generated_by,
+            },
+            "summary": (
+                "这是数据源或表的候选中文名称；人工核对并采纳后才会显示给普通分析。"
+                if locale == "zh"
+                else "This candidate source or table label applies only after human review and adoption."
+            ),
+        }
+    return {
+        "version": 1,
+        "status": "needs_validation",
+        "code": "semantic_recommendation_needs_validation",
+        "details": {
+            "recommendation_batch_id": str(batch.batch_id),
+            "generated_by": batch.generated_by,
+        },
+        "summary": (
+            "这是待核对的推荐；只有独立验证通过后才可记住并用于普通分析。"
+            if locale == "zh"
+            else "This recommendation remains a candidate until independent validation passes."
+        ),
+    }
+
+
+def _semantic_recommendation_evidence(
+    item: SemanticEntryCreate,
+    batch: SemanticRecommendationBatch,
+) -> list[dict[str, Any]]:
+    return [
+        *[dict(value) for value in item.evidence],
+        {
+            "kind": "semantic_recommendation_batch",
+            "batch_id": str(batch.batch_id),
+            "candidate_id": item.key,
+            "generated_by": batch.generated_by,
+            "requires_validation": item.entry_type != "scope_presentation",
+            "requires_human_review": item.entry_type == "scope_presentation",
+        },
+    ]
+
+
+async def _persist_semantic_recommendation_batch(
+    db: AsyncSession,
+    *,
+    project_id: UUID,
+    batch: SemanticRecommendationBatch,
+    locale: Literal["zh", "en"],
+) -> list[SemanticEntry]:
+    """Create or CAS-refresh only untouched recommendation heads."""
+
+    if not batch.items:
+        return []
+    keys = [item.key for item in batch.items]
+    result = await db.execute(
+        select(SemanticEntry)
+        .where(
+            SemanticEntry.project_id == project_id,
+            or_(
+                SemanticEntry.key.in_(keys),
+                SemanticEntry.key.like("semantic_recommendation:%"),
+            ),
+        )
+        .with_for_update()
+    )
+    existing_entries = list(result.scalars())
+    existing_by_key = {entry.key: entry for entry in existing_entries}
+    existing_ids = [entry.id for entry in existing_entries]
+    user_revision_entry_ids: set[UUID] = set()
+    if existing_ids:
+        revision_result = await db.execute(
+            select(SemanticEntryRevision.semantic_entry_id).where(
+                SemanticEntryRevision.project_id == project_id,
+                SemanticEntryRevision.semantic_entry_id.in_(existing_ids),
+                SemanticEntryRevision.actor_source == "user",
+            )
+        )
+        user_revision_entry_ids = set(revision_result.scalars())
+
+    persisted: list[SemanticEntry] = []
+    actor_source = "ai" if batch.generated_by == "ai" else "inferred"
+    for item in batch.items:
+        scope = await resolve_semantic_entry_scope(
+            db,
+            project_id=project_id,
+            definition=item.model_dump(mode="json").get("definition"),
+            requested_scope_id=item.scope_id,
+            allow_unresolved_project_fallback=True,
+        )
+        existing = existing_by_key.get(item.key)
+        evidence = _semantic_recommendation_evidence(item, batch)
+        execution_details = _semantic_recommendation_execution_details(
+            batch,
+            locale=locale,
+            entry_type=item.entry_type,
+        )
+        execution_state = (
+            "definition_only"
+            if item.entry_type == "scope_presentation"
+            else "needs_validation"
+        )
+        definition = item.model_dump(mode="json").get("definition")
+        if existing is not None:
+            if _semantic_recommendation_is_user_governed(
+                existing,
+                user_revision_entry_ids=user_revision_entry_ids,
+            ):
+                continue
+            previous_revision_id = existing.active_revision_id
+            existing.value = item.value
+            existing.entry_type = item.entry_type
+            existing.state = "candidate"
+            existing.confidence = item.confidence
+            existing.definition = definition
+            existing.validity = "unverified"
+            existing.execution_state = execution_state
+            existing.execution_details = execution_details
+            existing.evidence = evidence
+            existing.source = "inferred"
+            existing.is_active = True
+            existing.scope_id = scope.id
+            existing.recommendation_batch_id = batch.batch_id
+            await append_semantic_revision(
+                db,
+                existing,
+                mutation_kind="recommendation_refreshed",
+                actor_source=actor_source,
+                reason="刷新当前数据画像生成的语义推荐",
+                expected_active_revision_id=previous_revision_id,
+            )
+            persisted.append(existing)
+            continue
+
+        entry = SemanticEntry(
+            project_id=project_id,
+            scope_id=scope.id,
+            key=item.key,
+            value=item.value,
+            entry_type=item.entry_type,
+            state="candidate",
+            confidence=item.confidence,
+            definition=definition,
+            validity="unverified",
+            execution_state=execution_state,
+            execution_details=execution_details,
+            evidence=evidence,
+            source="inferred",
+            is_active=True,
+            recommendation_batch_id=batch.batch_id,
+        )
+        db.add(entry)
+        await db.flush()
+        await append_semantic_revision(
+            db,
+            entry,
+            mutation_kind="recommendation_created",
+            actor_source=actor_source,
+            reason="根据当前数据画像生成语义推荐",
+        )
+        persisted.append(entry)
+    await _retire_superseded_semantic_recommendations(
+        db,
+        existing_entries=existing_entries,
+        persisted_entries=persisted,
+        user_revision_entry_ids=user_revision_entry_ids,
+    )
+    return persisted
+
+
+@router.get(
+    "/{project_id}/semantic-scopes",
+    response_model=APIResponse[list[SemanticScopeNodeResponse]],
+)
+async def list_semantic_scopes(
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    await _project_or_404(db, project_id)
+    try:
+        nodes = await semantic_scope_node_responses(db, project_id)
+    except SemanticScopeResolutionError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "semantic_scope_invalid",
+                "details": {"reason": str(exc)},
+            },
+        ) from exc
+    return APIResponse.ok(data=nodes)
 
 
 @router.get("/{project_id}/knowledge", response_model=APIResponse[list[SemanticEntryResponse]])
@@ -5203,6 +5670,7 @@ async def page_knowledge(
         "metric",
         "dimension",
         "relationship",
+        "scope_presentation",
         "business_rule",
         "cleaning_rule",
         "verified_query",
@@ -5211,15 +5679,22 @@ async def page_knowledge(
     state: Literal["candidate", "confirmed", "locked"] | None = Query(default=None),
     validity: Literal["active", "unverified", "stale"] | None = Query(default=None),
     source_scope: SemanticSourceScopeFilter | None = Query(default=None),
+    scope_id: UUID | None = Query(default=None),
     source_id: str | None = Query(default=None, max_length=64),
     left_table: str | None = Query(default=None, max_length=255),
     right_table: str | None = Query(default=None, max_length=255),
+    recommendation_batch_id: UUID | None = Query(default=None),
     business_facing_only: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ):
     await _project_or_404(db, project_id)
     source_catalog = await _semantic_source_catalog(db, project_id)
     statement = select(SemanticEntry).where(SemanticEntry.project_id == project_id)
+    if scope_id is not None:
+        scope_node = await get_semantic_scope_node(db, project_id, scope_id)
+        if scope_node is None:
+            raise HTTPException(status_code=404, detail="语义作用域不存在")
+        statement = statement.where(SemanticEntry.scope_id == scope_id)
     if validity != "stale":
         statement = statement.where(SemanticEntry.is_active.is_(True))
     if business_facing_only:
@@ -5230,6 +5705,10 @@ async def page_knowledge(
         statement = statement.where(SemanticEntry.state == state)
     if validity is not None:
         statement = statement.where(SemanticEntry.validity == validity)
+    if recommendation_batch_id is not None:
+        statement = statement.where(
+            SemanticEntry.recommendation_batch_id == recommendation_batch_id
+        )
     normalized_search = search.strip() if search else None
     normalized_source_id = source_id.strip() if source_id else None
     normalized_left_table = left_table.strip() if left_table else None
@@ -5304,12 +5783,97 @@ async def page_knowledge(
 
 
 @router.post(
+    "/{project_id}/knowledge/recommendations",
+    response_model=APIResponse[SemanticRecommendationResponse],
+)
+async def recommend_knowledge(
+    project_id: UUID,
+    payload: SemanticRecommendationRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate scoped candidates; the request itself is the model-use consent."""
+
+    await _project_or_404(db, project_id)
+    app_settings = await get_or_create_app_settings(db)
+    if not app_settings.self_analysis_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="分析建议已在设置中关闭，请先开启后再手动生成",
+        )
+    context = await load_project_context(db, project_id)
+    enhancer = await _semantic_recommendation_enhancer(db, payload)
+    try:
+        batch = await generate_semantic_recommendations(
+            context,
+            payload.scopes,
+            locale=payload.locale,
+            limit=payload.limit,
+            batch_id=uuid4(),
+            enhancer=enhancer,
+        )
+        entries = await persist_semantic_recommendation_batch(
+            db,
+            project_id=project_id,
+            batch=batch,
+            locale=payload.locale,
+        )
+        await db.commit()
+    except SemanticRecommendationError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "semantic_recommendation_scope_invalid",
+                "details": {"reason": str(exc)},
+            },
+        ) from exc
+    except SemanticScopeResolutionError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "semantic_recommendation_scope_invalid",
+                "details": {"reason": str(exc)},
+            },
+        ) from exc
+    except SemanticRevisionConflictError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "semantic_recommendation_revision_conflict",
+                "details": {"reason": str(exc)},
+            },
+        ) from exc
+
+    for entry in entries:
+        await db.refresh(entry)
+    source_catalog = await _semantic_source_catalog(db, project_id)
+    return APIResponse.ok(
+        data=SemanticRecommendationResponse(
+            batch_id=batch.batch_id,
+            generated_by=batch.generated_by,
+            items=[
+                await _semantic_entry_response(db, entry, source_catalog=source_catalog)
+                for entry in entries
+            ],
+        ),
+        message=(
+            "语义推荐已生成，仍需独立验证"
+            if entries
+            else "没有可新增或安全刷新的语义推荐"
+        ),
+    )
+
+
+@router.post(
     "/{project_id}/knowledge/batch",
     response_model=APIResponse[SemanticEntryBatchResponse],
 )
 async def batch_knowledge_candidates(
     project_id: UUID,
     payload: SemanticEntryBatchRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     await _project_or_404(db, project_id)
@@ -5335,10 +5899,18 @@ async def batch_knowledge_candidates(
                 status_code=409,
                 detail=f"候选 {entry.key} 已被更新，请刷新后重试",
             )
-        if entry.state != "candidate":
+        if (entry.execution_details or {}).get("code") == "semantic_validation_queued":
             raise HTTPException(
                 status_code=409,
-                detail=f"{entry.key} 已不是可处理的候选",
+                detail={
+                    "code": "semantic_validation_in_progress",
+                    "details": {"entry_id": str(entry.id)},
+                },
+            )
+        if payload.action in {"ignore", "remember", "restore"} and entry.state != "candidate":
+            raise HTTPException(
+                status_code=409,
+                detail=f"{entry.key} 已不是可执行该操作的候选",
             )
         if payload.action == "restore":
             target = await _restore_candidate_target(db, entry)
@@ -5354,21 +5926,39 @@ async def batch_knowledge_candidates(
                 detail=f"{entry.key} 当前未启用，只能先恢复",
             )
         elif payload.action == "queue_validation":
+            if entry.state != "candidate":
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"{entry.key} 已采用；修改后请重新人工核对当前版本",
+                )
             if entry.validity == "stale" or entry.execution_state == "verified":
                 raise HTTPException(
                     status_code=409,
                     detail=f"{entry.key} 已验证或已失效，不需要重新验证",
                 )
-            if entry.entry_type == "relationship":
-                if not entry.definition:
-                    raise HTTPException(
-                        status_code=409,
-                        detail=f"{entry.key} 不是可排队验证的关联候选",
-                    )
-            elif entry.entry_type not in {"metric", "dimension"}:
+            if entry.entry_type not in {"metric", "dimension", "relationship"}:
                 raise HTTPException(
                     status_code=409,
                     detail=f"{entry.key} 不是可验证的候选",
+                )
+            if not is_executable_semantic_definition(entry.definition):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "semantic_definition_not_executable",
+                        "details": {
+                            "entry_id": str(entry.id),
+                            "entry_key": entry.key,
+                        },
+                    },
+                )
+            if (entry.execution_details or {}).get("code") == "semantic_validation_queued":
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "semantic_validation_already_queued",
+                        "details": {"entry_id": str(entry.id)},
+                    },
                 )
         elif payload.action == "remember":
             rejection = await _remember_candidate_rejection(db, entry)
@@ -5388,17 +5978,26 @@ async def batch_knowledge_candidates(
                     status_code=409,
                     detail=f"{entry.key} 已经通过验证，无需重复确认",
                 )
-            if not entry.definition:
+            if not is_executable_semantic_definition(entry.definition):
                 raise HTTPException(
                     status_code=409,
-                    detail=f"{entry.key} 还没有业务定义，请先补充定义再人工确认",
+                    detail=f"{entry.key} 还没有可执行定义，请先补充定义再人工核对",
                 )
         ordered_entries.append(entry)
 
     now = datetime.now(UTC).isoformat()
     queued_entry_ids: list[UUID] = []
+    validation_job: SemanticValidationJob | None = None
     try:
-        for entry in ordered_entries:
+        if payload.action == "queue_validation":
+            validation_job = await queue_semantic_validation_job(
+                db,
+                project_id=project_id,
+                entries=ordered_entries,
+                reason=payload.reason,
+            )
+            queued_entry_ids = [entry.id for entry in ordered_entries]
+        for entry in ordered_entries if payload.action != "queue_validation" else []:
             previous_revision_id = entry.active_revision_id
             if payload.action == "ignore":
                 entry.is_active = False
@@ -5422,48 +6021,10 @@ async def batch_knowledge_candidates(
                     reason=payload.reason or "用户忽略候选理解",
                     expected_active_revision_id=previous_revision_id,
                 )
-            elif payload.action == "queue_validation":
-                if entry.entry_type != "relationship":
-                    # Metric/dimension candidates are verified immediately by a
-                    # deterministic probe query instead of an analyst round-trip.
-                    await _probe_column_candidate(db, project_id=project_id, entry=entry)
-                    continue
-                definition_hash = stable_payload_hash(entry.definition)
-                entry.validity = "unverified"
-                entry.execution_state = "needs_validation"
-                entry.execution_details = {
-                    "version": 1,
-                    "status": "needs_validation",
-                    "definition_hash": definition_hash,
-                    "queued_from_revision_id": str(previous_revision_id),
-                    "queued_at": now,
-                    "summary": "已选择这项关联候选；等待真实数据关联验收。",
-                }
-                entry.source = "user"
-                entry.evidence = [
-                    *list(entry.evidence or []),
-                    {
-                        "kind": "relationship_validation_requested",
-                        "semantic_entry_id": str(entry.id),
-                        "based_on_revision_id": str(previous_revision_id),
-                        "definition_hash": definition_hash,
-                        "requested_at": now,
-                        "reason": payload.reason,
-                    },
-                ]
-                await append_semantic_revision(
-                    db,
-                    entry,
-                    mutation_kind="validation_queued",
-                    actor_source="user",
-                    reason=payload.reason or "用户请求验证关联候选",
-                    expected_active_revision_id=previous_revision_id,
-                )
-                queued_entry_ids.append(entry.id)
             elif payload.action == "attest":
-                # Human attestation: the user vouches for this candidate without
-                # a system probe. Bookkeeping mirrors a verified execution so the
-                # remember gate can bind proof to the current definition.
+                # Human attestation binds proof to the exact current definition.
+                # Candidate state is intentionally preserved until `remember`;
+                # confirmed/locked entries keep their durable adoption state.
                 definition_hash = stable_payload_hash(entry.definition)
                 value_hash = stable_payload_hash(entry.value)
                 attestation_run_id = f"human-attestation:{uuid4()}"
@@ -5507,12 +6068,23 @@ async def batch_knowledge_candidates(
                 entry.state = "confirmed"
                 entry.confidence = 1
                 entry.source = "user"
+                presentation_only = entry.entry_type == "scope_presentation"
+                if presentation_only:
+                    entry.validity = "active"
                 entry.evidence = [
                     *list(entry.evidence or []),
                     {
-                        "kind": "verified_candidate_remembered",
+                        "kind": (
+                            "scope_presentation_adopted"
+                            if presentation_only
+                            else "verified_candidate_remembered"
+                        ),
                         "semantic_entry_id": str(entry.id),
-                        "validated_revision_id": str(previous_revision_id),
+                        (
+                            "reviewed_revision_id"
+                            if presentation_only
+                            else "validated_revision_id"
+                        ): str(previous_revision_id),
                         "definition_hash": definition_hash,
                         "value_hash": value_hash,
                         "remembered_at": now,
@@ -5522,9 +6094,18 @@ async def batch_knowledge_candidates(
                 await append_semantic_revision(
                     db,
                     entry,
-                    mutation_kind="verified_candidate_remembered",
+                    mutation_kind=(
+                        "scope_presentation_adopted"
+                        if presentation_only
+                        else "verified_candidate_remembered"
+                    ),
                     actor_source="user",
-                    reason=payload.reason or "用户记住已验证候选",
+                    reason=payload.reason
+                    or (
+                        "用户核对并采用数据范围名称"
+                        if presentation_only
+                        else "用户记住已验证候选"
+                    ),
                     expected_active_revision_id=previous_revision_id,
                 )
                 await resolve_confirmed_ambiguity(db, project_id, entry.key)
@@ -5539,49 +6120,45 @@ async def batch_knowledge_candidates(
                     actor_source="user",
                 )
         await db.commit()
-    except SemanticRevisionConflictError as exc:
+    except (SemanticRevisionConflictError, SemanticValidationQueueError) as exc:
         await db.rollback()
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        detail: Any = str(exc)
+        if isinstance(exc, SemanticValidationQueueError):
+            detail = {"code": exc.code, "details": exc.details}
+        raise HTTPException(status_code=409, detail=detail) from exc
 
     for entry in ordered_entries:
         await db.refresh(entry)
-    validation_prompt = None
-    validation_selection = []
-    queue_message = "关联候选已排队等待真实数据验证"
-    if payload.action == "queue_validation":
-        relationship_entries = [
-            entry for entry in ordered_entries if entry.entry_type == "relationship"
-        ]
-        probed_count = len(ordered_entries) - len(relationship_entries)
-        validation_selection = [
-            {
-                "entry_id": entry.id,
-                "expected_active_revision_id": entry.active_revision_id,
-            }
-            for entry in relationship_entries
-        ]
-        if relationship_entries:
-            labels = "；".join(
-                f"{entry.key}（{entry.value}）" for entry in relationship_entries[:20]
-            )
-            suffix = "；其余候选也按相同标准逐项核对" if len(relationship_entries) > 20 else ""
-            validation_prompt = (
-                "请基于当前项目的真实完整数据验证这些候选关联："
-                f"{labels}{suffix}。逐项检查匹配率、唯一性和行数扩张，"
-                "应用关联后重新验证最终结果；失败的候选不要确认。"
-            )
-        if probed_count and not relationship_entries:
-            queue_message = "字段候选已在真实数据上探测验证，现在可以记住了"
-        elif probed_count:
-            queue_message = "关联候选已排队等待验证；字段候选已完成探测验证"
-        else:
-            queue_message = "关联候选已排队等待真实数据验证"
+    if validation_job is not None:
+        await db.refresh(validation_job)
+        if db.bind is None:  # pragma: no cover - application sessions are always bound
+            raise HTTPException(status_code=500, detail="验证作业无法取得数据库会话")
+        validation_session_factory = async_sessionmaker(
+            db.bind,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+        background_tasks.add_task(
+            run_semantic_validation_job,
+            validation_job.id,
+            validation_session_factory,
+        )
+    queue_message = "候选已进入独立验证作业"
+    attestation_message = (
+        "已人工核对当前版本，原有采用状态保持不变"
+        if any(entry.state in {"confirmed", "locked"} for entry in ordered_entries)
+        else "已人工核对当前版本；仍需记住后才会用于普通分析"
+    )
     message = {
         "ignore": "候选已停用，历史版本仍保留",
         "queue_validation": queue_message,
-        "remember": "已记住通过当前版本验证的候选",
+        "remember": (
+            "已采用核对后的数据范围名称"
+            if all(entry.entry_type == "scope_presentation" for entry in ordered_entries)
+            else "已记住通过当前版本验证的候选"
+        ),
         "restore": "已恢复候选，可重新考虑或验证",
-        "attest": "已人工确认这条理解可用，现在可以记住了",
+        "attest": attestation_message,
     }[payload.action]
     source_catalog = await _semantic_source_catalog(db, project_id)
     return APIResponse.ok(
@@ -5592,11 +6169,100 @@ async def batch_knowledge_candidates(
                 for item in ordered_entries
             ],
             queued_entry_ids=queued_entry_ids,
-            validation_selection=validation_selection,
-            validation_prompt=validation_prompt,
+            validation_job_id=validation_job.id if validation_job is not None else None,
+            validation_status=validation_job.status if validation_job is not None else None,
         ),
         message=message,
     )
+
+
+@router.get(
+    "/{project_id}/knowledge/validation-jobs/{job_id}",
+    response_model=APIResponse[SemanticValidationJobResponse],
+)
+async def get_semantic_validation_job(
+    project_id: UUID,
+    job_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    await _project_or_404(db, project_id)
+    result = await db.execute(
+        select(SemanticValidationJob).where(
+            SemanticValidationJob.id == job_id,
+            SemanticValidationJob.project_id == project_id,
+        )
+    )
+    job = result.scalar_one_or_none()
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "semantic_validation_job_not_found",
+                "details": {"job_id": str(job_id)},
+            },
+        )
+    return APIResponse.ok(data=await semantic_validation_job_response(db, job))
+
+
+@router.post(
+    "/{project_id}/knowledge/validation-jobs/{job_id}/retry",
+    response_model=APIResponse[SemanticValidationJobResponse],
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def retry_semantic_validation_job_endpoint(
+    project_id: UUID,
+    job_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    await _project_or_404(db, project_id)
+    try:
+        job = await retry_semantic_validation_job(
+            db,
+            project_id=project_id,
+            job_id=job_id,
+        )
+        await db.commit()
+        await db.refresh(job)
+        response = await semantic_validation_job_response(db, job)
+    except SemanticValidationQueueError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=(
+                status.HTTP_404_NOT_FOUND
+                if exc.code == "semantic_validation_job_not_found"
+                else status.HTTP_409_CONFLICT
+            ),
+            detail={
+                "code": exc.code,
+                "message": str(exc),
+                "details": exc.details,
+            },
+        ) from exc
+    except SemanticRevisionConflictError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "semantic_validation_target_changed",
+                "message": "待验证定义已经变化，请刷新后重试。",
+                "details": {},
+            },
+        ) from exc
+
+    if db.bind is None:  # pragma: no cover - application sessions are always bound
+        raise HTTPException(status_code=500, detail="验证作业无法取得数据库会话")
+    validation_session_factory = async_sessionmaker(
+        db.bind,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    background_tasks.add_task(
+        run_semantic_validation_job,
+        job.id,
+        validation_session_factory,
+    )
+    return APIResponse.ok(data=response, message="验证已重新开始")
 
 
 @router.post("/{project_id}/knowledge", response_model=APIResponse[SemanticEntryResponse])
@@ -5606,6 +6272,18 @@ async def create_knowledge(
     db: AsyncSession = Depends(get_db),
 ):
     await _project_or_404(db, project_id)
+    try:
+        resolved_scope = await resolve_semantic_entry_scope(
+            db,
+            project_id=project_id,
+            definition=payload.model_dump(mode="json").get("definition"),
+            requested_scope_id=payload.scope_id,
+            allow_unresolved_project_fallback=payload.state == "candidate",
+        )
+    except SemanticScopeResolutionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    payload_values = payload.model_dump(mode="json")
+    payload_values["scope_id"] = resolved_scope.id
     existing_result = await db.execute(
         select(SemanticEntry)
         .where(
@@ -5629,10 +6307,11 @@ async def create_knowledge(
             raise HTTPException(status_code=409, detail="该业务定义已锁定")
         changes_execution_contract = (
             existing.value != payload.value
-            or existing.definition != payload.model_dump(mode="json").get("definition")
+            or existing.definition != payload_values.get("definition")
             or existing.validity != payload.validity
+            or existing.scope_id != resolved_scope.id
         )
-        for key, value in payload.model_dump(mode="json").items():
+        for key, value in payload_values.items():
             setattr(existing, key, value)
         existing.is_active = True
         if changes_execution_contract:
@@ -5654,7 +6333,7 @@ async def create_knowledge(
         return APIResponse.ok(
             data=await _semantic_entry_response(db, existing), message="理解已更新"
         )
-    entry = SemanticEntry(project_id=project_id, **payload.model_dump(mode="json"))
+    entry = SemanticEntry(project_id=project_id, **payload_values)
     _reset_semantic_execution_state(entry)
     db.add(entry)
     await db.flush()
@@ -5713,12 +6392,32 @@ async def update_knowledge(
         exclude_unset=True,
         exclude={"expected_active_revision_id"},
     )
+    if changes.get("scope_id") is not None:
+        changes["scope_id"] = UUID(str(changes["scope_id"]))
     next_entry_type = changes.get("entry_type", entry.entry_type)
     next_definition = changes.get("definition", entry.definition)
     try:
         validate_semantic_definition_compatibility(next_entry_type, next_definition)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        resolved_scope = await resolve_semantic_entry_scope(
+            db,
+            project_id=project_id,
+            definition=next_definition,
+            requested_scope_id=(
+                changes.get("scope_id")
+                if "scope_id" in changes
+                else entry.scope_id
+            ),
+            allow_unresolved_project_fallback=(
+                changes.get("state", entry.state) == "candidate"
+            ),
+        )
+    except SemanticScopeResolutionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if resolved_scope.id != entry.scope_id or "scope_id" in changes:
+        changes["scope_id"] = resolved_scope.id
     if (
         entry.state == "candidate"
         and {"state", "validity"} & changes.keys()
@@ -5742,7 +6441,7 @@ async def update_knowledge(
             raise HTTPException(status_code=409, detail="这个业务标识已被当前项目使用")
     for key, value in changes.items():
         setattr(entry, key, value)
-    if {"key", "value", "entry_type", "definition", "validity"} & changes.keys():
+    if {"scope_id", "key", "value", "entry_type", "definition", "validity"} & changes.keys():
         _reset_semantic_execution_state(entry)
     if changes:
         try:
@@ -6074,6 +6773,31 @@ async def _correction_owns_semantic_head(
         or entry.key != correction.target_key
     ):
         return False
+    return await _correction_owned_revision_chain(db, correction, entry) is not None
+
+
+def _correction_meaning_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Ignore only deterministic scope-backfill metadata when comparing meaning."""
+
+    comparable = dict(snapshot)
+    comparable.pop("scope_id", None)
+    comparable["evidence"] = [
+        item
+        for item in comparable.get("evidence") or []
+        if not isinstance(item, dict) or item.get("kind") != "semantic_scope_reconciled"
+    ]
+    return comparable
+
+
+async def _correction_owned_revision_chain(
+    db: AsyncSession,
+    correction: AnalysisCorrection,
+    entry: SemanticEntry,
+) -> tuple[SemanticEntryRevision, SemanticEntryRevision] | None:
+    """Return promotion/current heads when only transparent system metadata followed it."""
+
+    if entry.active_revision_id is None:
+        return None
     revision_result = await db.execute(
         select(SemanticEntryRevision)
         .where(
@@ -6083,8 +6807,38 @@ async def _correction_owns_semantic_head(
         )
         .order_by(SemanticEntryRevision.revision_number.desc())
     )
-    revision = revision_result.scalars().first()
-    return revision is not None and entry.active_revision_id == revision.id
+    promotion = revision_result.scalars().first()
+    if promotion is None:
+        return None
+    current = await semantic_revision_or_none(
+        db,
+        project_id=entry.project_id,
+        entry_id=entry.id,
+        revision_id=entry.active_revision_id,
+    )
+    if current is None or current.snapshot != semantic_entry_snapshot(entry):
+        return None
+    active = current
+    while current.id != promotion.id:
+        if (
+            current.mutation_kind != "scope_reconciled"
+            or current.actor_source != "system"
+            or current.source_correction_id is not None
+            or current.parent_revision_id is None
+        ):
+            return None
+        parent = await semantic_revision_or_none(
+            db,
+            project_id=entry.project_id,
+            entry_id=entry.id,
+            revision_id=current.parent_revision_id,
+        )
+        if parent is None or _correction_meaning_snapshot(
+            current.snapshot
+        ) != _correction_meaning_snapshot(parent.snapshot):
+            return None
+        current = parent
+    return promotion, active
 
 
 def _correction_entry_type(correction_type: str) -> str:
@@ -6110,29 +6864,17 @@ async def _detach_correction_rule(
     if rule.state == "locked":
         return "head_superseded"
 
-    revision_result = await db.execute(
-        select(SemanticEntryRevision)
-        .where(
-            SemanticEntryRevision.semantic_entry_id == rule.id,
-            SemanticEntryRevision.source_correction_id == str(correction.id),
-            SemanticEntryRevision.mutation_kind == "correction_promoted",
-        )
-        .order_by(SemanticEntryRevision.revision_number.desc())
-    )
-    promotion_revision = revision_result.scalars().first()
-    if promotion_revision is not None:
-        # A later user edit, restore, validation, or correction owns the head now.
-        # Removing this old correction may unlink it, but must never rewind that head.
-        if rule.active_revision_id != promotion_revision.id:
-            return "head_superseded"
-        correction.semantic_entry_id = None
+    owned_chain = await _correction_owned_revision_chain(db, correction, rule)
+    if owned_chain is not None:
+        promotion_revision, active_revision = owned_chain
         if promotion_revision.parent_revision_id is None:
             await deactivate_semantic_entry(
                 db,
                 rule,
-                expected_active_revision_id=promotion_revision.id,
+                expected_active_revision_id=active_revision.id,
                 source_correction_id=correction.id,
             )
+            correction.semantic_entry_id = None
             return "deactivated"
         previous_revision = await semantic_revision_or_none(
             db,
@@ -6146,13 +6888,28 @@ async def _detach_correction_rule(
             db,
             rule,
             previous_revision,
-            expected_active_revision_id=promotion_revision.id,
+            expected_active_revision_id=active_revision.id,
             reason="撤销项目修正并恢复此前定义",
             mutation_kind="correction_detached",
             actor_source="user",
             source_correction_id=correction.id,
         )
+        correction.semantic_entry_id = None
         return "detached"
+
+    # A later user edit, restore, validation, or correction owns the head now.
+    # Removing this old correction may unlink it, but must never rewind that head.
+    promotion_revision_result = await db.execute(
+        select(SemanticEntryRevision.id)
+        .where(
+            SemanticEntryRevision.semantic_entry_id == rule.id,
+            SemanticEntryRevision.source_correction_id == str(correction.id),
+            SemanticEntryRevision.mutation_kind == "correction_promoted",
+        )
+        .limit(1)
+    )
+    if promotion_revision_result.scalar_one_or_none() is not None:
+        return "head_superseded"
 
     # Compatibility for records promoted before revision history was introduced.
     # Only revert when the current head still contains this correction's provenance.
@@ -7340,6 +8097,8 @@ async def export_project(project_id: UUID, db: AsyncSession = Depends(get_db)):
                         "last_run_id": None,
                         "last_brief_artifact_id": None,
                         "attention_reason": None,
+                        "attention_reason_code": None,
+                        "attention_reason_params": {},
                     }
                 ).model_dump()
             )
@@ -7354,6 +8113,7 @@ async def export_project(project_id: UUID, db: AsyncSession = Depends(get_db)):
             semantic_entries=[
                 SemanticEntryCreate.model_validate(
                     {
+                        "scope_id": item.scope_id,
                         "key": item.key,
                         "value": item.value,
                         "entry_type": item.entry_type,
@@ -7533,6 +8293,8 @@ async def import_project(bundle: ProjectBundle, db: AsyncSession = Depends(get_d
                     "last_run_id": None,
                     "last_brief_artifact_id": None,
                     "attention_reason": None,
+                    "attention_reason_code": None,
+                    "attention_reason_params": {},
                 }
             ).model_dump()
         )

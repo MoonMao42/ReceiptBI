@@ -160,6 +160,48 @@ class TestExecutionService:
         assert snapshot["context_rounds"] == 3
 
     @pytest.mark.asyncio
+    async def test_runtime_snapshot_hides_diagnostics_when_disabled(self, mock_db):
+        project_id = uuid4()
+        connection_id = uuid4()
+        service = ExecutionService(
+            db=mock_db,
+            project_id=project_id,
+            context_rounds=2,
+            settings_data={"diagnostics_enabled": False},
+        )
+        service._get_model_config = AsyncMock(
+            return_value={
+                "model_id": "model-uuid",
+                "display_name": "DeepSeek Chat",
+                "model": "deepseek-chat",
+                "source_provider": "deepseek",
+                "resolved_provider": "openai",
+                "provider": "openai",
+                "api_format": "openai_compatible",
+            }
+        )
+        service._get_connection_record = AsyncMock(
+            return_value=SimpleNamespace(
+                id=connection_id,
+                name="Analytics DB",
+                driver="postgresql",
+                host="db.internal",
+                database_name="analytics",
+            )
+        )
+
+        snapshot = await service.get_runtime_snapshot()
+
+        assert snapshot == {
+            "model_id": "model-uuid",
+            "model_name": "DeepSeek Chat",
+            "connection_id": str(connection_id),
+            "connection_name": "Analytics DB",
+            "context_rounds": 2,
+            "project_id": str(project_id),
+        }
+
+    @pytest.mark.asyncio
     async def test_execute_stream_loads_execution_inputs_with_keyword_args(self, mock_db):
         conversation_id = uuid4()
         service = ExecutionService(db=mock_db, language="zh")
@@ -194,6 +236,75 @@ class TestExecutionService:
         assert len(events) == 1
         assert events[0].type == SSEEventType.RESULT
         health_mock.assert_awaited_once_with(healthy=True, commit=False)
+
+    @pytest.mark.asyncio
+    async def test_execute_stream_stop_wins_before_terminal_result_is_published(self, mock_db):
+        conversation_id = uuid4()
+        service = ExecutionService(db=mock_db, language="zh")
+        service._get_model_config = AsyncMock(return_value={"model": "gpt-4o"})
+        service._get_connection_config = AsyncMock(return_value=None)
+        service._get_conversation_history = AsyncMock(return_value=[])
+
+        class FakeEngine:
+            model_request_succeeded = False
+
+            async def execute(self, **_: object):
+                yield SSEEvent.result("分析完成")
+
+        service._build_engine = MagicMock(return_value=FakeEngine())
+        finalization_guard = MagicMock(return_value=False)
+
+        events = [
+            event
+            async for event in service.execute_stream(
+                query="show revenue",
+                conversation_id=conversation_id,
+                finalization_guard=finalization_guard,
+            )
+        ]
+
+        assert [event.type for event in events] == [SSEEventType.ERROR]
+        assert events[0].data["code"] == "CANCELLED"
+        finalization_guard.assert_called_once_with()
+
+    @pytest.mark.asyncio
+    async def test_execute_stream_stop_wins_before_project_result_persistence(self, mock_db):
+        conversation_id = uuid4()
+        run = SimpleNamespace(
+            id=uuid4(),
+            project_id=uuid4(),
+            checkpoint={},
+        )
+        service = ExecutionService(db=mock_db, language="zh")
+        service._load_execution_inputs = AsyncMock(
+            return_value=SimpleNamespace(model_config={"model": "gpt-4o"}, history=[])
+        )
+        service._prepare_analysis_run = AsyncMock(
+            return_value=(run, "show revenue", None, None)
+        )
+        service._mark_run_needs_attention = AsyncMock()
+        service._persist_project_result = AsyncMock()
+
+        class FakeEngine:
+            model_request_succeeded = False
+
+            async def execute(self, **_: object):
+                yield SSEEvent.result("分析完成")
+
+        service._build_engine = MagicMock(return_value=FakeEngine())
+
+        events = [
+            event
+            async for event in service.execute_stream(
+                query="show revenue",
+                conversation_id=conversation_id,
+                finalization_guard=lambda: False,
+            )
+        ]
+
+        assert [event.type for event in events] == [SSEEventType.ERROR]
+        assert events[0].data["code"] == "CANCELLED"
+        service._persist_project_result.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_explicit_missing_model_fails_closed_without_environment_fallback(

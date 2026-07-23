@@ -47,6 +47,15 @@ class BoundedSchemaCatalog:
     unread_columns_at_least: int = 0
 
 
+@dataclass(slots=True)
+class BoundedRelationIndex:
+    """A metadata-only relation directory with an explicit completeness boundary."""
+
+    relations: list[dict[str, Any]]
+    truncated: bool = False
+    unread_relations_at_least: int = 0
+
+
 class DatabaseQueryCancelledError(RuntimeError):
     """Raised when the caller wins the race to cancel an active database query."""
 
@@ -194,6 +203,22 @@ class DatabaseAdapter(Protocol):
 
     def get_schema_catalog(self, conn: Any) -> list[dict[str, Any]]: ...
 
+    def get_bounded_relation_index(
+        self,
+        conn: Any,
+        *,
+        max_relations: int,
+        after: str | None = None,
+    ) -> BoundedRelationIndex: ...
+
+    def get_bounded_relation_schema(
+        self,
+        conn: Any,
+        *,
+        table_name: str,
+        max_columns: int,
+    ) -> dict[str, Any]: ...
+
     def get_bounded_schema_catalog(
         self,
         conn: Any,
@@ -215,6 +240,22 @@ def _catalog_entry(name: str, kind: str, *, schema: str | None = None) -> dict[s
         "primary_key": None,
         "foreign_keys": [],
         "unique_constraints": [],
+    }
+
+
+def _relation_index_entry(
+    name: str,
+    kind: str,
+    *,
+    schema: str | None,
+    comment: Any = None,
+) -> dict[str, Any]:
+    normalized_comment = str(comment).strip() if comment is not None else ""
+    return {
+        "name": name,
+        "schema": schema,
+        "kind": kind,
+        "comment": normalized_comment or None,
     }
 
 
@@ -679,6 +720,153 @@ class MySQLAdapter:
             }
         return found == set(columns)
 
+    def get_bounded_relation_index(
+        self,
+        conn: Any,
+        *,
+        max_relations: int,
+        after: str | None = None,
+    ) -> BoundedRelationIndex:
+        with conn.cursor() as cursor:
+            query = (
+                "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE, TABLE_COMMENT "
+                "FROM information_schema.tables "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE IN ('BASE TABLE', 'VIEW')"
+            )
+            if after is None:
+                cursor.execute(f"{query} ORDER BY TABLE_NAME LIMIT {max_relations + 1}")
+            else:
+                cursor.execute(
+                    f"{query} AND TABLE_NAME > %s ORDER BY TABLE_NAME "
+                    f"LIMIT {max_relations + 1}",
+                    (after,),
+                )
+            rows = list(cursor.fetchall())
+        truncated = len(rows) > max_relations
+        relations = [
+            _relation_index_entry(
+                str(_mysql_value(row, "TABLE_NAME")),
+                _relation_kind(_mysql_value(row, "TABLE_TYPE")),
+                schema=(
+                    str(_mysql_value(row, "TABLE_SCHEMA"))
+                    if _mysql_value(row, "TABLE_SCHEMA") is not None
+                    else None
+                ),
+                comment=_mysql_value(row, "TABLE_COMMENT"),
+            )
+            for row in rows[:max_relations]
+        ]
+        return BoundedRelationIndex(
+            relations=relations,
+            truncated=truncated,
+            unread_relations_at_least=int(truncated),
+        )
+
+    def get_bounded_relation_schema(
+        self,
+        conn: Any,
+        *,
+        table_name: str,
+        max_columns: int,
+    ) -> dict[str, Any]:
+        """Read one named relation and its declared constraints with hard bounds."""
+
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE, TABLE_COMMENT "
+                "FROM information_schema.tables "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s "
+                "AND TABLE_TYPE IN ('BASE TABLE', 'VIEW') LIMIT 1",
+                (table_name,),
+            )
+            relation_rows = list(cursor.fetchall())
+        if not relation_rows:
+            raise ValueError("所选表不存在或不可读取")
+        relation = relation_rows[0]
+        entry = _catalog_entry(
+            str(_mysql_value(relation, "TABLE_NAME")),
+            _relation_kind(_mysql_value(relation, "TABLE_TYPE")),
+            schema=(
+                str(_mysql_value(relation, "TABLE_SCHEMA"))
+                if _mysql_value(relation, "TABLE_SCHEMA") is not None
+                else None
+            ),
+        )
+        entry["comment"] = _mysql_value(relation, "TABLE_COMMENT")
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE "
+                    "FROM information_schema.columns "
+                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s "
+                    f"ORDER BY ORDINAL_POSITION LIMIT {max_columns + 1}",
+                    (table_name,),
+                )
+                column_rows = list(cursor.fetchall())
+        except Exception:
+            _mark_columns_unavailable({table_name: entry})
+            return entry
+        columns_truncated = len(column_rows) > max_columns
+        for row in column_rows[:max_columns]:
+            entry["columns"].append(
+                {
+                    "name": str(_mysql_value(row, "COLUMN_NAME")),
+                    "type": str(_mysql_value(row, "COLUMN_TYPE") or ""),
+                    "nullable": str(_mysql_value(row, "IS_NULLABLE")).upper()
+                    == "YES",
+                    "primary_key": False,
+                    "unique": False,
+                }
+            )
+        if columns_truncated:
+            entry["column_metadata_status"] = "truncated"
+            entry["unread_columns_at_least"] = 1
+            _mark_constraints_unavailable({table_name: entry})
+            return entry
+
+        constraint_row_budget = max_columns * 4
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        tc.TABLE_NAME,
+                        tc.CONSTRAINT_NAME,
+                        tc.CONSTRAINT_TYPE,
+                        kcu.COLUMN_NAME,
+                        kcu.ORDINAL_POSITION,
+                        kcu.REFERENCED_TABLE_SCHEMA,
+                        kcu.REFERENCED_TABLE_NAME,
+                        kcu.REFERENCED_COLUMN_NAME,
+                        rc.UPDATE_RULE,
+                        rc.DELETE_RULE
+                    FROM information_schema.TABLE_CONSTRAINTS AS tc
+                    JOIN information_schema.KEY_COLUMN_USAGE AS kcu
+                      ON kcu.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA
+                     AND kcu.TABLE_NAME = tc.TABLE_NAME
+                     AND kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+                    LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS AS rc
+                      ON rc.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA
+                     AND rc.TABLE_NAME = tc.TABLE_NAME
+                     AND rc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+                    WHERE tc.TABLE_SCHEMA = DATABASE()
+                      AND tc.TABLE_NAME = %s
+                      AND tc.CONSTRAINT_TYPE IN ('PRIMARY KEY', 'UNIQUE', 'FOREIGN KEY')
+                    ORDER BY tc.CONSTRAINT_NAME, kcu.ORDINAL_POSITION
+                    """
+                    + f" LIMIT {constraint_row_budget + 1}",
+                    (table_name,),
+                )
+                constraint_rows = list(cursor.fetchall())
+        except Exception:
+            _mark_constraints_unavailable({table_name: entry})
+            return entry
+        if len(constraint_rows) > constraint_row_budget:
+            _mark_constraints_unavailable({table_name: entry})
+            return entry
+        _apply_mysql_constraint_rows({table_name: entry}, constraint_rows)
+        return entry
+
     def get_bounded_schema_catalog(
         self,
         conn: Any,
@@ -1108,6 +1296,199 @@ class PostgreSQLAdapter:
             )
             found = {str(row[0]) for row in cursor.fetchall()}
         return found == set(columns)
+
+    def get_bounded_relation_index(
+        self,
+        conn: Any,
+        *,
+        max_relations: int,
+        after: str | None = None,
+    ) -> BoundedRelationIndex:
+        with conn.cursor() as cursor:
+            after_clause = " AND relation.relname > %s" if after is not None else ""
+            cursor.execute(
+                f"""
+                SELECT
+                    relation.relname,
+                    CASE relation.relkind
+                        WHEN 'r' THEN 'table'
+                        WHEN 'p' THEN 'partitioned_table'
+                        WHEN 'v' THEN 'view'
+                        WHEN 'm' THEN 'materialized_view'
+                        WHEN 'f' THEN 'foreign_table'
+                        ELSE 'unknown'
+                    END,
+                    pg_catalog.obj_description(relation.oid, 'pg_class')
+                FROM pg_catalog.pg_class AS relation
+                JOIN pg_catalog.pg_namespace AS namespace
+                  ON namespace.oid = relation.relnamespace
+                WHERE namespace.nspname = %s
+                  AND relation.relkind IN ('r', 'p', 'v', 'm', 'f')
+                  AND (
+                      pg_catalog.has_table_privilege(relation.oid, 'SELECT')
+                      OR pg_catalog.has_any_column_privilege(relation.oid, 'SELECT')
+                  )
+                  {after_clause}
+                ORDER BY relation.relname
+                LIMIT %s
+                """,
+                (
+                    (self._schema, after, max_relations + 1)
+                    if after is not None
+                    else (self._schema, max_relations + 1)
+                ),
+            )
+            rows = list(cursor.fetchall())
+        truncated = len(rows) > max_relations
+        relations = [
+            _relation_index_entry(
+                str(row[0]),
+                _relation_kind(row[1]),
+                schema=self._schema,
+                comment=row[2] if len(row) > 2 else None,
+            )
+            for row in rows[:max_relations]
+        ]
+        return BoundedRelationIndex(
+            relations=relations,
+            truncated=truncated,
+            unread_relations_at_least=int(truncated),
+        )
+
+    def get_bounded_relation_schema(
+        self,
+        conn: Any,
+        *,
+        table_name: str,
+        max_columns: int,
+    ) -> dict[str, Any]:
+        """Read one named relation and its declared constraints with hard bounds."""
+
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    relation.relname,
+                    CASE relation.relkind
+                        WHEN 'r' THEN 'table'
+                        WHEN 'p' THEN 'partitioned_table'
+                        WHEN 'v' THEN 'view'
+                        WHEN 'm' THEN 'materialized_view'
+                        WHEN 'f' THEN 'foreign_table'
+                        ELSE 'unknown'
+                    END,
+                    pg_catalog.obj_description(relation.oid, 'pg_class')
+                FROM pg_catalog.pg_class AS relation
+                JOIN pg_catalog.pg_namespace AS namespace
+                  ON namespace.oid = relation.relnamespace
+                WHERE namespace.nspname = %s
+                  AND relation.relname = %s
+                  AND relation.relkind IN ('r', 'p', 'v', 'm', 'f')
+                  AND (
+                      pg_catalog.has_table_privilege(relation.oid, 'SELECT')
+                      OR pg_catalog.has_any_column_privilege(relation.oid, 'SELECT')
+                  )
+                LIMIT 1
+                """,
+                (self._schema, table_name),
+            )
+            relation_rows = list(cursor.fetchall())
+        if not relation_rows:
+            raise ValueError("所选表不存在或不可读取")
+        relation = relation_rows[0]
+        entry = _catalog_entry(
+            str(relation[0]),
+            str(relation[1] or "unknown"),
+            schema=self._schema,
+        )
+        entry["comment"] = relation[2]
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT column_name, data_type, is_nullable "
+                    "FROM information_schema.columns "
+                    "WHERE table_schema = %s AND table_name = %s "
+                    "ORDER BY ordinal_position LIMIT %s",
+                    (self._schema, table_name, max_columns + 1),
+                )
+                column_rows = list(cursor.fetchall())
+        except Exception:
+            _mark_columns_unavailable({table_name: entry})
+            return entry
+        columns_truncated = len(column_rows) > max_columns
+        for column_name, data_type, is_nullable in column_rows[:max_columns]:
+            entry["columns"].append(
+                {
+                    "name": str(column_name),
+                    "type": str(data_type or ""),
+                    "nullable": str(is_nullable).upper() == "YES",
+                    "primary_key": False,
+                    "unique": False,
+                }
+            )
+        if columns_truncated:
+            entry["column_metadata_status"] = "truncated"
+            entry["unread_columns_at_least"] = 1
+            _mark_constraints_unavailable({table_name: entry})
+            return entry
+
+        constraint_row_budget = max_columns * 4
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        relation.relname AS table_name,
+                        constraint_record.conname AS constraint_name,
+                        constraint_record.contype AS constraint_type,
+                        ARRAY(
+                            SELECT attribute.attname
+                            FROM unnest(constraint_record.conkey)
+                                WITH ORDINALITY AS source_key(attnum, position)
+                            JOIN pg_catalog.pg_attribute AS attribute
+                              ON attribute.attrelid = constraint_record.conrelid
+                             AND attribute.attnum = source_key.attnum
+                            ORDER BY source_key.position
+                        ) AS columns,
+                        referenced_namespace.nspname AS referenced_schema,
+                        referenced_relation.relname AS referenced_table,
+                        CASE WHEN constraint_record.contype = 'f' THEN ARRAY(
+                            SELECT attribute.attname
+                            FROM unnest(constraint_record.confkey)
+                                WITH ORDINALITY AS target_key(attnum, position)
+                            JOIN pg_catalog.pg_attribute AS attribute
+                              ON attribute.attrelid = constraint_record.confrelid
+                             AND attribute.attnum = target_key.attnum
+                            ORDER BY target_key.position
+                        ) ELSE NULL END AS referenced_columns,
+                        constraint_record.confupdtype AS update_action,
+                        constraint_record.confdeltype AS delete_action
+                    FROM pg_catalog.pg_constraint AS constraint_record
+                    JOIN pg_catalog.pg_class AS relation
+                      ON relation.oid = constraint_record.conrelid
+                    JOIN pg_catalog.pg_namespace AS namespace
+                      ON namespace.oid = relation.relnamespace
+                    LEFT JOIN pg_catalog.pg_class AS referenced_relation
+                      ON referenced_relation.oid = constraint_record.confrelid
+                    LEFT JOIN pg_catalog.pg_namespace AS referenced_namespace
+                      ON referenced_namespace.oid = referenced_relation.relnamespace
+                    WHERE namespace.nspname = %s
+                      AND relation.relname = %s
+                      AND constraint_record.contype IN ('p', 'u', 'f')
+                    ORDER BY constraint_record.conname
+                    LIMIT %s
+                    """,
+                    (self._schema, table_name, constraint_row_budget + 1),
+                )
+                constraint_rows = list(cursor.fetchall())
+        except Exception:
+            _mark_constraints_unavailable({table_name: entry})
+            return entry
+        if len(constraint_rows) > constraint_row_budget:
+            _mark_constraints_unavailable({table_name: entry})
+            return entry
+        _apply_postgresql_constraint_rows({table_name: entry}, constraint_rows)
+        return entry
 
     def get_bounded_schema_catalog(
         self,
@@ -1715,6 +2096,77 @@ class SQLiteAdapter:
             (table_name, *columns, len(columns) + 1),
         ).fetchall()
         return {str(row[0]) for row in rows} == set(columns)
+
+    def get_bounded_relation_index(
+        self,
+        conn: Any,
+        *,
+        max_relations: int,
+        after: str | None = None,
+    ) -> BoundedRelationIndex:
+        after_clause = "AND name > ? " if after is not None else ""
+        rows = conn.execute(
+            "SELECT name, type FROM sqlite_schema "
+            "WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' "
+            f"{after_clause}ORDER BY name LIMIT ?",
+            ((after, max_relations + 1) if after is not None else (max_relations + 1,)),
+        ).fetchall()
+        truncated = len(rows) > max_relations
+        return BoundedRelationIndex(
+            relations=[
+                _relation_index_entry(
+                    str(row[0]),
+                    _relation_kind(row[1]),
+                    schema="main",
+                )
+                for row in rows[:max_relations]
+            ],
+            truncated=truncated,
+            unread_relations_at_least=int(truncated),
+        )
+
+    def get_bounded_relation_schema(
+        self,
+        conn: Any,
+        *,
+        table_name: str,
+        max_columns: int,
+    ) -> dict[str, Any]:
+        """Read one SQLite relation's columns and declared constraints."""
+
+        relation = conn.execute(
+            "SELECT name, type FROM sqlite_schema "
+            "WHERE name = ? AND type IN ('table', 'view') "
+            "AND name NOT LIKE 'sqlite_%' LIMIT 1",
+            (table_name,),
+        ).fetchone()
+        if relation is None:
+            raise ValueError("所选表不存在或不可读取")
+        entry = _catalog_entry(
+            str(relation[0]),
+            _relation_kind(relation[1]),
+            schema="main",
+        )
+        try:
+            columns_truncated = self._populate_sqlite_columns(
+                conn,
+                entry,
+                max_columns=max_columns,
+            )
+        except Exception:
+            _mark_columns_unavailable({table_name: entry})
+            return entry
+        if columns_truncated:
+            entry["column_metadata_status"] = "truncated"
+            entry["unread_columns_at_least"] = 1
+            _mark_constraints_unavailable({table_name: entry})
+            return entry
+        try:
+            self._populate_sqlite_constraints(conn, entry)
+            _apply_constraint_column_flags(entry)
+        except Exception:
+            _mark_constraints_unavailable({table_name: entry})
+        return entry
 
     def get_bounded_schema_catalog(
         self,

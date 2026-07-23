@@ -2,17 +2,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
+  post: vi.fn(),
   patch: vi.fn(),
 }));
 
 vi.mock("@/lib/api/client", () => ({
   api: {
     get: mocks.get,
+    post: mocks.post,
     patch: mocks.patch,
   },
 }));
 
 import { useProjectStore } from "@/lib/stores/project";
+
+const originalRefreshCurrent = useProjectStore.getState().refreshCurrent;
+const originalSelectProject = useProjectStore.getState().selectProject;
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -25,6 +30,7 @@ function deferred<T>() {
 describe("project workspace refresh", () => {
   beforeEach(() => {
     mocks.get.mockReset();
+    mocks.post.mockReset();
     mocks.patch.mockReset();
     useProjectStore.setState({
       projects: [],
@@ -39,7 +45,56 @@ describe("project workspace refresh", () => {
       isUploading: false,
       isUpdatingKnowledge: false,
       error: null,
+      refreshCurrent: originalRefreshCurrent,
+      selectProject: originalSelectProject,
     });
+  });
+
+  it("posts the localized project name supplied by the UI", async () => {
+    const project = {
+      id: "project-en",
+      name: "New analysis project",
+      status: "active",
+      extra_data: {},
+      created_at: "2026-07-01T00:00:00Z",
+      updated_at: "2026-07-01T00:00:00Z",
+    };
+    const selectProject = vi.fn().mockResolvedValue(undefined);
+    useProjectStore.setState({ selectProject });
+    mocks.post.mockResolvedValue({ data: { data: project } });
+
+    await useProjectStore.getState().createProject("New analysis project");
+
+    expect(mocks.post).toHaveBeenCalledWith("/api/v1/projects", {
+      name: "New analysis project",
+    });
+    expect(selectProject).toHaveBeenCalledWith("project-en");
+  });
+
+  it("posts localized defaults when bootstrapping an empty workspace", async () => {
+    const project = {
+      id: "project-initial-en",
+      name: "My analysis project",
+      status: "active",
+      extra_data: {},
+      created_at: "2026-07-01T00:00:00Z",
+      updated_at: "2026-07-01T00:00:00Z",
+    };
+    const refreshCurrent = vi.fn().mockResolvedValue(undefined);
+    useProjectStore.setState({ refreshCurrent });
+    mocks.get.mockResolvedValue({ data: { data: [] } });
+    mocks.post.mockResolvedValue({ data: { data: project } });
+
+    await useProjectStore.getState().bootstrap({
+      name: "My analysis project",
+      description: "Keep orders, stores, and confirmed business definitions here",
+    });
+
+    expect(mocks.post).toHaveBeenCalledWith("/api/v1/projects", {
+      name: "My analysis project",
+      description: "Keep orders, stores, and confirmed business definitions here",
+    });
+    expect(refreshCurrent).toHaveBeenCalledTimes(1);
   });
 
   it("does not let a slow previous project overwrite the current project", async () => {

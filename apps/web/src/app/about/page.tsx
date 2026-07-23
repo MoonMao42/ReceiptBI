@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { useLocale } from "next-intl";
+import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -16,9 +16,9 @@ import { RECEIPTBI_BRAND_ICON_SRC } from "@/lib/brand";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-const REPOSITORY_URL = "https://github.com/MoonMao42/QueryGPT";
-const LICENSE_URL = "https://github.com/MoonMao42/QueryGPT/blob/main/LICENSE";
-const ISSUES_URL = "https://github.com/MoonMao42/QueryGPT/issues";
+const REPOSITORY_URL = "https://github.com/MoonMao42/ReceiptBI";
+const LICENSE_URL = `${REPOSITORY_URL}/blob/main/LICENSE`;
+const ISSUES_URL = `${REPOSITORY_URL}/issues`;
 
 interface RuntimeInfo {
   version: string;
@@ -51,8 +51,7 @@ async function openFixedExternalUrl(url: string) {
 
 export default function AboutPage() {
   const router = useRouter();
-  const locale = useLocale();
-  const isChinese = locale === "zh";
+  const t = useTranslations("about");
   const [runtimeInfo, setRuntimeInfo] = useState<RuntimeInfo | null>(null);
 
   useEffect(() => {
@@ -95,51 +94,25 @@ export default function AboutPage() {
     };
   }, []);
 
-  const copy = isChinese
-    ? {
-        back: "返回工作台",
-        version: "版本",
-        preview: "开发预览",
-        desktop: "桌面版",
-        repository: "GitHub",
-        repositoryDescription: "查看源代码与项目进展",
-        license: "MIT License",
-        licenseDescription: "查看开源许可证",
-        issues: "反馈与 Issues",
-        issuesDescription: "报告问题或提出建议",
-      }
-    : {
-        back: "Back to workspace",
-        version: "Version",
-        preview: "Development preview",
-        desktop: "Desktop",
-        repository: "GitHub",
-        repositoryDescription: "View source code and project updates",
-        license: "MIT License",
-        licenseDescription: "Read the open-source license",
-        issues: "Feedback & Issues",
-        issuesDescription: "Report a problem or suggest an improvement",
-      };
-
   const runtimeLabel = runtimeInfo
-    ? `${runtimeInfo.isPackaged ? copy.desktop : copy.preview} · v${formatDisplayVersion(runtimeInfo.version)}`
-    : copy.preview;
+    ? `${runtimeInfo.isPackaged ? t("desktop") : t("preview")} · v${formatDisplayVersion(runtimeInfo.version)}`
+    : t("preview");
   const links = [
     {
-      label: copy.repository,
-      description: copy.repositoryDescription,
+      label: "GitHub",
+      description: t("repositoryDescription"),
       url: REPOSITORY_URL,
       icon: Github,
     },
     {
-      label: copy.license,
-      description: copy.licenseDescription,
+      label: "MIT License",
+      description: t("licenseDescription"),
       url: LICENSE_URL,
       icon: Scale,
     },
     {
-      label: copy.issues,
-      description: copy.issuesDescription,
+      label: t("issues"),
+      description: t("issuesDescription"),
       url: ISSUES_URL,
       icon: MessageCircleQuestion,
     },
@@ -155,7 +128,7 @@ export default function AboutPage() {
             className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             <ArrowLeft size={17} />
-            {copy.back}
+            {t("backToWorkspace")}
           </button>
           <div className="flex items-center gap-2.5">
             <Image
@@ -180,7 +153,7 @@ export default function AboutPage() {
 
           <div className="border-t border-border pt-5 md:border-l md:border-t-0 md:pl-7 md:pt-0">
             <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              {copy.version}
+              {t("version")}
             </div>
             <div className="mt-3 font-mono text-sm font-semibold">{runtimeLabel}</div>
             {runtimeInfo?.platform && (

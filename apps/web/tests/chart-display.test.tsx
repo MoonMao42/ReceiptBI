@@ -1,9 +1,19 @@
 import type { ReactNode } from "react";
 import { render, screen, within } from "@testing-library/react";
+import { NextIntlClientProvider } from "next-intl";
 import { describe, expect, it, vi } from "vitest";
 
 import { ChartDisplay } from "@/components/chat/ChartDisplay";
 import type { ChartSpec } from "@/lib/charts";
+import messages from "@/messages/zh.json";
+
+function renderChart(spec: ChartSpec) {
+  return render(
+    <NextIntlClientProvider locale="zh" messages={messages}>
+      <ChartDisplay spec={spec} />
+    </NextIntlClientProvider>
+  );
+}
 
 vi.mock("recharts", () => {
   const Container = ({ children }: { children?: ReactNode }) => <>{children}</>;
@@ -89,7 +99,7 @@ const horizontalSpec: ChartSpec = {
 
 describe("ChartDisplay", () => {
   it("renders the declared orientation, series, stacking, and approved palette", () => {
-    render(<ChartDisplay spec={horizontalSpec} />);
+    renderChart(horizontalSpec);
 
     expect(screen.getByTestId("bar-chart")).toHaveAttribute(
       "data-layout",
@@ -114,11 +124,11 @@ describe("ChartDisplay", () => {
   });
 
   it("exposes a concise summary and the exact plotted values as an accessible table", () => {
-    render(<ChartDisplay spec={horizontalSpec} />);
+    renderChart(horizontalSpec);
 
     expect(
       screen.getByRole("img", {
-        name: /区域收入，横向柱状图，按区域展示，指标为收入、退款，共 2 条记录/,
+        name: /区域收入，横向柱状图，按区域展示，指标为收入和退款，共 2 条记录/,
       }),
     ).toBeInTheDocument();
 
@@ -131,7 +141,7 @@ describe("ChartDisplay", () => {
   });
 
   it("keeps the declared value format when a series has a display label", () => {
-    render(<ChartDisplay spec={horizontalSpec} />);
+    renderChart(horizontalSpec);
 
     expect(screen.getByTestId("tooltip-value")).toHaveTextContent("¥120.00");
   });

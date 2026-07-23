@@ -257,8 +257,8 @@ def test_database_config_rejects_schema_injection() -> None:
 @pytest.mark.parametrize(
     "value",
     [
-        "-----BEGIN PRIVATE KEY-----",
-        "/certs/client.key\n-----BEGIN PRIVATE KEY-----",
+        "-----BEGIN TEST KEY-----",
+        "/certs/client.key\n-----BEGIN TEST KEY-----",
     ],
 )
 def test_database_config_rejects_certificate_or_key_bodies(value: str) -> None:

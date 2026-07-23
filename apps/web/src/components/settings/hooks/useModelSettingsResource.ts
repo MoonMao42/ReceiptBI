@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api/client";
-import { getApiErrorMessage } from "@/lib/settings/http";
 import {
   buildModelPayload,
   type ModelFormData,
@@ -11,7 +10,15 @@ import {
 } from "@/lib/settings/models";
 import type { ConfiguredModel } from "@/lib/types/api";
 
-export function useModelSettingsResource() {
+export interface ModelSettingsResourceMessages {
+  connectionCheckFailed: string;
+  savedButConnectionCheckFailed: string;
+  addModelFailed: string;
+  updateModelFailed: string;
+  deleteModelFailed: string;
+}
+
+export function useModelSettingsResource(messages: ModelSettingsResourceMessages) {
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<ModelTestResult | null>(null);
   const queryClient = useQueryClient();
@@ -38,13 +45,11 @@ export function useModelSettingsResource() {
       setTestResult(result);
     },
     onError: (error, variables) => {
+      void error;
       setError(
-        getApiErrorMessage(
-          error,
-          variables.afterSave
-            ? "Service saved, but the connection check could not finish"
-            : "Connection check failed"
-        )
+        variables.afterSave
+          ? messages.savedButConnectionCheckFailed
+          : messages.connectionCheckFailed
       );
     },
     onSettled: () => {
@@ -62,8 +67,8 @@ export function useModelSettingsResource() {
       queryClient.invalidateQueries({ queryKey: ["models"] });
       testMutation.mutate({ id: model.id, afterSave: true });
     },
-    onError: (error) => {
-      setError(getApiErrorMessage(error, "Failed to add model"));
+    onError: () => {
+      setError(messages.addModelFailed);
     },
   });
 
@@ -77,8 +82,8 @@ export function useModelSettingsResource() {
       queryClient.invalidateQueries({ queryKey: ["models"] });
       testMutation.mutate({ id: model.id, afterSave: true });
     },
-    onError: (error) => {
-      setError(getApiErrorMessage(error, "Failed to update model"));
+    onError: () => {
+      setError(messages.updateModelFailed);
     },
   });
 
@@ -90,8 +95,8 @@ export function useModelSettingsResource() {
       setError(null);
       queryClient.invalidateQueries({ queryKey: ["models"] });
     },
-    onError: (error) => {
-      setError(getApiErrorMessage(error, "Failed to delete model"));
+    onError: () => {
+      setError(messages.deleteModelFailed);
     },
   });
 

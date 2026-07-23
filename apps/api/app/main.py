@@ -32,6 +32,14 @@ from app.services.legacy_ts_model_import import (
     prepare_legacy_model_snapshot,
 )
 from app.services.migration_bootstrap import migrate_local_sqlite_to_head
+from app.services.semantic_inventory import (
+    recover_semantic_inventory_jobs,
+    schedule_semantic_inventory_job,
+)
+from app.services.semantic_validation import (
+    recover_semantic_validation_jobs,
+    schedule_semantic_validation_job,
+)
 
 # 配置日志
 structlog.configure(
@@ -130,6 +138,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     migrated_credentials = 0
     unreadable_credentials = 0
     recovered_runs = 0
+    recovered_inventory_job_ids: list[uuid.UUID] = []
+    recovered_validation_job_ids: list[uuid.UUID] = []
     try:
         if (
             legacy_snapshot_present != legacy_root_present
@@ -165,6 +175,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                     await rotate_legacy_desktop_credentials(session)
                 )
             recovered_runs = await recover_interrupted_analysis_runs(session)
+            recovered_inventory_job_ids = await recover_semantic_inventory_jobs(session)
+            recovered_validation_job_ids = await recover_semantic_validation_jobs(session)
             await session.commit()
     finally:
         for variable in (
@@ -196,6 +208,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
     if recovered_runs:
         logger.info("Recovered interrupted analysis runs", count=recovered_runs)
+    for job_id in recovered_inventory_job_ids:
+        schedule_semantic_inventory_job(job_id)
+    if recovered_inventory_job_ids:
+        logger.info(
+            "Recovered interrupted semantic inventory jobs",
+            count=len(recovered_inventory_job_ids),
+        )
+    for job_id in recovered_validation_job_ids:
+        schedule_semantic_validation_job(job_id)
+    if recovered_validation_job_ids:
+        logger.info(
+            "Recovered interrupted semantic validation jobs",
+            count=len(recovered_validation_job_ids),
+        )
 
     logger.info(
         "Application startup complete",

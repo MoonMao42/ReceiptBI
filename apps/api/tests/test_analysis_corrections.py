@@ -273,6 +273,14 @@ async def test_required_relationship_correction_can_trial_only_its_user_candidat
         fingerprint="f" * 64,
     )
     db_session.add(correction)
+    await db_session.flush()
+    await append_semantic_revision(
+        db_session,
+        entry,
+        mutation_kind="correction_promoted",
+        actor_source="user",
+        source_correction_id=correction.id,
+    )
     await db_session.commit()
 
     service = ExecutionService(db_session, project_id=UUID(project["id"]))
@@ -282,6 +290,7 @@ async def test_required_relationship_correction_can_trial_only_its_user_candidat
     assert contract["entry_type"] == "relationship"
     assert contract["correction_type"] == "relationship_rule"
     assert contract["execution_state"] == "needs_validation"
+    assert contract["expected_active_revision_id"] == str(entry.active_revision_id)
 
     entry.source = "inferred"
     await db_session.commit()
@@ -986,5 +995,6 @@ async def test_verified_correction_receipt_promotes_execution_state_atomically(
     assert rejected.accepted is False
     assert rejected.error_code == "CORRECTION_RESULT_REJECTED"
     assert rejected.correction_application["status"] == "failed"
+    assert rejected.correction_application["summary_code"] == "correction_failed"
     await db_session.refresh(failed_run)
     assert failed_run.state == "needs_attention"

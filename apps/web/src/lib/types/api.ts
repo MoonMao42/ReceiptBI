@@ -7,6 +7,7 @@ import type {
   ChartSpec,
   LegacyVisualization,
 } from "@/lib/charts";
+import { runtimeMessage } from "@/i18n/runtime";
 
 export type {
   ChartAggregation,
@@ -152,6 +153,9 @@ export interface ConfirmationRequest {
   question: string;
   options: string[];
   reason: string;
+  presentation_code?: string;
+  presentation_facts?: Record<string, string>;
+  option_codes?: Record<string, string>;
 }
 
 export interface BusinessConfirmationResponse {
@@ -197,6 +201,11 @@ export interface AnalysisReport {
 }
 
 export type CorrectionApplicationStatus = "verified" | "definition_only" | "failed";
+export type CorrectionApplicationSummaryCode =
+  | "correction_verified"
+  | "correction_relationship_verified"
+  | "correction_definition_only"
+  | "correction_failed";
 
 /**
  * System-owned receipt for a correction rerun. This must be produced from
@@ -222,6 +231,7 @@ export interface CorrectionApplication {
   input_hash?: string | null;
   result_hash?: string | null;
   status: CorrectionApplicationStatus;
+  summary_code?: CorrectionApplicationSummaryCode | null;
   summary?: string | null;
   checks?: string[] | null;
 }
@@ -274,12 +284,30 @@ export interface SemanticSourceRef {
   format?: string | null;
 }
 
+export interface SemanticEntryPresentation {
+  business_name?: string | null;
+  description?: string | null;
+  example_questions?: string[];
+  synonyms?: string[];
+}
+
+export interface SemanticEntryDefinition
+  extends Record<string, unknown>,
+    SemanticEntryPresentation {
+  version?: number;
+  kind?: string;
+  source?: Record<string, unknown>;
+  sources?: Record<string, unknown>[] | Record<string, Record<string, unknown>>;
+  formula?: Record<string, unknown>;
+}
+
 export interface SemanticEntry {
   id: string;
   project_id: string;
   key: string;
   value: string;
   entry_type:
+    | "scope_presentation"
     | "metric"
     | "dimension"
     | "relationship"
@@ -291,7 +319,14 @@ export interface SemanticEntry {
   is_active?: boolean;
   revision_number?: number;
   active_revision_id?: string | null;
-  definition?: Record<string, unknown> | null;
+  definition?: SemanticEntryDefinition | null;
+  /**
+   * Some API revisions expose presentation metadata separately while current
+   * typed semantic definitions keep it at the definition root. Supporting both
+   * keeps the UI readable while entries are migrated.
+   */
+  presentation?: SemanticEntryPresentation | null;
+  recommendation_batch_id?: string | null;
   execution_state?: SemanticExecutionState;
   execution_details?: {
     summary?: string | null;
@@ -304,7 +339,36 @@ export interface SemanticEntry {
   evidence: Record<string, unknown>[];
   source_refs?: SemanticSourceRef[];
   source_scope?: SemanticSourceScope;
+  /** Exact semantic-governance node when the hierarchical scope API is available. */
+  scope_id?: string | null;
+  /** Ordered project -> source -> table/context breadcrumb for business-facing UI. */
+  scope_path?: SemanticScopePathNode[];
   source: "inferred" | "user" | "verified_analysis" | "imported";
+  created_at: string;
+  updated_at: string;
+}
+
+export type SemanticScopeKind = "project" | "source" | "table" | "context" | "period";
+
+export interface SemanticScopePathNode {
+  id: string;
+  kind: SemanticScopeKind;
+  stable_key: string;
+  business_name: string;
+  synonyms?: string[];
+  source_logical_name?: string | null;
+  table_or_view?: string | null;
+}
+
+export interface SemanticScopeNode extends SemanticScopePathNode {
+  project_id: string;
+  parent_id?: string | null;
+  description?: string | null;
+  context_facts?: Record<string, unknown>;
+  is_active: boolean;
+  direct_entry_count: number;
+  child_count: number;
+  path: SemanticScopePathNode[];
   created_at: string;
   updated_at: string;
 }
@@ -316,6 +380,108 @@ export interface SemanticKnowledgePage {
   limit: number;
   has_more: boolean;
   next_offset: number | null;
+}
+
+export interface SemanticRecommendationScope {
+  source_id: string;
+  /** Files use an empty list for their single prepared logical view. */
+  tables: string[];
+}
+
+export interface SemanticRecommendationRequest {
+  locale: "zh" | "en";
+  model_id?: string;
+  scopes: SemanticRecommendationScope[];
+  limit: number;
+}
+
+export interface SemanticRecommendationResult {
+  batch_id: string;
+  generated_by: "ai" | "preflight";
+  items: SemanticEntry[];
+}
+
+export type SemanticInventoryDepth = "structure" | "sampled";
+
+export type SemanticInventoryJobStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "completed_with_errors"
+  | "cancelled"
+  | "failed";
+
+export type SemanticInventoryJobItemStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+
+export type SemanticInventoryJobItemPhase =
+  | "structure"
+  | "sample"
+  | "recommend"
+  | "complete";
+
+export interface SemanticInventoryJobProgress {
+  total: number;
+  queued: number;
+  running: number;
+  succeeded: number;
+  failed: number;
+  cancelled: number;
+}
+
+export interface SemanticInventoryJobItem {
+  id: string;
+  ordinal?: number;
+  table: string;
+  status: SemanticInventoryJobItemStatus;
+  phase: SemanticInventoryJobItemPhase;
+  attempt_count: number;
+  retryable: boolean;
+  code?: string | null;
+  message?: string | null;
+  recommendation_batch_id?: string | null;
+  candidate_count: number;
+  started_at?: string | null;
+  completed_at?: string | null;
+}
+
+export interface SemanticInventoryJob {
+  id: string;
+  project_id: string;
+  source_id: string;
+  status: SemanticInventoryJobStatus;
+  depth: SemanticInventoryDepth;
+  locale: "zh" | "en";
+  model_id?: string | null;
+  tables: string[];
+  progress: SemanticInventoryJobProgress;
+  items: SemanticInventoryJobItem[];
+  retryable?: boolean;
+  candidate_count?: number;
+  reviewable_count?: number;
+  next_review_item?: SemanticInventoryJobItem | null;
+  failed_item_preview?: SemanticInventoryJobItem[];
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+}
+
+export interface SemanticInventoryJobItemPage {
+  job_id: string;
+  items: SemanticInventoryJobItem[];
+  next_after_ordinal: number | null;
+  has_more: boolean;
+}
+
+export interface SemanticInventoryJobRequest {
+  locale: "zh" | "en";
+  model_id?: string;
+  tables: string[];
+  depth: SemanticInventoryDepth;
 }
 
 export interface SemanticKnowledgeSummary {
@@ -341,9 +507,50 @@ export interface SemanticBatchItem {
 export interface SemanticBatchResult {
   action: SemanticBatchAction;
   items: SemanticEntry[];
-  validation_prompt?: string | null;
   queued_entry_ids: string[];
-  validation_selection: SemanticBatchItem[];
+  validation_job_id?: string | null;
+  validation_status?: SemanticValidationJobStatus | null;
+}
+
+export type SemanticValidationJobStatus = "queued" | "running" | "completed" | "failed";
+export type SemanticValidationJobItemStatus =
+  | "queued"
+  | "running"
+  | "verified"
+  | "blocked"
+  | "failed";
+
+export interface SemanticValidationJobProgress {
+  total: number;
+  queued: number;
+  running: number;
+  verified: number;
+  blocked: number;
+  failed: number;
+}
+
+export interface SemanticValidationJobItem {
+  id: string;
+  entry_id: string;
+  semantic_revision_id: string;
+  definition_hash: string;
+  status: SemanticValidationJobItemStatus;
+  code?: string | null;
+  facts?: Record<string, unknown>;
+  details?: Record<string, unknown>;
+  started_at?: string | null;
+  completed_at?: string | null;
+}
+
+export interface SemanticValidationJob {
+  id: string;
+  project_id: string;
+  status: SemanticValidationJobStatus;
+  progress: SemanticValidationJobProgress;
+  items: SemanticValidationJobItem[];
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
 }
 
 export interface SemanticRevisionSnapshot {
@@ -438,6 +645,33 @@ export interface ProjectDataSource {
   updated_at: string;
 }
 
+export interface DataSourceRelationIndexEntry {
+  name: string;
+  schema?: string | null;
+  kind: string;
+  comment?: string | null;
+  business_name?: string | null;
+  display_name?: string | null;
+  description?: string | null;
+  business_topic?: string | null;
+}
+
+export interface DataSourceRelationIndex {
+  relations: DataSourceRelationIndexEntry[];
+  relations_loaded: number;
+  relations_total?: number | null;
+  relations_total_at_least: number;
+  complete: boolean;
+  truncated: boolean;
+  unread_relations_at_least: number;
+}
+
+export interface RelationIndexRefreshResult {
+  source_id: string;
+  relation_index: DataSourceRelationIndex;
+  semantic_scope_table_count: number;
+}
+
 export interface PreflightIssue {
   code: string;
   title: string;
@@ -452,6 +686,9 @@ export interface PreflightAmbiguity {
   question: string;
   reason: string;
   options: string[];
+  presentation_code?: string;
+  presentation_facts?: Record<string, string>;
+  option_codes?: Record<string, string>;
 }
 
 export interface PreflightReport {
@@ -673,9 +910,33 @@ export interface StandingAnalysis {
   last_run_id?: string | null;
   last_brief_artifact_id?: string | null;
   attention_reason?: string | null;
+  attention_reason_code?: StandingAttentionReasonCode | null;
+  attention_reason_params?: Record<string, string>;
   created_at: string;
   updated_at: string;
 }
+
+export type StandingAttentionReasonCode =
+  | "standing_playbook_unavailable"
+  | "standing_playbook_changed"
+  | "standing_playbook_sources_unbound"
+  | "standing_source_pending_confirmation"
+  | "standing_source_not_unique"
+  | "standing_source_changed_since_baseline"
+  | "standing_source_not_ready"
+  | "standing_source_working_copy_missing"
+  | "standing_source_schema_changed"
+  | "standing_source_version_invalid"
+  | "standing_source_recipe_changed_since_baseline"
+  | "standing_semantic_definition_missing"
+  | "standing_semantic_definition_inactive"
+  | "standing_semantic_definition_changed_since_baseline"
+  | "standing_relationship_definition_unavailable"
+  | "standing_relationship_definition_changed"
+  | "standing_project_input_unavailable"
+  | "standing_in_flight_run_missing"
+  | "standing_result_rejected"
+  | "standing_execution_failed";
 
 export interface StandingPrepareResponse {
   outcome:
@@ -692,6 +953,8 @@ export interface StandingPrepareResponse {
   input_token?: string | null;
   brief_artifact_id?: string | null;
   attention_reason?: string | null;
+  attention_reason_code?: StandingAttentionReasonCode | null;
+  attention_reason_params?: Record<string, string>;
 }
 
 export interface AppSettings {
@@ -701,6 +964,8 @@ export interface AppSettings {
   python_enabled: boolean;
   diagnostics_enabled: boolean;
   auto_repair_enabled: boolean;
+  preprocessing_enabled: boolean;
+  self_analysis_enabled: boolean;
 }
 
 export interface SystemCapabilities {
@@ -906,18 +1171,55 @@ export interface APIError {
   detail?: string | Array<{ msg: string; loc: string[] }>;
 }
 
+/**
+ * An error whose message was created locally for the active UI locale.
+ *
+ * Remote `detail` and transport messages must not be wrapped with this class:
+ * they are diagnostic data and may use a different language from the UI.
+ */
+export class UserFacingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UserFacingError";
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/** Extract an HTTP status without exposing the response payload. */
+export function getErrorHttpStatus(error: unknown): number | null {
+  if (!isRecord(error) || !isRecord(error.response)) return null;
+  return typeof error.response.status === "number" ? error.response.status : null;
+}
+
+/**
+ * Convert an unknown failure into safe UI copy.
+ *
+ * Only explicitly trusted local messages are preserved. Network payloads,
+ * transport messages, and status codes remain diagnostic-only.
+ */
+export function getUserFacingErrorMessage(
+  error: unknown,
+  fallback = runtimeMessage("unknownError")
+): string {
+  if (error instanceof UserFacingError && error.message.trim()) {
+    return error.message;
+  }
+  const status = getErrorHttpStatus(error);
+  if (status !== null) {
+    return runtimeMessage("requestFailedHttp", { status });
+  }
+  return fallback;
+}
+
 /** 类型守卫：检查是否为 Error 对象 */
 export function isError(error: unknown): error is Error {
   return error instanceof Error;
 }
 
-/** 获取错误消息 */
+/** Convert failures to copy that is safe for ordinary product surfaces. */
 export function getErrorMessage(error: unknown): string {
-  if (isError(error)) {
-    return error.message;
-  }
-  if (typeof error === "string") {
-    return error;
-  }
-  return "未知错误";
+  return getUserFacingErrorMessage(error);
 }

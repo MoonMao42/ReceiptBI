@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -61,60 +62,71 @@ interface SavedPlaybookSummary {
   };
 }
 
-function getStandingErrorMessage(error: unknown): string {
+function getStandingErrorMessage(
+  error: unknown,
+  t: (key: string) => string,
+): string {
   const status = (
     error as { response?: { status?: unknown } } | null | undefined
   )?.response?.status;
   if (status === 409 || status === 422) {
-    return "暂时无法开始关注，请重新保存这项分析后再试。";
+    return t("standingStartFailed");
   }
-  return "暂时无法开始关注，请稍后再试。";
+  return t("standingRetry");
 }
 
 type CorrectionState = "idle" | "saving" | "saved" | "deleting";
 type CorrectionKind = AnalysisCorrection["correction_type"];
 
-const CORRECTION_KINDS: Array<{
+function buildCorrectionKinds(
+  t: (key: string) => string,
+): Array<{
   value: CorrectionKind;
   label: string;
   description: string;
   placeholder: string;
-}> = [
-  {
-    value: "business_rule",
-    label: "业务判断",
-    description: "结论或业务规则理解错了",
-    placeholder: "例如：折扣只是促销，不代表亏损。",
-  },
-  {
-    value: "metric_definition",
-    label: "指标口径",
-    description: "收入、利润等指标算错了",
-    placeholder: "例如：利润应按实付金额减去单位成本计算。",
-  },
-  {
-    value: "filter_rule",
-    label: "筛选范围",
-    description: "哪些记录该算或不该算",
-    placeholder: "例如：已退款订单不计入收入。",
-  },
-  {
-    value: "relationship_rule",
-    label: "数据关联",
-    description: "表或文件之间连错了",
-    placeholder: "例如：订单和门店要通过门店编号关联，不要用门店名称。",
-  },
-  {
-    value: "interpretation",
-    label: "解释偏差",
-    description: "数字没错，但原因判断不对",
-    placeholder: "例如：增长来自新店开业，不能归因于折扣活动。",
-  },
-];
+}> {
+  return [
+    {
+      value: "business_rule",
+      label: t("correctionKindBusiness"),
+      description: t("correctionKindBusinessDesc"),
+      placeholder: t("correctionKindBusinessExample"),
+    },
+    {
+      value: "metric_definition",
+      label: t("correctionKindMetric"),
+      description: t("correctionKindMetricDesc"),
+      placeholder: t("correctionKindMetricExample"),
+    },
+    {
+      value: "filter_rule",
+      label: t("correctionKindFilter"),
+      description: t("correctionKindFilterDesc"),
+      placeholder: t("correctionKindFilterExample"),
+    },
+    {
+      value: "relationship_rule",
+      label: t("correctionKindRelation"),
+      description: t("correctionKindRelationDesc"),
+      placeholder: t("correctionKindRelationExample"),
+    },
+    {
+      value: "interpretation",
+      label: t("correctionKindInterpretation"),
+      description: t("correctionKindInterpretationDesc"),
+      placeholder: t("correctionKindInterpretationExample"),
+    },
+  ];
+}
 
-function correctionKindLabel(kind?: CorrectionKind): string {
+function correctionKindLabel(
+  kind: CorrectionKind | undefined,
+  t: (key: string) => string,
+): string {
   return (
-    CORRECTION_KINDS.find((item) => item.value === kind)?.label || "业务判断"
+    buildCorrectionKinds(t).find((item) => item.value === kind)?.label ||
+    t("correctionKindBusiness")
   );
 }
 
@@ -125,25 +137,32 @@ function ordinaryReceiptText(value?: string | null): string | null {
   return value;
 }
 
-const RECEIPT_CHECK_LABELS: Record<string, string> = {
-  business_definition_recorded: "已保存这条业务定义",
-  current_definition_applied: "使用的是当前确认的定义",
-  application_reaches_final_result: "这条修正已进入最终结果",
-  final_result_revalidated: "最终结果已经重新核对",
-  required_metric_used_by_final_aggregate: "修正后的指标已用于最终汇总",
-  current_relationship_definition_tested: "使用的是当前修正的关联方式",
-  relationship_validation_passed: "关联覆盖率和重复扩张已经核对",
-  join_reaches_final_result: "关联后的数据已经进入最终结论",
-  final_result_revalidated_after_join: "关联后的最终结果已经重新核对",
-};
+function sameLanguageReceiptText(
+  value: string | null | undefined,
+  locale: string,
+): string | null {
+  const ordinary = ordinaryReceiptText(value);
+  if (!ordinary) return null;
+  const containsCjk = /[\u3400-\u9fff]/u.test(ordinary);
+  return locale.toLowerCase().startsWith("en") === containsCjk ? null : ordinary;
+}
 
-function ordinaryReceiptCheck(value: string): string | null {
-  const mapped = RECEIPT_CHECK_LABELS[value];
-  if (mapped) return mapped;
-  // Unknown machine check identifiers belong in advanced evidence, not in the
-  // ordinary report. Chinese business-facing messages can still pass through.
-  if (!/[\u3400-\u9fff]/u.test(value)) return null;
-  return ordinaryReceiptText(value);
+function correctionReceiptSummary(
+  receipt: CorrectionApplication | undefined,
+  t: (key: string) => string,
+): string | null {
+  switch (receipt?.summary_code) {
+    case "correction_verified":
+      return t("receiptSummaryVerified");
+    case "correction_relationship_verified":
+      return t("receiptSummaryRelationshipVerified");
+    case "correction_definition_only":
+      return t("receiptSummaryDefinitionOnly");
+    case "correction_failed":
+      return t("receiptSummaryFailed");
+    default:
+      return null;
+  }
 }
 
 function CorrectionApplicationReceipt({
@@ -151,26 +170,48 @@ function CorrectionApplicationReceipt({
 }: {
   receipt: CorrectionApplication;
 }) {
+  const t = useTranslations("assistantMessage");
+  const locale = useLocale();
   const verified = receipt.status === "verified";
   const failed = receipt.status === "failed";
+  const receiptCheckLabels: Record<string, string> = {
+    business_definition_recorded: t("receiptLabelDefinitionSaved"),
+    current_definition_applied: t("receiptLabelUsingCurrent"),
+    application_reaches_final_result: t("receiptLabelCorrectionApplied"),
+    final_result_revalidated: t("receiptLabelFinalRechecked"),
+    required_metric_used_by_final_aggregate: t("receiptLabelMetricRechecked"),
+    current_relationship_definition_tested: t("receiptLabelRelationApplied"),
+    relationship_validation_passed: t("receiptLabelRelationValidated"),
+    full_relation_reusable_proof: t("receiptLabelRelationReusable"),
+    join_reaches_final_result: t("receiptLabelRelationIntegrated"),
+    final_result_revalidated_after_join: t("receiptLabelFinalAfterRelation"),
+  };
+  const ordinaryReceiptCheck = (value: string): string | null => {
+    const mapped = receiptCheckLabels[value];
+    if (mapped) return mapped;
+    return sameLanguageReceiptText(value, locale);
+  };
   const title = verified
-    ? "本次修正已用于当前数据并重新核对"
+    ? t("appliedCurrentData")
     : failed
-      ? "本次修正没有完成核对"
-      : "已记住定义，执行方式尚未验证";
+      ? t("notRechecked")
+      : t("rememberedNotVerified");
   const fallback = verified
-    ? "这份报告使用了修正后的判断，并重新检查了当前数据。"
+    ? t("appliedVerifiedDesc")
     : failed
-      ? "调查没有足够依据证明这条修正已经正确作用，请处理后再继续。"
-      : "这条理解会保留在项目中；在形成可复用的处理方式前，每次仍需重新核对。";
-  const summary = ordinaryReceiptText(receipt.summary) || fallback;
+      ? t("insufficientEvidence")
+      : t("pendingReuseDesc");
+  const summary =
+    correctionReceiptSummary(receipt, t) ||
+    sameLanguageReceiptText(receipt.summary, locale) ||
+    fallback;
   const checks = (Array.isArray(receipt.checks) ? receipt.checks : [])
     .map(ordinaryReceiptCheck)
     .filter((item): item is string => Boolean(item));
 
   return (
     <section
-      aria-label="本次修正核对结果"
+      aria-label={t("correctionReviewAria")}
       role={failed ? "alert" : "status"}
       className={`relative mt-5 border-y px-5 py-4 pl-6 ${
         verified
@@ -246,6 +287,8 @@ export function AssistantMessageCard({
   onChangeAnalysisService,
   onManageAnalysisServices,
 }: AssistantMessageCardProps) {
+  const t = useTranslations("assistantMessage");
+  const locale = useLocale();
   const queryClient = useQueryClient();
   const refreshProject = useProjectStore((state) => state.refreshCurrent);
   const projectKnowledge = useProjectStore((state) => state.knowledge);
@@ -281,6 +324,52 @@ export function AssistantMessageCard({
   const correctionIdentity = `${message.projectId || ""}:${message.analysisRunId || ""}`;
   correctionIdentityRef.current = correctionIdentity;
   const report = message.report;
+  const localizedPreflightConfirmation = (() => {
+    const confirmation = report?.confirmation;
+    if (!confirmation) return null;
+    const code =
+      confirmation.presentation_code ||
+      (confirmation.key === "revenue_refund_policy"
+        ? "preflight.revenue_refund_policy"
+        : confirmation.key === "excel_sheet_selection" ||
+            confirmation.key.startsWith("excel_sheet_selection:")
+          ? "preflight.excel_sheet_selection"
+          : "");
+    if (code === "preflight.revenue_refund_policy") {
+      const legacyCodes: Record<string, string> = {
+        "扣除退款": "exclude_refunds",
+        "保留退款订单": "include_refunds",
+        "按现有净额字段": "use_existing_net_amount",
+      };
+      const optionLabel = (option: string) => {
+        const optionCode = confirmation.option_codes?.[option] || legacyCodes[option];
+        if (optionCode === "exclude_refunds") return t("preflightRefundExcludeOption");
+        if (optionCode === "include_refunds") return t("preflightRefundIncludeOption");
+        if (optionCode === "use_existing_net_amount") {
+          return t("preflightRefundNetAmountOption");
+        }
+        return option;
+      };
+      return {
+        title: t("preflightConfirmationTitle"),
+        question: t("preflightRefundQuestion"),
+        reason: t("preflightRefundReason"),
+        optionLabel,
+      };
+    }
+    if (code === "preflight.excel_sheet_selection") {
+      const selectedSheet = confirmation.presentation_facts?.selected_sheet?.trim();
+      return {
+        title: t("preflightConfirmationTitle"),
+        question: selectedSheet
+          ? t("preflightExcelQuestionSelected", { sheet: selectedSheet })
+          : t("preflightExcelQuestion"),
+        reason: t("preflightExcelReason"),
+        optionLabel: (option: string) => option,
+      };
+    }
+    return null;
+  })();
   const correctionApplicationFailed =
     message.correctionApplication?.status === "failed";
   const hasError = Boolean(message.hasError || correctionApplicationFailed);
@@ -293,32 +382,33 @@ export function AssistantMessageCard({
   const analysisServiceFailureReason = (() => {
     switch (message.errorCode) {
       case "MODEL_AUTH_ERROR":
-        return "访问凭证已失效。";
+        return t("authExpired");
       case "MODEL_ENDPOINT_ERROR":
-        return "连接设置不可用。";
+        return t("connectionUnavailable");
       case "MODEL_NOT_FOUND":
       case "MODEL_NOT_FOUND_ERROR":
-        return "当前服务不支持所选模型。";
+        return t("serviceUnsupported");
       case "MODEL_FORMAT_ERROR":
-        return "服务返回的内容无法使用。";
+        return t("serviceResponseInvalid");
       case "MODEL_SELECTION_CONFLICT":
-        return "这份调查已固定使用原服务。";
+        return t("serviceLocked");
       default:
-        return "当前服务暂时无法完成调查。";
+        return t("serviceBusy");
     }
   })();
   const failureTitle = correctionApplicationFailed
-    ? "本次修正未完成"
+    ? t("stateCorrectionPending")
     : needsAnalysisServiceChange
-      ? "分析服务不可用"
+      ? t("stateServiceUnavailable")
       : message.resumable
-        ? "调查已暂停"
-        : "调查未完成";
+        ? t("stateInvestigationPaused")
+        : t("stateInvestigationIncomplete");
   const failureReason = (() => {
     if (correctionApplicationFailed) {
       return (
-        ordinaryReceiptText(message.correctionApplication?.summary) ||
-        "当前数据不足以完成核对。"
+        correctionReceiptSummary(message.correctionApplication, t) ||
+        sameLanguageReceiptText(message.correctionApplication?.summary, locale) ||
+        t("insufficientRecheck")
       );
     }
     if (needsAnalysisServiceChange) return analysisServiceFailureReason;
@@ -326,17 +416,17 @@ export function AssistantMessageCard({
     const code = (message.errorCode || "").toUpperCase();
     const category = (message.errorCategory || "").toLowerCase();
     if (code.includes("TIMEOUT") || category === "timeout") {
-      return "分析服务暂时没有响应。";
+      return t("serviceNoResponse");
     }
     if (code.includes("RATE_LIMIT") || category === "rate_limited") {
-      return "分析服务当前繁忙。";
+      return t("serviceBusyShort");
     }
     if (code.includes("CONNECTION") || category === "connection") {
-      return "暂时无法连接分析服务。";
+      return t("serviceConnectFailed");
     }
     return message.resumable
-      ? "进度已保留，可以继续。"
-      : "处理过程中出现问题。";
+      ? t("progressKept")
+      : t("processingError");
   })();
   const needsData = report?.status === "needs_data";
   const wasStopped =
@@ -545,19 +635,21 @@ export function AssistantMessageCard({
     hasValidatedResult,
   );
   const partialSummary =
+    localizedPreflightConfirmation?.reason ||
     report?.summary ||
     (message.content && message.content !== message.errorMessage
       ? message.content
       : "");
   const runPrompt = onRunPrompt || onUsePrompt;
+  const correctionKinds = buildCorrectionKinds(t);
 
   const correctedInvestigationPrompt = () => {
     const originalQuestion =
-      message.originalQuery || report?.title || "刚才这项调查";
+      message.originalQuery || report?.title || t("previousRunFallback");
     return [
-      `请根据我的修正重新调查：${originalQuestion}`,
-      `我的修正：${correctionText.trim()}`,
-      "请重新检查数据和依据，不要直接沿用上一份结论。",
+      t("rerunWithCorrection", { question: originalQuestion }),
+      t("rerunCorrectionLine", { correction: correctionText.trim() }),
+      t("rerunRecheckNote"),
     ].join("\n");
   };
 
@@ -580,7 +672,7 @@ export function AssistantMessageCard({
 
   const handleConfirmation = async (key: string, option: string) => {
     if (!message.analysisRunId) {
-      setConfirmationError("这次调查缺少可继续的记录，请重新调查。");
+      setConfirmationError(t("resumeMissing"));
       return;
     }
     setConfirmingOption(option);
@@ -631,7 +723,7 @@ export function AssistantMessageCard({
       .filter((column) => column.trim())
       .slice(0, 10);
     if (!numericColumns.length) {
-      setStandingError("这份结果没有可稳定比较的数值指标，暂时不能持续关注。");
+      setStandingError(t("noComparableStanding"));
       return;
     }
 
@@ -642,7 +734,7 @@ export function AssistantMessageCard({
         `/api/v1/projects/${message.projectId}/standing-analyses`,
         {
           analysis_run_id: message.analysisRunId,
-          name: report?.title || savedPlaybook.name || "持续关注这项分析",
+          name: report?.title || savedPlaybook.name || t("standingDefaultName"),
           overdue_after_seconds: 86400,
           materiality: {
             version: 1,
@@ -666,7 +758,7 @@ export function AssistantMessageCard({
       });
     } catch (error) {
       setStandingState("idle");
-      setStandingError(getStandingErrorMessage(error));
+      setStandingError(getStandingErrorMessage(error, t));
     }
   };
 
@@ -854,7 +946,7 @@ export function AssistantMessageCard({
                       onClick={() => onChangeAnalysisService(index)}
                       className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                     >
-                      更换服务
+                      {t("switchService")}
                     </button>
                   )}
                   {onManageAnalysisServices && (
@@ -863,7 +955,7 @@ export function AssistantMessageCard({
                       onClick={() => onManageAnalysisServices(index)}
                       className="rounded-md border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                     >
-                      设置
+                      {t("settings")}
                     </button>
                   )}
                 </div>
@@ -874,7 +966,7 @@ export function AssistantMessageCard({
                 onClick={() => onRetry(index)}
                 className="shrink-0 self-start rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
               >
-                {message.resumable ? "继续" : "重试"}
+                {message.resumable ? t("actionContinue") : t("actionRetry")}
               </button>
             )}
           </div>
@@ -892,15 +984,17 @@ export function AssistantMessageCard({
                   <CheckCircle2 size={14} />
                 )}
                 {needsData
-                  ? "等待补充数据"
+                  ? t("phaseWaitingData")
                   : message.analysisState === "waiting_confirmation"
-                    ? "等待你的判断"
+                    ? t("phaseWaitingInput")
                     : wasStopped
-                      ? "调查已停止"
-                      : "调查报告"}
+                      ? t("phaseStopped")
+                      : t("reportTitleFallback")}
               </div>
               <h2 className="mt-2 max-w-2xl text-[26px] font-semibold leading-tight tracking-[-0.035em] text-foreground">
-                {report?.title || (wasStopped ? "这次调查已停止" : "分析结果")}
+                {localizedPreflightConfirmation?.title ||
+                  report?.title ||
+                  (wasStopped ? t("reportTitleStopped") : t("reportTitleDefault"))}
               </h2>
             </div>
             {!needsData && (
@@ -911,7 +1005,7 @@ export function AssistantMessageCard({
                     className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                   >
                     <LayoutDashboard size={13} />
-                    加入报表
+                    {t("addToReport")}
                   </Link>
                 )}
                 <button
@@ -920,7 +1014,7 @@ export function AssistantMessageCard({
                   className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-wait disabled:opacity-60"
                 >
                   <RefreshCw size={13} />
-                  {canResume ? "继续上次调查" : "用最新数据重跑"}
+                  {canResume ? t("continueLast") : t("rerunLatest")}
                 </button>
               </div>
             )}
@@ -938,7 +1032,7 @@ export function AssistantMessageCard({
             {partialSummary}
           </ReactMarkdown>
         ) : !hasError ? (
-          <p className="mt-5 text-sm text-muted-foreground">还没有形成结论。</p>
+          <p className="mt-5 text-sm text-muted-foreground">{t("noConclusionYet")}</p>
         ) : null}
 
         {needsData && report.action?.kind === "add_data" && (
@@ -966,7 +1060,7 @@ export function AssistantMessageCard({
                     onClick={onOpenData}
                     className="inline-flex items-center gap-2 bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
                   >
-                    补充文件或数据库
+                    {t("addFileOrDb")}
                     <ArrowRight size={14} />
                   </button>
                   {message.resumable && (
@@ -975,7 +1069,7 @@ export function AssistantMessageCard({
                       onClick={() => onRetry(index)}
                       className="border border-border bg-background px-4 py-2.5 text-sm font-semibold text-foreground hover:border-primary/50 hover:text-primary"
                     >
-                      数据已补好，继续调查
+                      {t("dataReadyContinue")}
                     </button>
                   )}
                 </div>
@@ -1014,14 +1108,14 @@ export function AssistantMessageCard({
               <div>
                 <div className="text-xs font-semibold uppercase tracking-[0.12em] text-warning">
                   {message.confirmationResolved
-                    ? "已按这个口径继续调查"
-                    : "这会改变结论，需要你决定"}
+                    ? t("appliedDefinition")
+                    : t("willChangeConclusion")}
                 </div>
                 <h3 className="mt-2 text-base font-semibold text-foreground">
-                  {report.confirmation.question}
+                  {localizedPreflightConfirmation?.question || report.confirmation.question}
                 </h3>
                 <p className="mt-1 text-xs leading-5 text-warning/80">
-                  {report.confirmation.reason}
+                  {localizedPreflightConfirmation?.reason || report.confirmation.reason}
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {report.confirmation.options.map((option) => (
@@ -1040,11 +1134,14 @@ export function AssistantMessageCard({
                       }
                       className="border border-warning/50 bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-warning/15 disabled:cursor-wait disabled:opacity-60"
                     >
-                      {confirmingOption === option
-                        ? "正在按这个口径继续…"
-                        : message.confirmationResolved === option
-                          ? `${option}（已选择）`
-                          : option}
+                      {(() => {
+                        const label = localizedPreflightConfirmation?.optionLabel(option) || option;
+                        return confirmingOption === option
+                          ? t("applyingDefinition")
+                          : message.confirmationResolved === option
+                            ? t("definitionSelected", { option: label })
+                            : label;
+                      })()}
                     </button>
                   ))}
                 </div>
@@ -1061,7 +1158,7 @@ export function AssistantMessageCard({
         {report?.findings?.length ? (
           <section className="mt-7">
             <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              关键发现
+              {t("keyFindings")}
             </h3>
             <div className="mt-3 divide-y divide-border border-y border-border">
               {report.findings.map((finding, findingIndex) => (
@@ -1082,7 +1179,7 @@ export function AssistantMessageCard({
         {(structuredVisualization || pythonImages.length > 0) && (
           <section className="mt-7">
             <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              结果图
+              {t("resultCharts")}
             </h3>
             {structuredVisualization ? (
               <ChartDisplay spec={structuredVisualization} />
@@ -1091,7 +1188,7 @@ export function AssistantMessageCard({
               <Image
                 key={imageIndex}
                 src={`data:image/png;base64,${image}`}
-                alt={`分析结果图 ${imageIndex + 1}`}
+                alt={t("resultImageAlt", { index: imageIndex + 1 })}
                 width={1280}
                 height={720}
                 unoptimized
@@ -1102,22 +1199,22 @@ export function AssistantMessageCard({
         )}
 
         {!hasError && message.data?.length ? (
-          <section className="mt-7" aria-label="结果明细">
-            <DataTable data={message.data} title="结果明细" />
+          <section className="mt-7" aria-label={t("resultDetailsAria")}>
+            <DataTable data={message.data} title={t("resultTable")} />
           </section>
         ) : null}
 
         {!needsData && artifactsFailed && (
           <section className="mt-7 flex flex-wrap items-center justify-between gap-3 border-y border-border py-3">
             <span className="text-xs text-muted-foreground">
-              本次调查内容暂时没有载入。
+              {t("artifactsNotLoaded")}
             </span>
             <button
               type="button"
               onClick={() => void refetchArtifacts()}
               className="text-xs font-semibold text-primary hover:underline"
             >
-              重试
+              {t("retry")}
             </button>
           </section>
         )}
@@ -1126,7 +1223,7 @@ export function AssistantMessageCard({
           <section className="mt-7 flex flex-wrap items-center justify-between gap-3 border-y border-border py-3">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <FolderCheck size={15} className="text-success" />
-              本次调查已保存 {artifacts.length} 项内容
+              {t("artifactsSavedCount", { count: artifacts.length })}
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <button
@@ -1134,7 +1231,7 @@ export function AssistantMessageCard({
                 onClick={() => setSavedArtifactsOpen(true)}
                 className="text-xs font-semibold text-primary hover:underline"
               >
-                查看 {artifacts.length} 项
+                {t("viewArtifactsCount", { count: artifacts.length })}
               </button>
               {savedFiles.map((artifact) => (
                 <a
@@ -1144,7 +1241,7 @@ export function AssistantMessageCard({
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
                 >
-                  打开{artifact.title}
+                  {t("openArtifact", { title: artifact.title })}
                   <ExternalLink size={12} />
                 </a>
               ))}
@@ -1168,11 +1265,11 @@ export function AssistantMessageCard({
               <div>
                 <div className="text-sm font-medium text-foreground">
                   {playbookState === "saved"
-                    ? "已保存为可复用分析"
-                    : "这次方法验证通过"}
+                    ? t("savedAsReusable")
+                    : t("methodVerified")}
                 </div>
                 <div className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                  下次遇到同类数据时会沿用这套思路，并重新检查数据和结果。
+                  {t("methodReuseHint")}
                 </div>
               </div>
             </div>
@@ -1184,10 +1281,10 @@ export function AssistantMessageCard({
                 className="border border-primary/40 bg-background px-3 py-2 text-xs font-semibold text-primary hover:bg-primary/5 disabled:cursor-default disabled:opacity-60"
               >
                 {playbookState === "saving"
-                  ? "正在保存…"
+                  ? t("savingMethod")
                   : playbookState === "saved"
-                    ? "方法已保存"
-                    : "下次继续这样分析"}
+                    ? t("methodSaved")
+                    : t("applyNextTime")}
               </button>
               {playbookState === "saved" && (
                 <button
@@ -1197,10 +1294,10 @@ export function AssistantMessageCard({
                   className="bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-default disabled:opacity-60"
                 >
                   {standingState === "saving"
-                    ? "正在开始关注…"
+                    ? t("startingStanding")
                     : standingState === "saved"
-                      ? "已持续关注"
-                      : "持续关注变化"}
+                      ? t("standingActive")
+                      : t("standingWatchChanges")}
                 </button>
               )}
             </div>
@@ -1213,8 +1310,7 @@ export function AssistantMessageCard({
               standingState !== "saved" &&
               !standingError && (
                 <p className="w-full text-xs leading-5 text-muted-foreground">
-                  持续关注会在数据变化或间隔一天后重新核对；关键指标变化超过 10%
-                  才提醒你。
+                  {t("standingExplain")}
                 </p>
               )}
             {standingError && (
@@ -1228,7 +1324,7 @@ export function AssistantMessageCard({
         {nextActions.length ? (
           <section className="mt-7">
             <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              下一步建议
+              {t("nextSuggestions")}
             </h3>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {nextActions.map((action) => (
@@ -1241,7 +1337,7 @@ export function AssistantMessageCard({
                     <span>{action.label}</span>
                     {action.recommended ? (
                       <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-primary">
-                        建议先做
+                        {t("suggestionDoFirst")}
                       </span>
                     ) : (
                       <ArrowRight
@@ -1260,7 +1356,7 @@ export function AssistantMessageCard({
         ) : report?.follow_ups?.length ? (
           <section className="mt-7">
             <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              可以继续问
+              {t("suggestionCanAsk")}
             </h3>
             <div className="mt-3 flex flex-wrap gap-2">
               {report.follow_ups.map((question) => (
@@ -1303,36 +1399,37 @@ export function AssistantMessageCard({
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">
                         {projectCorrectionInactive
-                          ? "这条项目口径已停用"
+                          ? t("ruleRetired")
                           : correctionExecutionBlocked
-                            ? "这条定义暂时不能用于调查"
+                            ? t("ruleCannotUseNow")
                             : correctionReusable && !correctionPromoted
-                              ? "已记录，尚未形成可复用定义"
+                              ? t("ruleRecordedNoReuse")
                               : correctionReusable &&
                                   !correctionExecutionVerified
-                                ? "已记住定义，执行方式尚未验证"
+                                ? t("ruleRecordedNotVerified")
                                 : correctionReusable
-                                  ? "已记住定义"
-                                  : "已记录这次修正"}
+                                  ? t("ruleRecorded")
+                                  : t("ruleRecordedJust")}
                       </span>
                       <span className="rounded-full border border-current/15 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                         {correctionKindLabel(
                           persistedCorrection?.correction_type,
+                          t,
                         )}
                       </span>
                     </div>
                     <div className="mt-0.5 text-xs leading-5 text-muted-foreground">
                       {projectCorrectionInactive
-                        ? "它不会进入后续调查；可以在“数据”中重新启用。"
+                        ? t("ruleRetiredDesc")
                         : correctionExecutionBlocked
-                          ? "当前处理方式需要重新核对；在确认前不会自动使用。"
+                          ? t("ruleRecheckDesc")
                           : correctionReusable && !correctionPromoted
-                            ? "本次重新调查会带上这条修正；还不能明确绑定到数据，所以以后不会自动套用。"
+                            ? t("ruleOneTimeDesc")
                             : correctionReusable && correctionExecutionVerified
-                              ? "这条定义和对应处理方式都已经核对；数据变化时仍会重新验证。"
+                              ? t("ruleVerifiedDesc")
                               : correctionReusable
-                                ? "后续调查会带上这条定义，但不会仅因为记住了它就自动修改数据。"
-                                : "它只用于重新检查这份报告，不会自动变成长期规则。"}
+                                ? t("ruleDefinitionOnlyDesc")
+                                : t("ruleOneTimeReportDesc")}
                     </div>
                     <blockquote className="mt-2 border-l border-current/25 pl-3 text-sm leading-6 text-foreground">
                       {currentCorrectionText}
@@ -1347,7 +1444,7 @@ export function AssistantMessageCard({
                       onClick={onOpenUnderstanding || onOpenData}
                       className="px-2 py-2 text-xs font-medium text-muted-foreground hover:text-foreground disabled:cursor-wait disabled:opacity-60"
                     >
-                      在数据中管理
+                      {t("manageInData")}
                     </button>
                   ) : (
                     <button
@@ -1374,7 +1471,7 @@ export function AssistantMessageCard({
                       }}
                       className="px-2 py-2 text-xs font-medium text-muted-foreground hover:text-foreground disabled:cursor-wait disabled:opacity-60"
                     >
-                      修改
+                      {t("modify")}
                     </button>
                   )}
                   {persistedCorrection && (
@@ -1385,8 +1482,8 @@ export function AssistantMessageCard({
                       className="px-2 py-2 text-xs font-medium text-muted-foreground hover:text-foreground disabled:cursor-wait disabled:opacity-60"
                     >
                       {correctionState === "deleting"
-                        ? "正在撤销…"
-                        : "撤销记录"}
+                        ? t("revoking")
+                        : t("revokeRecord")}
                     </button>
                   )}
                   <button
@@ -1399,7 +1496,7 @@ export function AssistantMessageCard({
                     }
                     className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
                   >
-                    按修正重新调查
+                    {t("rerunWithCorrectionAction")}
                   </button>
                 </div>
                 {correctionError && (
@@ -1418,14 +1515,14 @@ export function AssistantMessageCard({
                 className="inline-flex items-center gap-2 rounded-md px-1 py-1.5 text-sm text-muted-foreground transition-colors hover:text-primary"
               >
                 <MessageSquareWarning size={16} />
-                结论有偏差或口径不对？纠正这次理解
+                {t("correctionPrompt")}
               </button>
             ) : (
               <div className="rounded-lg border border-warning/30 bg-warning/[0.05] px-4 py-4">
                 {correctionTargets.length > 0 && (
                   <fieldset>
                     <legend className="text-sm font-semibold text-foreground">
-                      你要修正哪一项？
+                      {t("whichToCorrect")}
                     </legend>
                     <div className="mt-3 grid gap-2 sm:grid-cols-2">
                       <label
@@ -1448,10 +1545,10 @@ export function AssistantMessageCard({
                           className="sr-only"
                         />
                         <span className="block text-xs font-semibold">
-                          整体结论 / 其他
+                          {t("overallOrOther")}
                         </span>
                         <span className="mt-0.5 block text-[11px] leading-4">
-                          修正报告整体判断，或列表里没有的内容
+                          {t("overallOrOtherDesc")}
                         </span>
                       </label>
                       {correctionTargets.map((target) => {
@@ -1502,10 +1599,10 @@ export function AssistantMessageCard({
                     }
                   >
                     <legend className="text-sm font-semibold text-foreground">
-                      这次问题出在哪里？
+                      {t("whatWentWrong")}
                     </legend>
                     <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                      {CORRECTION_KINDS.map((kind) => {
+                      {correctionKinds.map((kind) => {
                         const selected = correctionKind === kind.value;
                         return (
                           <label
@@ -1545,21 +1642,21 @@ export function AssistantMessageCard({
                     className="mt-3 text-xs leading-5 text-muted-foreground"
                     role="status"
                   >
-                    正在确认这份报告里哪些口径可以安全复用…
+                    {t("recheckingDefinitions")}
                   </p>
                 )}
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
                   {hasBoundCorrectionTarget
-                    ? "先保存这次修正；需要时可以让这个明确口径在以后继续使用。"
+                    ? t("saveCorrectionFirst")
                     : correctionTargetsFailed
-                      ? "目标暂时无法核对，这次修正仍可保存，但只作用于当前报告。"
-                      : "没有选择具体口径时，这次修正只作用于当前报告。"}
+                      ? t("saveOneTimeNoChoice")
+                      : t("saveOneTime")}
                 </p>
                 <label
                   htmlFor={`report-correction-${index}`}
                   className="mt-3 block text-xs font-medium text-foreground"
                 >
-                  正确的理解是什么？
+                  {t("correctDefinition")}
                 </label>
                 <textarea
                   id={`report-correction-${index}`}
@@ -1569,7 +1666,7 @@ export function AssistantMessageCard({
                   rows={3}
                   autoFocus
                   placeholder={
-                    CORRECTION_KINDS.find(
+                    correctionKinds.find(
                       (kind) => kind.value === correctionKind,
                     )?.placeholder
                   }
@@ -1593,12 +1690,12 @@ export function AssistantMessageCard({
                   />
                   <span>
                     <span className="font-medium">
-                      以后遇到同类问题也按这个口径
+                      {t("useForFuture")}
                     </span>
                     <span className="block text-muted-foreground">
                       {hasBoundCorrectionTarget
-                        ? "不勾选时只重做当前报告；长期使用前仍会重新核对真实数据。"
-                        : "先选择上方一个明确的业务项，才能用于以后的调查。"}
+                        ? t("useForFutureDesc")
+                        : t("useForFutureRequire")}
                     </span>
                   </span>
                 </label>
@@ -1606,24 +1703,24 @@ export function AssistantMessageCard({
                   boundCorrectionType === "metric_definition" && (
                     <fieldset className="mt-3 border-t border-warning/30 pt-3">
                       <legend className="text-xs font-semibold text-foreground">
-                        这个指标应该读取哪个数值字段？
+                        {t("whichField")}
                       </legend>
                       <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-                        这里只列出本次调查中可重新绑定的数据字段；保存后仍会用真实数据重跑并验证。
+                        {t("whichFieldDesc")}
                       </p>
                       {correctionTargetOptionsFetching ? (
                         <p
                           className="mt-2 text-xs text-muted-foreground"
                           role="status"
                         >
-                          正在核对可用字段…
+                          {t("checkingFields")}
                         </p>
                       ) : correctionTargetOptionsFailed ? (
                         <p
                           className="mt-2 text-xs leading-5 text-warning"
                           role="alert"
                         >
-                          暂时无法读取字段选项；可以稍后重试，或先只保存文字口径。
+                          {t("fieldsUnavailable")}
                         </p>
                       ) : correctionTargetOptions.length > 0 ? (
                         <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -1668,7 +1765,7 @@ export function AssistantMessageCard({
                         </div>
                       ) : (
                         <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                          当前报告里没有可安全绑定的数值字段；文字口径仍可保存，但不会假装已经能自动执行。
+                          {t("noSafeFields")}
                         </p>
                       )}
                     </fieldset>
@@ -1686,7 +1783,7 @@ export function AssistantMessageCard({
                     onClick={() => void handleSaveCorrection()}
                     className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {correctionState === "saving" ? "正在保存…" : "保存修正"}
+                    {correctionState === "saving" ? t("savingCorrection") : t("saveCorrection")}
                   </button>
                   <button
                     type="button"
@@ -1710,7 +1807,7 @@ export function AssistantMessageCard({
                     }}
                     className="px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
                   >
-                    取消
+                    {t("cancel")}
                   </button>
                 </div>
                 {correctionError && (

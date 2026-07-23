@@ -3,10 +3,13 @@ import { NextIntlClientProvider } from "next-intl";
 import { describe, expect, it, vi } from "vitest";
 import {
   ModelSettingsList,
+  getModelTestResultMessage,
   getModelServiceState,
 } from "@/components/settings/model-settings/ModelSettingsList";
+import type { ModelTestResult } from "@/lib/settings/models";
 import type { ConfiguredModel } from "@/lib/types/api";
-import messages from "@/messages/zh.json";
+import enMessages from "@/messages/en.json";
+import zhMessages from "@/messages/zh.json";
 
 function model(overrides: Partial<ConfiguredModel>): ConfiguredModel {
   return {
@@ -22,13 +25,20 @@ function model(overrides: Partial<ConfiguredModel>): ConfiguredModel {
   };
 }
 
-function renderList(models: ConfiguredModel[]) {
+function renderList(
+  models: ConfiguredModel[],
+  locale: "en" | "zh" = "zh",
+  testResult: ModelTestResult | null = null
+) {
   render(
-    <NextIntlClientProvider locale="zh" messages={messages}>
+    <NextIntlClientProvider
+      locale={locale}
+      messages={locale === "zh" ? zhMessages : enMessages}
+    >
       <ModelSettingsList
         models={models}
         isLoading={false}
-        testResult={null}
+        testResult={testResult}
         testingModelId={undefined}
         deletePending={false}
         onTest={vi.fn()}
@@ -56,6 +66,33 @@ describe("ModelSettingsList", () => {
     expect(getModelServiceState(model({ credential_state: "unreadable" }))).toBe(
       "configuration_unreadable"
     );
+  });
+
+  it("maps structured connection outcomes without depending on API prose", () => {
+    const copy = {
+      success: "success",
+      credentials: "credentials",
+      configuration: "configuration",
+      temporary: "temporary",
+      failed: "failed",
+    };
+
+    expect(getModelTestResultMessage({ success: true }, copy)).toBe("success");
+    expect(
+      getModelTestResultMessage({ success: false, error_category: "auth" }, copy)
+    ).toBe("credentials");
+    expect(
+      getModelTestResultMessage(
+        { success: false, error_category: "provider_format" },
+        copy
+      )
+    ).toBe("configuration");
+    expect(
+      getModelTestResultMessage({ success: false, error_category: "timeout" }, copy)
+    ).toBe("temporary");
+    expect(
+      getModelTestResultMessage({ success: false, error_category: "future_code" }, copy)
+    ).toBe("failed");
   });
 
   it("shows persisted business states and a named check action", () => {
@@ -91,5 +128,23 @@ describe("ModelSettingsList", () => {
 
     expect(screen.getByTestId("model-health-service-a")).toHaveTextContent("未检查");
     expect(screen.queryByText("可用")).not.toBeInTheDocument();
+  });
+
+  it("renders an English credential result without exposing Chinese API prose", () => {
+    renderList(
+      [model({ health_status: "unhealthy", last_error_category: "auth" })],
+      "en",
+      {
+        id: "service-a",
+        success: false,
+        message: "访问凭证需要更新",
+        error_category: "auth",
+      }
+    );
+
+    expect(
+      screen.getByText("The access credential was rejected or could not be read.")
+    ).toBeInTheDocument();
+    expect(screen.queryByText("访问凭证需要更新")).not.toBeInTheDocument();
   });
 });

@@ -9,7 +9,9 @@ import {
   FileStack,
   Loader2,
   Radar,
+  Sparkles,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import type {
   AnalysisRunSummary,
   Project,
@@ -26,31 +28,20 @@ interface ChatEmptyStateProps {
   recentRuns: AnalysisRunSummary[];
   suggestedQuestions: SuggestedQuestion[];
   suggestionsLoading: boolean;
+  settingsLoaded: boolean;
+  selfAnalysisEnabled: boolean;
+  canGenerateSuggestions: boolean;
+  suggestionsError?: string | null;
   composer: ReactNode;
   activityLoading: boolean;
   checkingStandingId?: string | null;
   standingFeedback?: Record<string, string>;
   onOpenData: () => void;
+  onOpenSettings: () => void;
+  onGenerateSuggestions: () => void;
   onUsePrompt: (prompt: string) => void;
   onOpenReport: (conversationId: string, analysisRunId: string) => void;
   onCheckStanding: (standing: StandingAnalysis) => void;
-}
-
-function standingState(standing: StandingAnalysis) {
-  if (standing.state === "needs_attention") {
-    return {
-      label: "需要处理",
-      tone: "text-warning",
-      dot: "bg-warning",
-    };
-  }
-  if (standing.state === "paused") {
-    return { label: "已暂停", tone: "text-muted-foreground", dot: "bg-muted-foreground/40" };
-  }
-  if (standing.in_flight) {
-    return { label: "正在检查", tone: "text-primary", dot: "bg-primary" };
-  }
-  return { label: "持续关注", tone: "text-success", dot: "bg-success" };
 }
 
 export function ChatEmptyState({
@@ -59,13 +50,41 @@ export function ChatEmptyState({
   standingAnalyses,
   suggestedQuestions,
   suggestionsLoading,
+  settingsLoaded,
+  selfAnalysisEnabled,
+  canGenerateSuggestions,
+  suggestionsError,
   composer,
   checkingStandingId,
   standingFeedback = {},
   onOpenData,
+  onGenerateSuggestions,
   onUsePrompt,
   onCheckStanding,
 }: ChatEmptyStateProps) {
+  const t = useTranslations("chatEmpty");
+
+  function standingState(standing: StandingAnalysis) {
+    if (standing.state === "needs_attention") {
+      return {
+        label: t("statePending"),
+        tone: "text-warning",
+        dot: "bg-warning",
+      };
+    }
+    if (standing.state === "paused") {
+      return {
+        label: t("statePaused"),
+        tone: "text-muted-foreground",
+        dot: "bg-muted-foreground/40",
+      };
+    }
+    if (standing.in_flight) {
+      return { label: t("stateChecking"), tone: "text-primary", dot: "bg-primary" };
+    }
+    return { label: t("standingTitle"), tone: "text-success", dot: "bg-success" };
+  }
+
   const readySources = sources.filter((source) =>
     ["ready", "needs_confirmation"].includes(source.status)
   );
@@ -74,16 +93,16 @@ export function ChatEmptyState({
     <div
       data-testid="project-work-surface"
       className="min-h-0 flex-1 overflow-y-auto bg-background"
-      aria-label={project?.name ? `${project.name}工作台` : "当前项目工作台"}
+      aria-label={project?.name ? `${project.name}${t("workspaceTitle")}` : t("workspaceTitle")}
     >
       <div className="mx-auto min-h-full w-full max-w-[1080px] px-5 pb-12 pt-9 sm:px-8 sm:pb-16 sm:pt-12 lg:px-12">
         <section className="min-w-0">
           <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] font-medium text-muted-foreground">
             <div className="flex min-w-0 items-center gap-2">
               <span className="h-2 w-2 shrink-0 bg-primary" />
-              <span className="truncate">{project?.name || "当前项目"}</span>
+              <span className="truncate">{project?.name || t("projectFallback")}</span>
               <span aria-hidden="true">·</span>
-              <span>今日工作台</span>
+              <span>{t("workspaceTitle")}</span>
             </div>
             {readySources.length > 0 && (
               <button
@@ -96,32 +115,36 @@ export function ChatEmptyState({
                 ) : (
                   <FileStack size={13} />
                 )}
-                {readySources.length} 项数据可用
+                {t("readySources", { count: readySources.length })}
               </button>
             )}
           </div>
 
           <h1 className="mt-7 max-w-3xl text-[34px] font-semibold leading-[1.08] tracking-[-0.045em] text-foreground sm:text-[44px]">
-            现在想推进哪件事？
+            {t("title")}
           </h1>
 
           <div className="mt-7">{composer}</div>
         </section>
 
-        {(suggestionsLoading || suggestedQuestions.length > 0) && (
+        {readySources.length > 0 && (!settingsLoaded || selfAnalysisEnabled) && (
           <section className="mt-10 max-w-[920px] border-t border-border pt-5">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
               <h2 className="text-[11px] font-semibold tracking-[0.12em] text-muted-foreground">
-                基于当前数据
+                {t("description")}
               </h2>
-              <span className="text-[11px] text-muted-foreground">随项目内容更新</span>
             </div>
-            {suggestionsLoading ? (
+            {!settingsLoaded ? (
               <div className="mt-3 flex items-center gap-2 py-4 text-xs text-muted-foreground">
                 <Loader2 size={13} className="animate-spin" />
-                正在找出值得先问的事情
+                {t("loadingSuggestionSettings")}
               </div>
-            ) : (
+            ) : suggestionsLoading ? (
+              <div className="mt-3 flex items-center gap-2 py-4 text-xs text-muted-foreground">
+                <Loader2 size={13} className="animate-spin" />
+                {t("loadingSuggestions")}
+              </div>
+            ) : suggestedQuestions.length > 0 ? (
               <div className="mt-2 divide-y divide-border border-y border-border">
                 {suggestedQuestions.map((suggestion, index) => (
                   <button
@@ -147,6 +170,21 @@ export function ChatEmptyState({
                     />
                   </button>
                 ))}
+              </div>
+            ) : (
+              <div className="mt-3 border border-border bg-card px-4 py-4">
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {suggestionsError || t("suggestionsRequireClick")}
+                </p>
+                <button
+                  type="button"
+                  disabled={!canGenerateSuggestions}
+                  onClick={onGenerateSuggestions}
+                  className="mt-3 inline-flex items-center gap-2 bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Sparkles size={13} />
+                  {suggestionsError ? t("retrySuggestions") : t("generateSuggestions")}
+                </button>
               </div>
             )}
           </section>
@@ -174,10 +212,10 @@ export function ChatEmptyState({
                   <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-success" />
                 )}
                 <span>
-                  <span className="block text-sm font-medium text-foreground">数据</span>
+                  <span className="block text-sm font-medium text-foreground">{t("data")}</span>
                   <span className="mt-1 block text-xs leading-5 text-muted-foreground">
                     {unresolvedSources.length
-                      ? `${unresolvedSources.length} 项需要确认，点击查看`
+                      ? t("issuesCount", { count: unresolvedSources.length })
                       : readySources.slice(0, 2).map((source) => source.name).join(" · ")}
                   </span>
                 </span>
@@ -195,9 +233,9 @@ export function ChatEmptyState({
                   <Radar size={16} className="mt-0.5 shrink-0 text-primary" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm font-medium text-foreground">持续关注</span>
+                      <span className="text-sm font-medium text-foreground">{t("standingTitle")}</span>
                       <span className="text-[11px] text-muted-foreground">
-                        {standingAnalyses.length} 项
+                        {t("itemsCount", { count: standingAnalyses.length })}
                       </span>
                     </div>
                     <div className="mt-2 space-y-2">
@@ -222,7 +260,7 @@ export function ChatEmptyState({
                                 onClick={() => onCheckStanding(standing)}
                                 className="shrink-0 font-semibold text-primary hover:underline disabled:opacity-50"
                               >
-                                {checking ? "检查中" : "检查变化"}
+                                {checking ? t("checking") : t("checkChanges")}
                               </button>
                             )}
                           </div>

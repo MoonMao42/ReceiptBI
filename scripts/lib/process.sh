@@ -33,7 +33,7 @@ remove_stale_pid_file() {
 port_pid() {
   local port="$1"
   if port_probe_supported; then
-    lsof -ti :"$port" 2>/dev/null | head -n 1
+    lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | head -n 1
   fi
   return 0
 }

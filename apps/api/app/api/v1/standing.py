@@ -358,14 +358,25 @@ async def update_standing_analysis(
                     "resumable": False,
                     "reason": "standing_analysis_paused",
                 }
-        update.update(state="paused", attention_reason=None, in_flight=None)
+        update.update(
+            state="paused",
+            attention_reason=None,
+            attention_reason_code=None,
+            attention_reason_params={},
+            in_flight=None,
+        )
     elif payload.state == "active":
         if current.baseline is None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="需要先用一份已完成且校验过的结果重新建立基线",
             )
-        update.update(state="active", attention_reason=None)
+        update.update(
+            state="active",
+            attention_reason=None,
+            attention_reason_code=None,
+            attention_reason_params={},
+        )
     updated = current.model_copy(update=update)
     # model_copy does not revalidate updates in Pydantic v2.
     updated = StandingAnalysisResponse.model_validate(updated.model_dump())
@@ -398,6 +409,8 @@ async def prepare_standing_run(
                 outcome="needs_attention",
                 standing_analysis=definition,
                 attention_reason=definition.attention_reason,
+                attention_reason_code=definition.attention_reason_code,
+                attention_reason_params=definition.attention_reason_params,
             )
         )
     if payload.force and payload.request_id is None:
@@ -460,6 +473,11 @@ async def prepare_standing_run(
             update={
                 "state": "needs_attention",
                 "attention_reason": attention,
+                "attention_reason_code": (
+                    input_state.attention_reason_code
+                    or "standing_project_input_unavailable"
+                ),
+                "attention_reason_params": input_state.attention_reason_params or {},
                 "in_flight": None,
                 "updated_at": now,
             }
@@ -473,6 +491,8 @@ async def prepare_standing_run(
                 outcome="needs_attention",
                 standing_analysis=updated,
                 attention_reason=attention,
+                attention_reason_code=updated.attention_reason_code,
+                attention_reason_params=updated.attention_reason_params,
             )
         )
     token = input_state.token
@@ -509,6 +529,8 @@ async def prepare_standing_run(
                     update={
                         "state": "needs_attention",
                         "attention_reason": attention,
+                        "attention_reason_code": "standing_in_flight_run_missing",
+                        "attention_reason_params": {},
                         "in_flight": None,
                         "updated_at": now,
                     }
@@ -522,6 +544,8 @@ async def prepare_standing_run(
                     outcome="needs_attention",
                     standing_analysis=updated,
                     attention_reason=attention,
+                    attention_reason_code=updated.attention_reason_code,
+                    attention_reason_params=updated.attention_reason_params,
                 )
             )
         if _active_claim(claim, now) or _run_keeps_expired_claim(claimed_run):

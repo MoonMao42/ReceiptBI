@@ -109,6 +109,11 @@ def canonical_data_type(raw_type: Any) -> Literal[
         return "datetime"
     if any(hint in normalized for hint in _NUMBER_TYPE_HINTS):
         return "number"
+    # Pandas 3 reports its inferred string dtype as the exact token ``str``.
+    # Treat it explicitly instead of adding ``str`` to the substring hints,
+    # which would incorrectly classify unrelated types such as ``struct``.
+    if normalized in {"str", "utf8", "large_utf8"}:
+        return "text"
     if any(hint in normalized for hint in _TEXT_TYPE_HINTS):
         return "text"
     return "unknown"
@@ -176,10 +181,14 @@ def stable_field_binding_candidates(
             if not isinstance(table, dict):
                 continue
             table_name = str(table.get("name") or "").strip()
+            table_schema = str(table.get("schema") or "").strip()
+            semantic_table = (
+                f"{table_schema}.{table_name}" if table_schema and table_name else table_name
+            )
             columns = table.get("columns")
             if table_name and isinstance(columns, list) and columns:
                 structures.append(
-                    (table_name, [item for item in columns if isinstance(item, dict)])
+                    (semantic_table, [item for item in columns if isinstance(item, dict)])
                 )
 
     bindings: list[dict[str, str]] = []

@@ -23,6 +23,37 @@ export type ModelServiceState =
   | "temporarily_unavailable"
   | "configuration_unreadable";
 
+export interface ModelTestResultMessages {
+  success: string;
+  credentials: string;
+  configuration: string;
+  temporary: string;
+  failed: string;
+}
+
+export function getModelTestResultMessage(
+  result: Pick<ModelTestResult, "success" | "error_category">,
+  messages: ModelTestResultMessages
+): string {
+  if (result.success) return messages.success;
+  if (result.error_category === "auth") return messages.credentials;
+  if (
+    result.error_category === "model_endpoint" ||
+    result.error_category === "model_not_found" ||
+    result.error_category === "provider_format"
+  ) {
+    return messages.configuration;
+  }
+  if (
+    result.error_category === "timeout" ||
+    result.error_category === "connection" ||
+    result.error_category === "rate_limited"
+  ) {
+    return messages.temporary;
+  }
+  return messages.failed;
+}
+
 /**
  * Credential storage and provider health are separate facts. A saved secret
  * must never be presented as proof that the service can complete an analysis.
@@ -82,6 +113,13 @@ export function ModelSettingsList({
   const tc = useTranslations("common");
   const locale = useLocale();
   const { armedId: armedDeleteId, request: requestDelete } = useArmedAction();
+  const testResultMessages: ModelTestResultMessages = {
+    success: t("testResultSuccess"),
+    credentials: t("testResultCredentials"),
+    configuration: t("testResultConfiguration"),
+    temporary: t("testResultTemporary"),
+    failed: t("testResultFailed"),
+  };
 
   if (isLoading) {
     return (
@@ -214,7 +252,9 @@ export function ModelSettingsList({
                 ) : (
                   <XCircle size={16} className="text-destructive" />
                 )}
-                <span className="text-muted-foreground">{testResult.message}</span>
+                <span className="text-muted-foreground">
+                  {getModelTestResultMessage(testResult, testResultMessages)}
+                </span>
               </div>
             )}
           </div>

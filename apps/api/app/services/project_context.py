@@ -23,15 +23,22 @@ from app.db.tables import (
     Project,
     ProjectDataSource,
     SemanticEntry,
+    SemanticScopeNode,
 )
 from app.models.workspace import (
     AnalysisPlaybookResponse,
     RelationshipDefinition,
     TrustedProjectReferenceResponse,
+    is_executable_semantic_definition,
 )
 from app.services.business_decision_slots import canonicalize_decision_key
 from app.services.conversation_context import compact_report_context
 from app.services.correction_completion import is_reusable_full_relationship_evidence
+from app.services.semantic_scopes import (
+    ensure_semantic_scope_tree,
+    reconcile_unscoped_semantic_entries,
+    semantic_scope_runtime_payload,
+)
 
 
 def _view_name(source: ProjectDataSource) -> str:
@@ -101,6 +108,18 @@ _RUNTIME_CANDIDATE_RELATIONSHIP_LIMIT = 12
 _RUNTIME_RECENT_ANALYSIS_SOURCE_LIMIT = 32
 _RUNTIME_RECENT_ANALYSIS_LIMIT = 8
 _RUNTIME_RECENT_ANALYSIS_CHAR_BUDGET = 8_000
+
+
+def _globally_visible_semantic(item: dict[str, Any]) -> bool:
+    scope_kind = item.get("scope_kind")
+    if scope_kind == "project":
+        return True
+    if scope_kind is not None:
+        return False
+    # Compatibility for old in-memory/test contexts that predate scope fields.
+    # Production DB payloads always carry `type`; an unresolved executable
+    # definition therefore remains hidden rather than falling back to global.
+    return "type" not in item or not is_executable_semantic_definition(item.get("definition"))
 
 
 def _semantic_query_terms(query: str | None) -> tuple[str, ...]:
@@ -567,6 +586,7 @@ class ProjectRuntimeContext:
     pending_sources: list[dict[str, Any]] = field(default_factory=list)
     connection_configs: dict[str, dict[str, Any]] = field(default_factory=dict)
     confirmed_knowledge: list[dict[str, Any]] = field(default_factory=list)
+    semantic_scopes: list[dict[str, Any]] = field(default_factory=list)
     candidate_knowledge: list[dict[str, Any]] = field(default_factory=list)
     candidate_relationships: list[dict[str, Any]] = field(default_factory=list)
     executable_relationships: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -587,23 +607,36 @@ class ProjectRuntimeContext:
 
     def public_summary(self, query: str | None = None) -> dict[str, Any]:
         query_terms = _semantic_query_terms(query)
+        globally_visible_knowledge = [
+            item
+            for item in self.confirmed_knowledge
+            if _globally_visible_semantic(item)
+        ]
         confirmed_knowledge, confirmed_knowledge_meta = _budget_semantic_items(
-            self.confirmed_knowledge,
+            globally_visible_knowledge,
             limit=_RUNTIME_CONFIRMED_KNOWLEDGE_LIMIT,
             query_terms=query_terms,
         )
+        # Candidates remain available to system-owned validation contracts, but
+        # they are never part of the ordinary model prompt.  In particular,
+        # exposing a candidate metric definition here would let the model copy
+        # its operation/column into a raw query without a semantic receipt.
         candidate_knowledge, candidate_knowledge_meta = _budget_semantic_items(
-            self.candidate_knowledge,
+            [],
             limit=_RUNTIME_CANDIDATE_KNOWLEDGE_LIMIT,
             query_terms=query_terms,
         )
         confirmed_relationships, confirmed_relationships_meta = _budget_semantic_items(
-            list(self.executable_relationships.values()),
+            [
+                item
+                for item in self.executable_relationships.values()
+                if _globally_visible_semantic(item)
+            ],
             limit=_RUNTIME_CONFIRMED_RELATIONSHIP_LIMIT,
             query_terms=query_terms,
         )
         relationship_hints, candidate_relationships_meta = _budget_semantic_items(
-            self.candidate_relationships,
+            [],
             limit=_RUNTIME_CANDIDATE_RELATIONSHIP_LIMIT,
             query_terms=query_terms,
         )
@@ -719,6 +752,9 @@ class ProjectRuntimeContext:
                     "correction_type": self.required_correction.get("correction_type"),
                     "source_run_id": self.required_correction.get("source_run_id"),
                     "semantic_entry_id": self.required_correction.get("semantic_entry_id"),
+                    "expected_active_revision_id": self.required_correction.get(
+                        "expected_active_revision_id"
+                    ),
                     "definition_hash": self.required_correction.get("definition_hash"),
                     "execution_state": self.required_correction.get("execution_state"),
                     "executable": bool(self.required_correction.get("executable")),
@@ -838,9 +874,25 @@ def _source_column_details(source: dict[str, Any], table_or_view: str) -> list[d
     profile = source.get("profile") or {}
     if source.get("kind") == "file":
         return list((profile.get("schema") or {}).get("columns") or [])
-    for table in profile.get("tables") or []:
-        if str(table.get("name") or "") == table_or_view:
-            return list(table.get("columns") or [])
+    tables = [table for table in profile.get("tables") or [] if isinstance(table, dict)]
+    exact_matches = []
+    for table in tables:
+        name = str(table.get("name") or "").strip()
+        schema = str(table.get("schema") or "").strip()
+        canonical = f"{schema}.{name}" if schema and name else name
+        if canonical.casefold() == table_or_view.strip().casefold():
+            exact_matches.append(table)
+    if len(exact_matches) == 1:
+        return list(exact_matches[0].get("columns") or [])
+    if "." not in table_or_view:
+        bare_matches = [
+            table
+            for table in tables
+            if str(table.get("name") or "").strip().casefold()
+            == table_or_view.strip().casefold()
+        ]
+        if len(bare_matches) == 1:
+            return list(bare_matches[0].get("columns") or [])
     return []
 
 
@@ -967,6 +1019,24 @@ async def load_project_context(
     project = await db.get(Project, project_id)
     if project is None:
         raise ValueError("项目不存在")
+    # Governance screens keep strict scope validation, while analysis runtime
+    # degrades safely: ambiguous sources are omitted from the scope tree and
+    # their definitions are diagnosed below instead of blocking the project.
+    await ensure_semantic_scope_tree(
+        db,
+        project_id,
+        tolerate_ambiguous_sources=True,
+    )
+    await reconcile_unscoped_semantic_entries(
+        db,
+        project_id,
+        tolerate_ambiguous_sources=True,
+    )
+    scope_result = await db.execute(
+        select(SemanticScopeNode).where(SemanticScopeNode.project_id == project_id)
+    )
+    semantic_scope_nodes = list(scope_result.scalars())
+    semantic_scope_by_id = {item.id: item for item in semantic_scope_nodes}
     extra_data = project.extra_data or {}
     reusable_playbooks: list[AnalysisPlaybookResponse] = []
     for item in extra_data.get("analysis_playbooks") or []:
@@ -988,6 +1058,24 @@ async def load_project_context(
     context = ProjectRuntimeContext(
         project_id=project_id,
         name=project.name,
+        semantic_scopes=[
+            {
+                "id": str(node.id),
+                "parent_id": str(node.parent_id) if node.parent_id else None,
+                "kind": node.kind,
+                "business_name": node.business_name,
+                "description": node.description,
+                "source_logical_name": node.source_logical_name,
+                "table_or_view": node.table_or_view,
+                "context_facts": dict(node.context_facts or {}),
+                "path": semantic_scope_runtime_payload(
+                    node,
+                    semantic_scope_nodes,
+                )["scope_path"],
+            }
+            for node in semantic_scope_nodes
+            if node.is_active
+        ],
         reusable_analyses=reusable_analyses,
         golden_scenarios=list(extra_data.get("golden_scenarios") or []),
         active_trusted_references=[
@@ -1206,6 +1294,10 @@ async def load_project_context(
             "execution_state": entry.execution_state,
             "execution_details": entry.execution_details,
             "evidence": entry.evidence,
+            **semantic_scope_runtime_payload(
+                semantic_scope_by_id.get(entry.scope_id) if entry.scope_id else None,
+                semantic_scope_nodes,
+            ),
         }
         if entry.entry_type != "relationship":
             if entry.state in {"confirmed", "locked"}:
@@ -1214,6 +1306,13 @@ async def load_project_context(
                 context.candidate_knowledge.append(payload)
         if entry.entry_type == "relationship":
             relationship, diagnostic = _resolve_relationship(entry, context.sources)
+            if relationship is not None:
+                relationship.update(
+                    semantic_scope_runtime_payload(
+                        semantic_scope_by_id.get(entry.scope_id) if entry.scope_id else None,
+                        semantic_scope_nodes,
+                    )
+                )
             if diagnostic is not None:
                 context.semantic_diagnostics.append(diagnostic)
             elif relationship is not None and relationship["validity"] == "stale":

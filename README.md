@@ -8,13 +8,11 @@ Talk to your data. Local-first analysis for messy files and read-only databases.
 
 </div>
 
-![ReceiptBI](docs/images/chat.png)
-
 ## Features
 
-- **Conversational analysis** — ask questions, let the agent query, join, and analyze your data safely
+- **Conversational analysis** — ask questions while ReceiptBI safely queries, joins, and analyzes your data
 - **Data prep & cleaning** — visually clean files, fix types, and save non-destructive recipes
-- **Project understanding** — built-in semantic layer that learns and locks your business definitions (e.g. GMV, Active Users) over time
+- **Governed business semantics** — organize confirmed context, metrics, dimensions, and relationships under the data where they apply
 - **Editable reports** — turn chat results into durable, verifiable pages with metrics, tables, and charts
 
 ## How It Works
@@ -30,11 +28,31 @@ flowchart LR
     validate --> report["Evidence-backed Report"]
 ```
 
-## Screenshots
+## Product Tour
 
-<!-- TODO: Add screenshots after setup -->
-<!-- ![Data sources](docs/images/sources.png) -->
-<!-- ![Report view](docs/images/report.png) -->
+### Investigate from a business question
+
+ReceiptBI keeps the question, evidence, findings, charts, and follow-up work together in one investigation.
+
+![An investigation report with key metrics, findings, and charts](docs/images/en/workspace-analysis.png)
+
+### Organize findings into an editable report
+
+Choose an investigation, review the proposed structure, and generate a draft without overwriting the report you already edited.
+
+![Reviewing the source before organizing an investigation into a report](docs/images/en/report-organizing.png)
+
+### Preview and export a paginated report
+
+Reports use a stable page layout so metrics, charts, and evidence remain readable when printed or exported.
+
+![Multi-page report print preview](docs/images/en/report-print-preview.png)
+
+### Keep definitions inside the data context they belong to
+
+Business context is organized from project to source and table. Metrics and dimensions become available only within their confirmed scope, so similarly named fields from other tables are not silently mixed.
+
+![Hierarchical business semantics scoped to a selected table](docs/images/en/semantic-governance.png)
 
 ## Quick Start
 
@@ -126,4 +144,3 @@ MIT
 | Version | Based on | Branch |
 |---------|----------|--------|
 | v2 | [gptme](https://github.com/ErikBjare/gptme) | [v2](https://github.com/MoonMao42/ReceiptBI/tree/v2) |
-| v1 | [open-interpreter](https://github.com/OpenInterpreter/open-interpreter) | [v1](https://github.com/MoonMao42/ReceiptBI/tree/v1) |

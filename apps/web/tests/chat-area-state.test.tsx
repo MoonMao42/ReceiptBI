@@ -1,10 +1,12 @@
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
+import { NextIntlClientProvider } from "next-intl";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useChatAreaState } from "@/components/chat/useChatAreaState";
 import { api } from "@/lib/api/client";
 import type { AppSettings, ModelSummary } from "@/lib/types/api";
+import zhMessages from "@/messages/zh.json";
 
 vi.mock("@/lib/api/client", () => ({
   api: { put: vi.fn() },
@@ -38,6 +40,8 @@ const settings: AppSettings = {
   python_enabled: true,
   diagnostics_enabled: true,
   auto_repair_enabled: true,
+  preprocessing_enabled: true,
+  self_analysis_enabled: true,
 };
 
 function createWrapper() {
@@ -46,7 +50,11 @@ function createWrapper() {
   });
   client.setQueryData(["app-settings"], settings);
   return function Wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    return (
+      <NextIntlClientProvider locale="zh" messages={zhMessages}>
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      </NextIntlClientProvider>
+    );
   };
 }
 

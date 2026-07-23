@@ -16,6 +16,7 @@ from app.models.workspace import is_executable_semantic_definition
 
 _UNSET = object()
 _SNAPSHOT_FIELDS = (
+    "scope_id",
     "key",
     "value",
     "entry_type",
@@ -43,7 +44,9 @@ class SemanticRevisionConflictError(Exception):
 def semantic_entry_snapshot(entry: SemanticEntry) -> dict[str, Any]:
     """Copy the current materialized head into an immutable JSON snapshot."""
 
-    return {field: deepcopy(getattr(entry, field)) for field in _SNAPSHOT_FIELDS}
+    snapshot = {field: deepcopy(getattr(entry, field)) for field in _SNAPSHOT_FIELDS}
+    snapshot["scope_id"] = str(entry.scope_id) if entry.scope_id is not None else None
+    return snapshot
 
 
 def reset_semantic_execution_proof(entry: SemanticEntry) -> None:
@@ -177,7 +180,10 @@ async def restore_semantic_revision(
     for field in _SNAPSHOT_FIELDS:
         if field == "key" or field not in snapshot:
             continue
-        setattr(entry, field, snapshot[field])
+        value = snapshot[field]
+        if field == "scope_id" and value is not None:
+            value = UUID(str(value))
+        setattr(entry, field, value)
     entry.is_active = True
     reset_semantic_execution_proof(entry)
     entry.evidence = [

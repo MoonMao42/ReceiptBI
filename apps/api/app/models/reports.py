@@ -101,6 +101,22 @@ class ReportBlockUpdate(_ReportModel):
         return self
 
 
+class ReportBlockRefreshRequest(_ReportModel):
+    expected_version: int = Field(ge=1)
+
+
+class ReportBlockRefreshBinding(_ReportModel):
+    """Server-owned contract for deterministic report block refreshes."""
+
+    version: Literal[1] = 1
+    kind: Literal["analysis_playbook"] = "analysis_playbook"
+    playbook_id: str = Field(pattern=r"^pb_[0-9a-f]{20}$")
+    playbook_shape_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    result_name: str = Field(pattern=r"^result_[1-9][0-9]*$")
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
 class ReportPageCreate(_ReportModel):
     title: str = Field(default="概览", min_length=1, max_length=160)
     order_index: int = Field(default=0, ge=0)

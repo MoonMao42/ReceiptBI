@@ -6,6 +6,7 @@ import json
 import math
 import re
 from collections.abc import Sequence
+from copy import deepcopy
 from datetime import date, datetime, time
 from io import BytesIO
 from typing import Any
@@ -16,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -32,6 +33,8 @@ from app.db.tables import (
 from app.models.common import APIResponse
 from app.models.reports import (
     ReportBlockCreate,
+    ReportBlockRefreshBinding,
+    ReportBlockRefreshRequest,
     ReportBlockSync,
     ReportBlockUpdate,
     ReportCreate,
@@ -42,6 +45,28 @@ from app.models.reports import (
     ReportPageUpdate,
     ReportSummaryResponse,
     ReportUpdate,
+)
+from app.models.workspace import (
+    AnalysisPlaybookResponse,
+    ReportDraftPlanRequest,
+    ReportDraftPlanResponse,
+)
+from app.services.analysis_checkpoint import stable_payload_hash
+from app.services.analysis_playbook_runner import (
+    AnalysisPlaybookRunnerError,
+    AnalysisPlaybookRunResult,
+    run_analysis_playbook,
+)
+from app.services.analyst_runtime import ChartSpec
+from app.services.golden_regression import normalize_query_key
+from app.services.project_context import load_project_context
+from app.services.report_draft import generate_report_draft_plan
+from app.services.standing_workspace import (
+    StandingWorkspaceCorruptError,
+    StandingWorkspaceError,
+    load_analysis_playbooks,
+    validate_playbook_baseline_evidence,
+    validate_playbook_execution_evidence,
 )
 
 router = APIRouter()
@@ -64,6 +89,8 @@ _BLOCK_TYPE_LABELS = {
     "filter": "筛选",
 }
 _REPORT_STATUS_LABELS = {"draft": "草稿", "published": "已发布", "archived": "已归档"}
+_REPORT_TABLE_SAMPLE_LIMIT = 200
+_REPORT_CHART_ROW_LIMIT = 1000
 
 
 def _excel_safe_text(value: str) -> str:
@@ -397,6 +424,25 @@ async def _validated_block_values(
         analysis_run_id=payload.analysis_run_id,
         artifact_id=payload.artifact_id,
     )
+    if (
+        existing is not None
+        and existing.source_kind == payload.source_kind
+        and existing.analysis_run_id == analysis_run_id
+        and existing.artifact_id == artifact_id
+    ):
+        raw_refresh_binding = (existing.source_ref or {}).get("refresh_binding")
+        if raw_refresh_binding is not None:
+            try:
+                trusted_refresh_binding = ReportBlockRefreshBinding.model_validate(
+                    raw_refresh_binding
+                )
+            except ValueError:
+                trusted_refresh_binding = None
+            if trusted_refresh_binding is not None:
+                source_ref = {
+                    **source_ref,
+                    "refresh_binding": trusted_refresh_binding.model_dump(mode="json"),
+                }
     return _block_values(
         payload,
         analysis_run_id=analysis_run_id,
@@ -692,6 +738,49 @@ async def create_report(
     return APIResponse.ok(data=await _response_report(db, project_id, report.id))
 
 
+@router.post(
+    "/projects/{project_id}/reports/draft-from-analysis",
+    response_model=APIResponse[ReportDraftPlanResponse],
+)
+async def draft_report_from_analysis(
+    project_id: UUID,
+    payload: ReportDraftPlanRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Use the configured model to plan a smart draft from an analysis run."""
+
+    await _require_project(db, project_id)
+    plan = await generate_report_draft_plan(
+        db,
+        project_id=project_id,
+        run_id=payload.analysis_run_id,
+        language=payload.language,
+        current_report=payload.current_report,
+    )
+    if plan is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Smart report planning is temporarily unavailable. Please try again later "
+                "or select content manually."
+                if payload.language == "en"
+                else "智能整理暂不可用，请稍后再试或手动选择内容"
+            ),
+        )
+    response = ReportDraftPlanResponse(
+        title=plan.title,
+        description=plan.description,
+        overview_text=plan.overview_text,
+        sections=[section.model_dump() for section in plan.sections],
+        selected_overview=plan.selected_overview,
+        selected_detail=plan.selected_detail,
+        selected_evidence=plan.selected_evidence,
+        highlights=plan.highlights,
+        generated_by="ai",
+    )
+    return APIResponse.ok(data=response)
+
+
 @router.get(
     "/projects/{project_id}/reports/{report_id}",
     response_model=APIResponse[ReportDocumentResponse],
@@ -978,6 +1067,430 @@ def _block_from_page(page: ReportPage, block_id: UUID) -> ReportBlock:
     if block is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="区块不存在")
     return block
+
+
+def _final_run_validation(
+    run: AnalysisRun,
+) -> tuple[list[dict[str, Any]], dict[str, Any], str]:
+    tool_history = [
+        dict(item)
+        for item in (run.checkpoint or {}).get("tool_history") or []
+        if isinstance(item, dict)
+    ]
+    validations = [
+        (index, item)
+        for index, item in enumerate(tool_history)
+        if item.get("kind") == "validation" and isinstance(item.get("profile"), dict)
+    ]
+    if not validations:
+        raise StandingWorkspaceError("调查没有可用的最终结果")
+    validation_index, validation = validations[-1]
+    result_name = str(validation.get("result_name") or "").strip()
+    data_steps = [
+        (index, item)
+        for index, item in enumerate(tool_history)
+        if item.get("kind")
+        in {
+            "structured_query",
+            "sql",
+            "file_sql",
+            "join",
+            "aggregate",
+            "business_rule_application",
+        }
+        and str(item.get("result_name") or "").strip()
+    ]
+    if (
+        not result_name
+        or not data_steps
+        or validation_index < data_steps[-1][0]
+        or result_name != str(data_steps[-1][1].get("result_name") or "").strip()
+        or (validation.get("profile") or {}).get("truncated") is not False
+    ):
+        raise StandingWorkspaceError("调查没有可用的最终结果")
+    return tool_history, validation, result_name
+
+
+def _refreshable_artifact(block: ReportBlock, artifact: ArtifactRecord) -> bool:
+    if block.source_kind != "artifact":
+        return False
+    if block.block_type == "table":
+        return artifact.kind == "table"
+    if block.block_type != "chart" or artifact.kind != "chart":
+        return False
+    payload = artifact.payload if isinstance(artifact.payload, dict) else {}
+    if str(payload.get("format") or "").casefold() == "png":
+        return False
+    return isinstance(payload.get("chart"), dict)
+
+
+def _system_playbook_matches(
+    playbook: AnalysisPlaybookResponse,
+    *,
+    query_key: str,
+    result_name: str,
+) -> bool:
+    return bool(
+        playbook.schema_version == 3
+        and playbook.execution_mode == "system_structured_query"
+        and normalize_query_key(playbook.query) == query_key
+        and playbook.validation.input_result == result_name
+    )
+
+
+async def _resolve_refresh_binding(
+    db: AsyncSession,
+    *,
+    project: Project,
+    block: ReportBlock,
+) -> tuple[AnalysisPlaybookResponse, ReportBlockRefreshBinding]:
+    try:
+        playbooks = load_analysis_playbooks(project)
+    except (StandingWorkspaceCorruptError, StandingWorkspaceError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="这个区块的刷新来源已不可用，请重新添加",
+        ) from exc
+
+    raw_binding = (block.source_ref or {}).get("refresh_binding")
+    if raw_binding is not None:
+        try:
+            binding = ReportBlockRefreshBinding.model_validate(raw_binding)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="这个区块的刷新来源已变化，请重新添加",
+            ) from exc
+        matches = [item for item in playbooks if item.id == binding.playbook_id]
+        if len(matches) != 1:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="这个区块的刷新来源已变化，请重新添加",
+            )
+        playbook = matches[0]
+        if (
+            playbook.shape_hash != binding.playbook_shape_hash
+            or playbook.validation.input_result != binding.result_name
+            or not _system_playbook_matches(
+                playbook,
+                query_key=normalize_query_key(playbook.query),
+                result_name=binding.result_name,
+            )
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="这个区块的刷新来源已变化，请重新添加",
+            )
+        return playbook, binding
+
+    if block.artifact_id is None or block.analysis_run_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="这个区块没有可用的刷新来源，请重新添加",
+        )
+    artifact = await db.get(ArtifactRecord, block.artifact_id)
+    run = await db.get(AnalysisRun, block.analysis_run_id)
+    if (
+        artifact is None
+        or run is None
+        or artifact.project_id != project.id
+        or artifact.analysis_run_id != run.id
+        or run.project_id != project.id
+        or run.state != "completed"
+        or not _refreshable_artifact(block, artifact)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="这个区块没有可用的刷新来源，请重新添加",
+        )
+
+    try:
+        tool_history, validation, result_name = _final_run_validation(run)
+    except StandingWorkspaceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="这个区块没有可用的刷新来源，请重新添加",
+        ) from exc
+    if str((artifact.technical_details or {}).get("result_name") or "") != result_name:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="这个区块没有可用的刷新来源，请重新添加",
+        )
+    query_key = normalize_query_key(run.query)
+    matches = [
+        item
+        for item in playbooks
+        if _system_playbook_matches(
+            item,
+            query_key=query_key,
+            result_name=result_name,
+        )
+    ]
+    if len(matches) != 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="无法确认这个区块的唯一刷新来源，请重新添加",
+        )
+    playbook = matches[0]
+    try:
+        validate_playbook_baseline_evidence(playbook, tool_history, validation)
+    except StandingWorkspaceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="这个区块没有可用的刷新来源，请重新添加",
+        ) from exc
+    return playbook, ReportBlockRefreshBinding(
+        playbook_id=playbook.id,
+        playbook_shape_hash=playbook.shape_hash,
+        result_name=result_name,
+    )
+
+
+def _validate_refresh_result(
+    playbook: AnalysisPlaybookResponse,
+    result: AnalysisPlaybookRunResult,
+    binding: ReportBlockRefreshBinding,
+) -> None:
+    receipt = result.receipt
+    if (
+        result.result_name != binding.result_name
+        or result.validated_results != {binding.result_name}
+        or receipt.playbook_id != binding.playbook_id
+        or receipt.playbook_shape_hash != binding.playbook_shape_hash
+        or receipt.result_name != binding.result_name
+        or receipt.row_count != len(result.rows)
+        or receipt.truncated is not False
+        or not all(isinstance(row, dict) for row in result.rows)
+    ):
+        raise StandingWorkspaceError("刷新结果没有通过校验")
+    validate_playbook_execution_evidence(
+        playbook,
+        result.tool_history,
+        result.validation,
+    )
+
+
+def _refresh_playbook_contract(playbook: AnalysisPlaybookResponse) -> dict[str, Any]:
+    """Return only the immutable execution contract used by report refresh."""
+
+    return {
+        "schema_version": playbook.schema_version,
+        "execution_mode": playbook.execution_mode,
+        "id": playbook.id,
+        "binding_policy": playbook.binding_policy,
+        "requires_revalidation": playbook.requires_revalidation,
+        "source_roles": [
+            item.model_dump(mode="json") for item in playbook.source_roles
+        ],
+        "confirmed_knowledge_keys": list(playbook.confirmed_knowledge_keys),
+        "relationship_keys": list(playbook.relationship_keys),
+        "steps": [item.model_dump(mode="json") for item in playbook.steps],
+        "validation": playbook.validation.model_dump(mode="json"),
+        "shape_hash": playbook.shape_hash,
+    }
+
+
+async def _lock_project_for_report_refresh(
+    db: AsyncSession,
+    project_id: UUID,
+) -> Project:
+    """Open the short write transaction and serialize catalog governance changes."""
+
+    bind = db.get_bind()
+    if bind is not None and bind.dialect.name == "sqlite":
+        # SQLite ignores SELECT FOR UPDATE. BEGIN IMMEDIATE gives this short
+        # write phase the same serialization boundary before the catalog is read.
+        await db.execute(text("BEGIN IMMEDIATE"))
+        statement = select(Project).where(Project.id == project_id)
+    else:
+        statement = (
+            select(Project)
+            .where(Project.id == project_id)
+            .with_for_update()
+        )
+    result = await db.execute(statement.execution_options(populate_existing=True))
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="项目不存在")
+    return project
+
+
+def _without_temporary_filters(content: dict[str, Any]) -> dict[str, Any]:
+    refreshed = {
+        key: value
+        for key, value in content.items()
+        if not str(key).startswith("_filter_")
+    }
+    for key in ("data", "items", "values"):
+        refreshed.pop(key, None)
+    return refreshed
+
+
+def _refreshed_block_content(
+    block: ReportBlock,
+    *,
+    rows: list[dict[str, Any]],
+    result_name: str,
+    columns: list[str],
+) -> dict[str, Any]:
+    content = _without_temporary_filters(dict(block.content or {}))
+    if block.block_type == "table":
+        content.update(
+            {
+                "rows": rows[:_REPORT_TABLE_SAMPLE_LIMIT],
+                "rows_count": len(rows),
+                "sampled": len(rows) > _REPORT_TABLE_SAMPLE_LIMIT,
+                "columns": columns,
+            }
+        )
+        return content
+
+    if len(rows) > _REPORT_CHART_ROW_LIMIT:
+        raise StandingWorkspaceError("当前结果不适合直接刷新图表")
+    raw_chart = content.get("chart")
+    if not isinstance(raw_chart, dict):
+        raise StandingWorkspaceError("图表内容不可刷新")
+    try:
+        validated_chart = ChartSpec.model_validate(raw_chart)
+    except ValueError as exc:
+        raise StandingWorkspaceError("图表内容不可刷新") from exc
+    chart = validated_chart.model_dump(mode="json", exclude_none=True)
+    chart["data"] = rows
+    chart["data_ref"] = {
+        "result_name": result_name,
+        "result_hash": stable_payload_hash(rows),
+    }
+    content["chart"] = chart
+    content["rows"] = rows
+    return content
+
+
+@router.post(
+    "/projects/{project_id}/reports/{report_id}/pages/{page_id}/blocks/{block_id}/refresh",
+    response_model=APIResponse[ReportDocumentResponse],
+)
+async def refresh_report_block(
+    project_id: UUID,
+    report_id: UUID,
+    page_id: UUID,
+    block_id: UUID,
+    payload: ReportBlockRefreshRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Refresh a table or structured chart from its governed saved method."""
+
+    try:
+        project = await _require_project(db, project_id)
+        report = await _load_report(db, project_id, report_id)
+        page = _page_from_report(report, page_id)
+        block = _block_from_page(page, block_id)
+        _assert_expected_version(block.version, payload.expected_version)
+        if block.block_type not in {"table", "chart"} or block.source_kind != "artifact":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="这个区块暂不支持刷新",
+            )
+
+        playbook, binding = await _resolve_refresh_binding(
+            db,
+            project=project,
+            block=block,
+        )
+        context = await load_project_context(db, project_id)
+        execution_playbook = playbook.model_copy(deep=True)
+        execution_binding = binding.model_copy(deep=True)
+        execution_sources = deepcopy(context.sources)
+        execution_project_dir = context.project_dir
+        execution_connection_configs = deepcopy(context.connection_configs)
+        await db.rollback()
+
+        try:
+            result = await run_analysis_playbook(
+                execution_playbook,
+                sources=execution_sources,
+                project_dir=execution_project_dir,
+                connection_configs=execution_connection_configs,
+            )
+            _validate_refresh_result(
+                execution_playbook,
+                result,
+                execution_binding,
+            )
+        except (AnalysisPlaybookRunnerError, StandingWorkspaceError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="当前数据暂时无法刷新这个区块",
+            ) from exc
+
+        current_project = await _lock_project_for_report_refresh(db, project_id)
+        current_report = await _load_report(db, project_id, report_id)
+        current_page = _page_from_report(current_report, page_id)
+        current_block = _block_from_page(current_page, block_id)
+        _assert_expected_version(current_block.version, payload.expected_version)
+        if (
+            current_block.block_type not in {"table", "chart"}
+            or current_block.source_kind != "artifact"
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="这个区块暂不支持刷新",
+            )
+        current_playbook, current_binding = await _resolve_refresh_binding(
+            db,
+            project=current_project,
+            block=current_block,
+        )
+        if (
+            current_binding != execution_binding
+            or _refresh_playbook_contract(current_playbook)
+            != _refresh_playbook_contract(execution_playbook)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="这个区块的刷新来源已变化，请重新刷新",
+            )
+        try:
+            refreshed_content = _refreshed_block_content(
+                current_block,
+                rows=[dict(row) for row in result.rows],
+                result_name=execution_binding.result_name,
+                columns=list(execution_playbook.validation.columns),
+            )
+        except (StandingWorkspaceError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="当前数据暂时无法刷新这个区块",
+            ) from exc
+
+        await _cas_entity_version(
+            db,
+            ReportBlock,
+            current_block.id,
+            payload.expected_version,
+            detail="区块已被更新，请重新载入后再刷新",
+        )
+        current_block.content = refreshed_content
+        current_block.source_ref = {
+            **(current_block.source_ref or {}),
+            "refresh_binding": execution_binding.model_dump(mode="json"),
+        }
+        await _bump_entity_version(
+            db,
+            ReportPage,
+            current_page.id,
+            detail="页面已被删除，请重新载入",
+        )
+        await _bump_entity_version(
+            db,
+            ReportDocument,
+            current_report.id,
+            detail="报表已被删除，请重新载入",
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    return APIResponse.ok(data=await _response_report(db, project_id, report_id))
 
 
 @router.patch(

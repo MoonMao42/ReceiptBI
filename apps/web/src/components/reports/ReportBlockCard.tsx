@@ -23,7 +23,6 @@ import {
   YAxis,
 } from "recharts";
 import {
-  CHART_PALETTE_OPTIONS,
   getChartPalette,
   type ChartPaletteId,
   type ChartStack,
@@ -35,10 +34,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  MoreHorizontal,
+  RefreshCw,
   Trash2,
 } from "lucide-react";
 import type { ReportBlock } from "@/lib/reports";
 import { cn } from "@/lib/utils";
+import { useLocale, useTranslations } from "next-intl";
 
 interface ReportBlockCardProps {
   block: ReportBlock;
@@ -50,6 +52,9 @@ interface ReportBlockCardProps {
   onResize: (direction: -1 | 1) => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  onRefresh?: () => void;
+  refreshDisabled?: boolean;
+  refreshing?: boolean;
   filterValue?: string;
   onFilterValueChange?: (value: string) => void;
 }
@@ -58,10 +63,57 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function cleanReportProse(value: string): string {
+  return value
+    .replace(/。{2,}/g, "。")
+    .replace(/！{2,}/g, "！")
+    .replace(/？{2,}/g, "？")
+    .replace(/\.{4,}/g, "…");
+}
+
+function isPngChart(block: ReportBlock): boolean {
+  if (block.block_type !== "chart") return false;
+  const snapshot = isRecord(block.source_ref?.snapshot)
+    ? block.source_ref.snapshot
+    : undefined;
+  const payload = isRecord(snapshot?.payload) ? snapshot.payload : undefined;
+  const formats = [
+    payload?.format,
+    payload?.media_type,
+    payload?.mime_type,
+    snapshot?.media_type,
+    snapshot?.mime_type,
+    block.content.format,
+    block.content.media_type,
+    block.content.mime_type,
+  ];
+  return (
+    formats.some((value) => {
+      if (typeof value !== "string") return false;
+      const normalized = value.trim().toLowerCase();
+      return normalized === "png" || normalized === "image/png";
+    }) || typeof block.content.image_url === "string"
+  );
+}
+
+function supportsRefresh(block: ReportBlock): boolean {
+  const hasSavedRefreshBinding = isRecord(block.source_ref?.refresh_binding);
+  return (
+    !block.id.startsWith("local-") &&
+    typeof block.version === "number" &&
+    block.source_kind === "artifact" &&
+    (block.source_available === true || hasSavedRefreshBinding) &&
+    (block.block_type === "table" ||
+      (block.block_type === "chart" && !isPngChart(block)))
+  );
+}
+
 function textValue(content: Record<string, unknown>, keys: string[]): string {
   for (const key of keys) {
     const value = content[key];
-    if (typeof value === "string" || typeof value === "number") return String(value);
+    if (typeof value === "string" || typeof value === "number") {
+      return cleanReportProse(String(value));
+    }
   }
   return "";
 }
@@ -117,7 +169,9 @@ function chartValueFormat(value: unknown): ChartValueFormat {
 }
 
 function chartPalette(value: unknown): ChartPaletteId {
-  return CHART_PALETTE_OPTIONS.some((option) => option.value === value)
+  return ["receiptbi", "receiptbi-muted", "categorical", "monochrome"].includes(
+    value as ChartPaletteId
+  )
     ? (value as ChartPaletteId)
     : "receiptbi";
 }
@@ -148,31 +202,35 @@ function chartSeriesFormats(value: unknown): Record<string, ChartValueFormat> {
   );
 }
 
-function formatChartValue(value: unknown, format: ChartValueFormat): string {
+function formatChartValue(
+  value: unknown,
+  format: ChartValueFormat,
+  locale: string
+): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return String(value ?? "—");
   if (format === "integer") {
-    return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 }).format(value);
+    return new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(value);
   }
   if (format === "compact") {
-    return new Intl.NumberFormat("zh-CN", {
+    return new Intl.NumberFormat(locale, {
       notation: "compact",
       maximumFractionDigits: 1,
     }).format(value);
   }
   if (format === "currency") {
-    return new Intl.NumberFormat("zh-CN", {
+    return new Intl.NumberFormat(locale, {
       style: "currency",
       currency: "CNY",
       maximumFractionDigits: 2,
     }).format(value);
   }
   if (format === "percent") {
-    return new Intl.NumberFormat("zh-CN", {
+    return new Intl.NumberFormat(locale, {
       style: "percent",
       maximumFractionDigits: 1,
     }).format(value);
   }
-  return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(value);
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(value);
 }
 
 function EmptyBlock({ message }: { message: string }) {
@@ -183,17 +241,26 @@ function EmptyBlock({ message }: { message: string }) {
   );
 }
 
-function KpiBlock({ block }: { block: ReportBlock }) {
+function KpiBlock({ block, compact = false }: { block: ReportBlock; compact?: boolean }) {
   const value = textValue(block.content, ["value", "metric", "amount", "result"]);
   const context = textValue(block.content, ["context", "note", "summary", "description"]);
   const change = textValue(block.content, ["change", "delta", "comparison"]);
+  const compactValueSize =
+    value.length > 14
+      ? "text-[1.2rem]"
+      : value.length > 10
+        ? "text-[1.4rem]"
+        : "text-[1.7rem]";
   return (
-    <div className="flex h-full min-h-24 flex-col justify-end">
-      <div className="text-[clamp(1.75rem,3vw,3.25rem)] font-semibold leading-none tracking-[-0.045em] text-foreground">
+    <div className={cn("flex flex-col justify-end", compact ? "min-h-0" : "min-h-16")}>
+      <div className={cn(
+        "min-w-0 whitespace-nowrap font-mono font-semibold leading-none tracking-[-0.045em] text-foreground tabular-nums",
+        compact ? compactValueSize : "text-[clamp(1.65rem,3cqi,2.6rem)]"
+      )}>
         {value || "—"}
       </div>
       {(change || context) && (
-        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground", compact ? "mt-1.5" : "mt-2.5")}>
           {change && <span className="font-medium text-primary">{change}</span>}
           {context && <span>{context}</span>}
         </div>
@@ -204,15 +271,22 @@ function KpiBlock({ block }: { block: ReportBlock }) {
 
 function ChartBlock({
   block,
+  editing = false,
   staticRendering = false,
 }: {
   block: ReportBlock;
+  editing?: boolean;
   staticRendering?: boolean;
 }) {
+  const locale = useLocale();
+  const t = useTranslations("reportBlocks");
   const imageUrl = typeof block.content.image_url === "string" ? block.content.image_url : "";
   if (imageUrl) {
     return (
-      <div className="relative h-full min-h-44 w-full overflow-hidden bg-muted/15">
+      <div className={cn(
+        "relative w-full overflow-hidden bg-muted/15",
+        editing ? "h-full min-h-0" : "h-[260px] min-h-44 print:h-[190px]"
+      )}>
         <Image
           src={imageUrl}
           alt={block.title}
@@ -229,20 +303,24 @@ function ChartBlock({
   if (!rows.length || !keys) {
     return (
       <EmptyBlock
-        message={block.content._filter_applied === true ? "当前筛选下没有数据" : "选择要呈现的数据"}
+        message={
+          block.content._filter_applied === true
+            ? t("noFilteredData")
+            : t("chooseData")
+        }
       />
     );
   }
   const chartType = typeof block.config.chart_type === "string" ? block.config.chart_type : "bar";
   const supportedTypes = new Set(["bar", "horizontal_bar", "line", "area", "pie", "scatter"]);
   if (!supportedTypes.has(chartType)) {
-    return <EmptyBlock message="这个图表样式暂时无法显示，请在编辑中重新选择" />;
+    return <EmptyBlock message={t("unsupportedChart")} />;
   }
   const numericKeys = Object.keys(rows[0]).filter((key) =>
     rows.some((row) => typeof row[key] === "number")
   );
   if (chartType === "scatter" && numericKeys.length < 2) {
-    return <EmptyBlock message="散点图需要两个数值字段" />;
+    return <EmptyBlock message={t("scatterNeedsNumeric")} />;
   }
   const scatterXKey =
     typeof block.config.x_key === "string" && numericKeys.includes(block.config.x_key)
@@ -283,7 +361,7 @@ function ChartBlock({
   const seriesLabel = (key: string) => seriesLabels[key] || key;
   const seriesFormat = (key: string) => seriesFormats[key] || numberFormat;
   const formatSeriesValue = (key: string, value: unknown) =>
-    formatChartValue(value, seriesFormat(key));
+    formatChartValue(value, seriesFormat(key), locale);
   const seriesKeyFromName = (name: unknown) => {
     const candidate = String(name ?? "");
     return keys.ys.find(
@@ -293,7 +371,9 @@ function ChartBlock({
   const tooltipFormatter = (value: unknown, name: unknown) => {
     const key = seriesKeyFromName(name);
     return [
-      key ? formatSeriesValue(key, value) : formatChartValue(value, numberFormat),
+      key
+        ? formatSeriesValue(key, value)
+        : formatChartValue(value, numberFormat, locale),
       key ? seriesLabel(key) : String(name ?? ""),
     ];
   };
@@ -306,7 +386,7 @@ function ChartBlock({
         tickLine={false}
         axisLine={false}
         width={52}
-        tickFormatter={(value) => formatChartValue(value, axisNumberFormat)}
+        tickFormatter={(value) => formatChartValue(value, axisNumberFormat, locale)}
       />
       <Tooltip
         formatter={tooltipFormatter}
@@ -323,7 +403,13 @@ function ChartBlock({
   );
 
   return (
-    <div className="h-full min-h-44 w-full" aria-label={`${block.title}图表`}>
+    <div
+      className={cn(
+        "w-full",
+        editing ? "h-full min-h-0" : "h-[260px] min-h-44 print:h-[190px]"
+      )}
+      aria-label={t("chartAria", { title: block.title })}
+    >
       <ResponsiveContainer width="100%" height="100%">
         {chartType === "line" ? (
           <LineChart data={rows} margin={{ top: showLabels ? 24 : 12, right: 10, bottom: 0, left: 0 }}>
@@ -417,7 +503,7 @@ function ChartBlock({
               type="number"
               tick={{ fontSize: 10 }}
               tickLine={false}
-              tickFormatter={(value) => formatChartValue(value, numberFormat)}
+              tickFormatter={(value) => formatChartValue(value, numberFormat, locale)}
             />
             <YAxis
               dataKey={scatterYKey}
@@ -457,7 +543,7 @@ function ChartBlock({
               tick={{ fontSize: 10 }}
               tickLine={false}
               axisLine={false}
-              tickFormatter={(value) => formatChartValue(value, axisNumberFormat)}
+              tickFormatter={(value) => formatChartValue(value, axisNumberFormat, locale)}
             />
             <YAxis dataKey={keys.x} type="category" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={72} />
             <Tooltip formatter={tooltipFormatter} />
@@ -499,7 +585,18 @@ function ChartBlock({
   );
 }
 
-function TableBlock({ block }: { block: ReportBlock }) {
+function TableBlock({
+  block,
+  editing = false,
+  staticRendering = false,
+}: {
+  block: ReportBlock;
+  editing?: boolean;
+  staticRendering?: boolean;
+}) {
+  const t = useTranslations("reportWorkspace");
+  const tBlocks = useTranslations("reportBlocks");
+  const locale = useLocale();
   const rows = rowsFromContent(block.content);
   const [page, setPage] = useState(0);
   const pageSize = 50;
@@ -510,12 +607,18 @@ function TableBlock({ block }: { block: ReportBlock }) {
   if (!rows.length) {
     return (
       <EmptyBlock
-        message={block.content._filter_applied === true ? "当前筛选下没有明细" : "选择要呈现的明细"}
+        message={
+          block.content._filter_applied === true
+            ? tBlocks("noFilteredDetails")
+            : tBlocks("chooseDetails")
+        }
       />
     );
   }
   const columns = Object.keys(rows[0]).slice(0, 8);
-  const pageRows = rows.slice(page * pageSize, (page + 1) * pageSize);
+  const pageRows = staticRendering
+    ? rows
+    : rows.slice(page * pageSize, (page + 1) * pageSize);
   const sourceRows =
     typeof block.content._filter_source_rows === "number"
       ? block.content._filter_source_rows
@@ -525,7 +628,10 @@ function TableBlock({ block }: { block: ReportBlock }) {
   const start = page * pageSize + 1;
   const end = Math.min(rows.length, (page + 1) * pageSize);
   return (
-    <div className="flex h-full min-h-0 flex-col border border-border">
+    <div className={cn(
+      "flex min-h-0 flex-col border border-border",
+      editing ? "h-full" : staticRendering ? "h-auto" : "max-h-[520px]"
+    )}>
       <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full min-w-[520px] border-collapse text-left text-xs">
         <thead className="sticky top-0 bg-muted/80 backdrop-blur">
@@ -540,11 +646,20 @@ function TableBlock({ block }: { block: ReportBlock }) {
         <tbody>
           {pageRows.map((row, rowIndex) => (
             <tr key={rowIndex} className="border-b border-border/70 last:border-b-0">
-              {columns.map((column) => (
-                <td key={column} className="max-w-52 truncate px-3 py-2.5 text-muted-foreground">
-                  {String(row[column] ?? "—")}
-                </td>
-              ))}
+              {columns.map((column) => {
+                const numeric = typeof row[column] === "number";
+                return (
+                  <td
+                    key={column}
+                    className={cn(
+                      "max-w-52 truncate px-3 py-2.5 text-muted-foreground",
+                      numeric && "text-right font-mono tabular-nums"
+                    )}
+                  >
+                    {String(row[column] ?? "—")}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>
@@ -553,22 +668,40 @@ function TableBlock({ block }: { block: ReportBlock }) {
       <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-border bg-card px-3 py-2 text-[10px] text-muted-foreground">
         <span>
           {block.content._filter_applied === true
-            ? `筛选后 ${rows.length} 行（基于报告保留的 ${sourceRows} 行）`
+            ? tBlocks("tableFilteredRows", {
+                count: rows.length.toLocaleString(locale),
+                source: sourceRows.toLocaleString(locale),
+              })
             : totalRows > rows.length
-              ? `报告保留前 ${rows.length} / 共 ${totalRows} 行`
-              : `共 ${rows.length} 行`}
-          {rows.length > pageSize ? ` · 当前 ${start}–${end}` : ""}
+              ? tBlocks("tableRetainedRows", {
+                  count: rows.length.toLocaleString(locale),
+                  total: totalRows.toLocaleString(locale),
+                })
+              : tBlocks("tableRows", { count: rows.length.toLocaleString(locale) })}
+          {!staticRendering && rows.length > pageSize
+            ? tBlocks("tableCurrentRange", {
+                start: start.toLocaleString(locale),
+                end: end.toLocaleString(locale),
+              })
+            : ""}
         </span>
-        {pageCount > 1 && (
-          <span className="flex items-center border border-border">
-            <button type="button" aria-label="上一页明细" disabled={page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))} className="p-1.5 hover:bg-muted disabled:opacity-30">
+        {!staticRendering && pageCount > 1 && (
+          <nav
+            aria-label={t("detailPagination", { title: block.title })}
+            className="flex items-center border border-border"
+          >
+            <button type="button" aria-label={t("previousDetailPage")} disabled={page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))} className="inline-flex h-7 items-center gap-1 px-2 hover:bg-muted disabled:opacity-30">
               <ChevronLeft size={12} />
+              <span className="hidden sm:inline">{t("previousDetailPage")}</span>
             </button>
-            <span className="min-w-12 text-center tabular-nums">{page + 1} / {pageCount}</span>
-            <button type="button" aria-label="下一页明细" disabled={page >= pageCount - 1} onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))} className="p-1.5 hover:bg-muted disabled:opacity-30">
+            <span className="min-w-20 border-x border-border px-2 text-center tabular-nums">
+              {t("detailPagePosition", { current: page + 1, total: pageCount })}
+            </span>
+            <button type="button" aria-label={t("nextDetailPage")} disabled={page >= pageCount - 1} onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))} className="inline-flex h-7 items-center gap-1 px-2 hover:bg-muted disabled:opacity-30">
+              <span className="hidden sm:inline">{t("nextDetailPage")}</span>
               <ChevronRight size={12} />
             </button>
-          </span>
+          </nav>
         )}
       </footer>
     </div>
@@ -576,15 +709,17 @@ function TableBlock({ block }: { block: ReportBlock }) {
 }
 
 function TextBlock({ block }: { block: ReportBlock }) {
+  const t = useTranslations("reportBlocks");
   const text = textValue(block.content, ["text", "summary", "description", "value"]);
   return text ? (
     <p className="whitespace-pre-wrap text-sm leading-7 text-foreground/85">{text}</p>
   ) : (
-    <EmptyBlock message="写下结论、说明或下一步" />
+    <EmptyBlock message={t("textPlaceholder")} />
   );
 }
 
 function EvidenceBlock({ block }: { block: ReportBlock }) {
+  const t = useTranslations("reportBlocks");
   const rows = rowsFromContent(block.content);
   const text = textValue(block.content, ["text", "summary", "description", "value"]);
   return (
@@ -600,7 +735,7 @@ function EvidenceBlock({ block }: { block: ReportBlock }) {
                 "message",
                 "purpose",
                 "value",
-              ]) || `已核对依据 ${index + 1}`;
+              ]) || t("evidenceFallback", { index: index + 1 });
             const detail = textValue(item, ["text", "detail", "status"]);
             return (
               <li key={index}>
@@ -615,7 +750,12 @@ function EvidenceBlock({ block }: { block: ReportBlock }) {
           })}
         </ul>
       )}
-      {!text && !rows.length && <span className="text-muted-foreground">尚未添加依据</span>}
+      {rows.length > 12 && (
+        <p className="mt-3 text-[11px] text-muted-foreground">
+          {t("evidenceMore", { count: rows.length - 12 })}
+        </p>
+      )}
+      {!text && !rows.length && <span className="text-muted-foreground">{t("evidenceEmpty")}</span>}
     </div>
   );
 }
@@ -624,13 +764,26 @@ function FilterBlock({
   block,
   value = "",
   onChange,
+  staticRendering = false,
 }: {
   block: ReportBlock;
   value?: string;
   onChange?: (value: string) => void;
+  staticRendering?: boolean;
 }) {
-  const placeholder = textValue(block.config, ["placeholder"]) || "全部";
+  const t = useTranslations("reportBlocks");
+  const placeholder = textValue(block.config, ["placeholder"]) || t("all");
   const field = textValue(block.config, ["field"]);
+  if (staticRendering) {
+    return (
+      <div className="flex items-baseline justify-between gap-4 border-b border-border pb-2 text-xs">
+        <span className="font-medium text-muted-foreground">{block.title}</span>
+        <span className="font-mono tabular-nums text-foreground">
+          {field ? value || t("all") : t("notSet")}
+        </span>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-wrap items-end gap-3">
       <label className="min-w-44 text-xs font-medium text-muted-foreground">
@@ -639,11 +792,11 @@ function FilterBlock({
           value={value}
           onChange={(event) => onChange?.(event.target.value)}
           disabled={!field}
-          placeholder={field ? placeholder : "请先选择筛选字段"}
+          placeholder={field ? placeholder : t("chooseFilterField")}
           className="mt-2 h-9 w-full border border-input bg-background px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/70 focus:border-primary disabled:bg-muted/35"
         />
         <span className="mt-1.5 block text-[10px] font-normal text-muted-foreground">
-          {field ? `当前页面 · ${field}` : "尚未设置字段"}
+          {field ? t("currentPageField", { field }) : t("unsetField")}
         </span>
       </label>
     </div>
@@ -660,20 +813,66 @@ export function ReportBlockCard({
   onResize,
   onDuplicate,
   onDelete,
+  onRefresh,
+  refreshDisabled = false,
+  refreshing = false,
   filterValue,
   onFilterValueChange,
 }: ReportBlockCardProps) {
+  const t = useTranslations("reportBlocks");
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const refreshVisible = supportsRefresh(block) && Boolean(onRefresh);
+  const highlight =
+    typeof block.config.highlight === "string"
+      ? cleanReportProse(block.config.highlight.trim())
+      : "";
+
+  useEffect(() => {
+    if (!editing) setActionsOpen(false);
+  }, [block.id, editing]);
+
   return (
     <article
       data-report-block={block.id}
-      onClick={() => editing && onSelect()}
+      role={editing ? "button" : undefined}
+      tabIndex={editing ? 0 : undefined}
+      onClick={(event) => {
+        if (!editing) return;
+        const target = event.target;
+        const interactiveTarget =
+          target instanceof Element
+            ? target.closest(
+                "button, input, select, textarea, a, [role='button'], [contenteditable='true']"
+              )
+            : null;
+        if (interactiveTarget && interactiveTarget !== event.currentTarget) {
+          return;
+        }
+        onSelect();
+      }}
+      onKeyDown={(event) => {
+        if (!editing || event.currentTarget !== event.target) return;
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        onSelect();
+      }}
       className={cn(
-        "group relative flex h-full min-h-0 flex-col border bg-card px-5 pb-5 pt-4 text-card-foreground transition-colors",
-        editing ? "cursor-pointer hover:border-primary/50" : "border-border",
+        "group relative flex min-h-0 flex-col border bg-card px-5 pb-5 pt-4 text-card-foreground transition-colors",
+        editing ? "h-full" : "h-auto",
+        block.block_type === "metric" &&
+          (editing
+            ? "border-t-2 border-t-primary/55 pb-3 pt-2.5"
+            : "border-t-2 border-t-primary/55 pb-4 pt-3"),
+        editing
+          ? "cursor-pointer hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          : "border-border",
         editing && selected ? "border-primary ring-2 ring-primary/10" : "border-border"
       )}
     >
-      <header className="mb-4 flex min-h-6 items-start justify-between gap-3">
+      <header className={cn(
+        "flex min-h-6 items-start justify-between gap-3",
+        block.block_type === "metric" ? (editing ? "mb-1" : "mb-2.5") : "mb-4"
+      )}>
         <div className="min-w-0">
           <h3 className="truncate text-sm font-semibold tracking-[-0.01em]">{block.title}</h3>
           {typeof block.content.subtitle === "string" && block.content.subtitle && (
@@ -681,43 +880,92 @@ export function ReportBlockCard({
           )}
           {block.config.manual_override === true && (
             <span className="mt-1.5 inline-flex bg-warning/10 px-1.5 py-0.5 text-[9px] font-medium text-warning">
-              人工调整
+              {t("manualOverride")}
             </span>
           )}
         </div>
         {editing && (
           <div
-            className="flex shrink-0 items-center border border-border bg-background"
+            className={cn(
+              "relative shrink-0 transition-opacity",
+              selected
+                ? "opacity-100"
+                : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+            )}
             onClick={(event) => event.stopPropagation()}
           >
-            <button type="button" onClick={() => onMove(-1)} aria-label="区块上移" className="p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground">
-              <ArrowUp size={13} />
+            <button
+              type="button"
+              aria-label={t("blockActions")}
+              aria-expanded={actionsOpen}
+              onClick={() => setActionsOpen((current) => !current)}
+              className="inline-flex h-7 w-7 items-center justify-center border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <MoreHorizontal size={14} />
             </button>
-            <button type="button" onClick={() => onMove(1)} aria-label="区块下移" className="p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground">
-              <ArrowDown size={13} />
-            </button>
-            <button type="button" onClick={() => onResize(-1)} aria-label="缩小区块" className="p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground">
-              <ChevronLeft size={13} />
-            </button>
-            <button type="button" onClick={() => onResize(1)} aria-label="放大区块" className="p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground">
-              <ChevronRight size={13} />
-            </button>
-            <button type="button" onClick={onDuplicate} aria-label="复制区块" className="p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground">
-              <Copy size={13} />
-            </button>
-            <button type="button" onClick={onDelete} aria-label="删除区块" className="p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
-              <Trash2 size={13} />
-            </button>
+            {actionsOpen && (
+              <div className="absolute right-0 top-8 z-30 grid w-40 grid-cols-2 border border-border bg-popover p-1 shadow-lg">
+                {refreshVisible && (
+                  <button
+                    type="button"
+                    disabled={refreshDisabled || refreshing}
+                    onClick={() => {
+                      onRefresh?.();
+                      setActionsOpen(false);
+                    }}
+                    aria-label={
+                      refreshing
+                        ? t("refreshing")
+                        : refreshDisabled
+                          ? t("saveBeforeRefresh")
+                          : t("refreshData")
+                    }
+                    className="col-span-2 flex items-center gap-1.5 px-2 py-1.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <RefreshCw
+                      size={12}
+                      className={cn(refreshing && "animate-spin")}
+                    />
+                    {refreshing
+                      ? t("refreshing")
+                      : refreshDisabled
+                        ? t("saveBeforeRefresh")
+                        : t("refreshData")}
+                  </button>
+                )}
+                <button type="button" onClick={() => { onMove(-1); setActionsOpen(false); }} aria-label={t("moveUpAria")} className="flex items-center gap-1.5 px-2 py-1.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"><ArrowUp size={12} />{t("moveUp")}</button>
+                <button type="button" onClick={() => { onMove(1); setActionsOpen(false); }} aria-label={t("moveDownAria")} className="flex items-center gap-1.5 px-2 py-1.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"><ArrowDown size={12} />{t("moveDown")}</button>
+                <button type="button" onClick={() => { onResize(-1); setActionsOpen(false); }} aria-label={t("shrinkAria")} className="flex items-center gap-1.5 px-2 py-1.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"><ChevronLeft size={12} />{t("shrink")}</button>
+                <button type="button" onClick={() => { onResize(1); setActionsOpen(false); }} aria-label={t("expandAria")} className="flex items-center gap-1.5 px-2 py-1.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"><ChevronRight size={12} />{t("expand")}</button>
+                <button type="button" onClick={() => { onDuplicate(); setActionsOpen(false); }} aria-label={t("duplicateAria")} className="flex items-center gap-1.5 px-2 py-1.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"><Copy size={12} />{t("duplicate")}</button>
+                <button type="button" onClick={() => { onDelete(); setActionsOpen(false); }} aria-label={t("deleteAria")} className="flex items-center gap-1.5 px-2 py-1.5 text-[10px] text-destructive hover:bg-destructive/10"><Trash2 size={12} />{t("delete")}</button>
+              </div>
+            )}
           </div>
         )}
       </header>
 
-      <div className="min-h-0 flex-1">
-        {block.block_type === "metric" && <KpiBlock block={block} />}
+      <div className={cn(
+        "min-h-0 flex-1",
+        editing &&
+          (block.block_type === "text" || block.block_type === "evidence") &&
+          "overflow-auto"
+      )}>
+        {block.block_type === "metric" && <KpiBlock block={block} compact={editing} />}
         {block.block_type === "chart" && (
-          <ChartBlock block={block} staticRendering={staticRendering} />
+          <ChartBlock
+            block={block}
+            editing={editing}
+            staticRendering={staticRendering}
+          />
         )}
-        {block.block_type === "table" && <TableBlock block={block} />}
+        {block.block_type === "table" && (
+          <TableBlock
+            block={block}
+            editing={editing}
+            staticRendering={staticRendering}
+          />
+        )}
         {block.block_type === "text" && <TextBlock block={block} />}
         {block.block_type === "evidence" && <EvidenceBlock block={block} />}
         {block.block_type === "filter" && (
@@ -725,9 +973,34 @@ export function ReportBlockCard({
             block={block}
             value={filterValue}
             onChange={onFilterValueChange}
+            staticRendering={staticRendering}
           />
         )}
       </div>
+
+      {highlight && (
+        <aside
+          role="note"
+          aria-label={t("highlight")}
+          className={cn(
+            "border-l-2 border-primary/55 bg-primary/[0.035]",
+            block.block_type === "metric" && editing
+              ? "mt-1.5 px-2 py-0.5"
+              : "mt-3 px-3 py-2",
+            block.block_type !== "metric" && "mt-4"
+          )}
+        >
+          <p className={cn(
+            "text-foreground/78",
+            block.block_type === "metric" && editing
+              ? "truncate text-[9px] leading-4"
+              : "whitespace-pre-wrap text-[11px] leading-5"
+          )}>
+            <span className="mr-2 font-semibold text-primary">{t("highlight")}</span>
+            {highlight}
+          </p>
+        </aside>
+      )}
     </article>
   );
 }

@@ -10,6 +10,8 @@ import {
   LockKeyhole,
   Settings2,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
+import { runtimeMessage } from "@/i18n/runtime";
 import type { ModelSummary } from "@/lib/types/api";
 import { cn } from "@/lib/utils";
 
@@ -26,8 +28,25 @@ export interface AnalysisServicePresentation {
   selectable: boolean;
 }
 
+type AnalysisServiceTranslator = (key: string) => string;
+
+const STATUS_RUNTIME_KEYS = {
+  statusDisconnected: "statusDisconnected",
+  statusReconnect: "statusReconnect",
+  statusAvailable: "statusAvailable",
+  statusTemporarilyUnavailable: "statusTemporarilyUnavailable",
+  statusNeedsAttention: "statusNeedsAttention",
+  statusUnchecked: "statusUnchecked",
+} as const;
+
+const fallbackTranslator: AnalysisServiceTranslator = (key) =>
+  key in STATUS_RUNTIME_KEYS
+    ? runtimeMessage(STATUS_RUNTIME_KEYS[key as keyof typeof STATUS_RUNTIME_KEYS])
+    : key;
+
 export function getAnalysisServicePresentation(
-  model: ModelSummary
+  model: ModelSummary,
+  t: AnalysisServiceTranslator = fallbackTranslator
 ): AnalysisServicePresentation {
   const credentialState =
     model.credential_state ||
@@ -38,19 +57,19 @@ export function getAnalysisServicePresentation(
         : "missing");
 
   if (credentialState === "missing") {
-    return { state: "reconnect", label: "尚未连接", selectable: false };
+    return { state: "reconnect", label: t("statusDisconnected"), selectable: false };
   }
   if (credentialState === "unreadable") {
-    return { state: "reconnect", label: "需要重新连接", selectable: false };
+    return { state: "reconnect", label: t("statusReconnect"), selectable: false };
   }
 
   if (model.health_status === "healthy") {
-    return { state: "available", label: "可用", selectable: true };
+    return { state: "available", label: t("statusAvailable"), selectable: true };
   }
 
   if (model.health_status === "unhealthy") {
     if (model.last_error_category === "auth") {
-      return { state: "reconnect", label: "需要重新连接", selectable: false };
+      return { state: "reconnect", label: t("statusReconnect"), selectable: false };
     }
     if (
       model.last_error_category === "timeout" ||
@@ -59,14 +78,14 @@ export function getAnalysisServicePresentation(
     ) {
       return {
         state: "temporarily_unavailable",
-        label: "暂时不可用",
+        label: t("statusTemporarilyUnavailable"),
         selectable: false,
       };
     }
-    return { state: "needs_attention", label: "需要处理", selectable: false };
+    return { state: "needs_attention", label: t("statusNeedsAttention"), selectable: false };
   }
 
-  return { state: "unchecked", label: "未检查", selectable: true };
+  return { state: "unchecked", label: t("statusUnchecked"), selectable: true };
 }
 
 interface AnalysisServiceSelectorProps {
@@ -94,6 +113,7 @@ export function AnalysisServiceSelector({
   onOpenChange,
   className,
 }: AnalysisServiceSelectorProps) {
+  const t = useTranslations("analysisService");
   const [internalOpen, setInternalOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const listboxId = useId();
@@ -101,7 +121,7 @@ export function AnalysisServiceSelector({
   const activeModels = models.filter((model) => model.is_active !== false);
   const selectedModel = activeModels.find((model) => model.id === selectedModelId);
   const selectedPresentation = selectedModel
-    ? getAnalysisServicePresentation(selectedModel)
+    ? getAnalysisServicePresentation(selectedModel, t)
     : null;
 
   const setOpen = useCallback(
@@ -129,7 +149,7 @@ export function AnalysisServiceSelector({
   }, [isOpen, setOpen]);
 
   return (
-    <div ref={rootRef} className={cn("relative", className)}>
+    <div ref={rootRef} className={cn("relative min-w-0", className)}>
       <button
         type="button"
         data-analysis-service-selector-trigger
@@ -139,14 +159,14 @@ export function AnalysisServiceSelector({
         aria-haspopup="listbox"
         aria-label={
           locked
-            ? `本次调查使用分析服务：${selectedModel?.name || "未选择"}`
-            : `选择分析服务，当前：${selectedModel?.name || "未选择"}`
+            ? t("lockedServiceAria", { name: selectedModel?.name || t("notSelected") })
+            : t("selectServiceAria", { name: selectedModel?.name || t("notSelected") })
         }
         onClick={() => {
           if (!locked && !saving) setOpen(!isOpen);
         }}
         className={cn(
-          "inline-flex max-w-[220px] items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+          "inline-flex max-w-[min(220px,48vw)] min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
           locked
             ? "cursor-default text-muted-foreground"
             : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -163,9 +183,9 @@ export function AnalysisServiceSelector({
         ) : (
           <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-muted-foreground/40" />
         )}
-        <span className="shrink-0">分析服务</span>
+        <span className="shrink-0">{t("title")}</span>
         <span aria-hidden="true">·</span>
-        <span className="truncate text-foreground">{selectedModel?.name || "未选择"}</span>
+        <span className="truncate text-foreground">{selectedModel?.name || t("notSelected")}</span>
         {!locked && <ChevronDown size={13} className="shrink-0" />}
       </button>
 
@@ -173,20 +193,20 @@ export function AnalysisServiceSelector({
         <div
           id={listboxId}
           role="listbox"
-          aria-label="分析服务"
+          aria-label={t("serviceListAria")}
           className="absolute bottom-full left-0 z-50 mb-2 w-72 overflow-hidden border border-border bg-card"
         >
           <div className="border-b border-border px-3 py-2.5">
-            <div className="text-xs font-semibold text-foreground">用于下一次调查</div>
+            <div className="text-xs font-semibold text-foreground">{t("useForNext")}</div>
             <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
-              调查开始后会固定使用所选服务。
+              {t("useForNextDesc")}
             </p>
           </div>
 
           <div className="max-h-64 overflow-y-auto py-1">
             {activeModels.length ? (
               activeModels.map((model) => {
-                const presentation = getAnalysisServicePresentation(model);
+                const presentation = getAnalysisServicePresentation(model, t);
                 const selected = model.id === selectedModelId;
                 return (
                   <button
@@ -231,7 +251,7 @@ export function AnalysisServiceSelector({
               })
             ) : (
               <p className="px-4 py-5 text-center text-xs text-muted-foreground">
-                还没有可选择的分析服务
+                {t("noService")}
               </p>
             )}
           </div>
@@ -251,7 +271,7 @@ export function AnalysisServiceSelector({
             className="flex w-full items-center gap-2 border-t border-border px-3 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <Settings2 size={14} />
-            管理分析服务
+            {t("manage")}
           </button>
         </div>
       )}

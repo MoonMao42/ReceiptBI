@@ -1,5 +1,6 @@
 import axios from "axios";
-import type { SSEEventData } from "@/lib/types/api";
+import { runtimeMessage } from "@/i18n/runtime";
+import { UserFacingError, type SSEEventData } from "@/lib/types/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -19,22 +20,8 @@ function isSSEEventData(value: unknown): value is SSEEventData {
   return isRecord(value) && typeof value.type === "string" && isRecord(value.data);
 }
 
-async function responseErrorMessage(response: Response): Promise<string> {
-  const fallback = `请求失败（HTTP ${response.status}）`;
-  try {
-    const text = (await response.text()).trim();
-    if (!text) return fallback;
-    const payload = JSON.parse(text) as unknown;
-    if (isRecord(payload)) {
-      const detail = payload.detail;
-      if (typeof detail === "string" && detail.trim()) return detail.trim();
-      const message = payload.message;
-      if (typeof message === "string" && message.trim()) return message.trim();
-    }
-    return text.length <= 300 ? text : fallback;
-  } catch {
-    return fallback;
-  }
+function responseErrorMessage(response: Response): string {
+  return runtimeMessage("requestFailedHttp", { status: response.status });
 }
 
 function parseEventLine(line: string): SSEEventData | null {
@@ -49,7 +36,7 @@ function parseEventLine(line: string): SSEEventData | null {
     }
     return data;
   } catch {
-    throw new Error("分析服务返回了无法识别的事件，连接已停止，请重试。");
+    throw new UserFacingError(runtimeMessage("unrecognizedAnalysisEvent"));
   }
 }
 
@@ -58,23 +45,29 @@ export async function* createSecureEventStream(
   payload: Record<string, string>,
   signal?: AbortSignal
 ): AsyncGenerator<SSEEventData> {
-  const response = await fetch(`${API_URL}${url}`, {
-    method: "POST",
-    headers: {
-      Accept: "text/event-stream",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-    signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${url}`, {
+      method: "POST",
+      headers: {
+        Accept: "text/event-stream",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal,
+    });
+  } catch (error) {
+    if (isRecord(error) && error.name === "AbortError") throw error;
+    throw new UserFacingError(runtimeMessage("analysisConnectionInterrupted"));
+  }
 
   if (!response.ok) {
-    throw new Error(await responseErrorMessage(response));
+    throw new UserFacingError(responseErrorMessage(response));
   }
 
   const reader = response.body?.getReader();
   if (!reader) {
-    throw new Error("No response body");
+    throw new UserFacingError(runtimeMessage("missingResponseBody"));
   }
 
   const decoder = new TextDecoder();

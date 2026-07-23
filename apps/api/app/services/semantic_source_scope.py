@@ -199,9 +199,16 @@ def _typed_source_roles(
         roles = [_role_from_binding(definition.get(side)) for side in ("left", "right")]
         valid = all(role is not None for role in roles)
         return True, tuple(role for role in roles if role is not None), valid
-    if kind == "aggregate_metric":
+    if kind in {"aggregate_metric", "dimension"}:
         role = _role_from_binding(definition.get("source"))
         return True, (role,) if role is not None else (), role is not None
+    if kind == "derived_metric":
+        raw_bindings = definition.get("sources")
+        if not isinstance(raw_bindings, list) or not raw_bindings:
+            return True, (), False
+        roles = [_role_from_binding(binding) for binding in raw_bindings]
+        valid = all(role is not None for role in roles)
+        return True, tuple(role for role in roles if role is not None), valid
     if kind == "business_rule_strategy":
         applies_to = definition.get("applies_to")
         if applies_to is None or applies_to == []:

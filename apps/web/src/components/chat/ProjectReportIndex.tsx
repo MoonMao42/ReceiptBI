@@ -1,6 +1,7 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
 import type { AnalysisRunSummary } from "@/lib/types/api";
 import { cn } from "@/lib/utils";
 
@@ -20,25 +21,28 @@ function runTimestamp(run: AnalysisRunSummary): number {
   return Number.isNaN(value) ? 0 : value;
 }
 
-function reportTitle(run: AnalysisRunSummary): string {
-  return run.report.title?.trim() || run.query.trim() || "未命名调查";
+function reportTitle(run: AnalysisRunSummary, t: (key: string) => string): string {
+  return run.report.title?.trim() || run.query.trim() || t("unnamedRun");
 }
 
-function compactDate(value: string): string {
+function compactDate(value: string, locale: string, t: (key: string) => string): string {
   const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return "最近";
-  return new Intl.DateTimeFormat("zh-CN", {
+  if (Number.isNaN(date.valueOf())) return t("recent");
+  return new Intl.DateTimeFormat(locale, {
     month: "numeric",
     day: "numeric",
   }).format(date);
 }
 
-function runStateLabel(state: AnalysisRunSummary["state"]): string {
-  if (state === "waiting_confirmation") return "待确认";
-  if (state === "investigating") return "调查中";
-  if (state === "completed") return "已完成";
-  if (state === "needs_attention") return "需处理";
-  return "准备中";
+function runStateLabel(
+  state: AnalysisRunSummary["state"],
+  t: (key: string) => string
+): string {
+  if (state === "waiting_confirmation") return t("statePending");
+  if (state === "investigating") return t("stateInvestigating");
+  if (state === "completed") return t("stateCompleted");
+  if (state === "needs_attention") return t("stateNeedsAttention");
+  return t("statePreparing");
 }
 
 function stateDotClass(state: AnalysisRunSummary["state"]): string {
@@ -88,6 +92,8 @@ export function ProjectReportIndex({
   isLoading = false,
   disabled = false,
 }: ProjectReportIndexProps) {
+  const locale = useLocale();
+  const t = useTranslations("projectReports");
   const { runs: visibleRuns, currentRunId } = selectVisibleRuns(
     runs,
     currentConversationId,
@@ -97,16 +103,16 @@ export function ProjectReportIndex({
   return (
     <section
       data-testid="project-report-index"
-      aria-label="项目调查"
+      aria-label={t("investigationsAria")}
       className="flex h-full min-h-0 flex-col"
     >
       <div className="flex shrink-0 items-center justify-between gap-3 px-[18px] pb-2 pt-4">
         <h2 className="text-[9px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-          调查
+          {t("sectionTitle")}
         </h2>
         <span className="inline-flex min-w-4 items-center justify-end text-[10px] tabular-nums text-muted-foreground">
           {isLoading ? (
-            <Loader2 size={11} className="animate-spin" aria-label="正在载入调查" />
+            <Loader2 size={11} className="animate-spin" aria-label={t("loadingAria")} />
           ) : (
             visibleRuns.length
           )}
@@ -116,9 +122,9 @@ export function ProjectReportIndex({
       {visibleRuns.length ? (
         <ol className="min-h-0 flex-1 overflow-y-auto pb-3 [scrollbar-width:thin]">
           {visibleRuns.map((run) => {
-            const title = reportTitle(run);
-            const state = runStateLabel(run.state);
-            const date = compactDate(run.updated_at);
+            const title = reportTitle(run, t);
+            const state = runStateLabel(run.state, t);
+            const date = compactDate(run.updated_at, locale, t);
             const isCurrent = run.id === currentRunId;
             const openingDisabled = disabled || isCurrent || !run.conversation_id;
 
@@ -132,10 +138,10 @@ export function ProjectReportIndex({
                   aria-disabled={openingDisabled}
                   aria-label={
                     isCurrent
-                      ? `当前调查：${title}，${state}，${date}`
-                      : `打开调查：${title}，${state}，${date}`
+                      ? t("currentRunAria", { title, state, date })
+                      : t("openRunAria", { title, state, date })
                   }
-                  title={disabled && !isCurrent ? "当前调查完成后可以查看" : undefined}
+                  title={disabled && !isCurrent ? t("waitingTooltip") : undefined}
                   onClick={() => {
                     if (!openingDisabled && run.conversation_id) {
                       onOpenReport(run.conversation_id, run.id);
@@ -162,7 +168,7 @@ export function ProjectReportIndex({
                       aria-hidden="true"
                       className={cn("h-1.5 w-1.5 shrink-0 rounded-full", stateDotClass(run.state))}
                     />
-                    <span>{isCurrent ? "当前" : state}</span>
+                    <span>{isCurrent ? t("currentBadge") : state}</span>
                     <span aria-hidden="true">·</span>
                     <span>{date}</span>
                   </span>
@@ -173,7 +179,7 @@ export function ProjectReportIndex({
         </ol>
       ) : (
         <div className="px-[18px] py-5 text-[11px] text-muted-foreground">
-          {isLoading ? "" : "尚无调查"}
+          {isLoading ? "" : t("noRuns")}
         </div>
       )}
     </section>

@@ -44,6 +44,8 @@ def settings_to_dict(settings_record: AppSettings | None) -> dict[str, Any]:
         "python_enabled": settings_record.python_enabled,
         "diagnostics_enabled": settings_record.diagnostics_enabled,
         "auto_repair_enabled": settings_record.auto_repair_enabled,
+        "preprocessing_enabled": settings_record.preprocessing_enabled,
+        "self_analysis_enabled": settings_record.self_analysis_enabled,
     }
 
 

@@ -176,6 +176,51 @@ def test_mysql_catalog_groups_constraint_columns_and_preserves_declared_actions(
     assert connection.executed[2].count("WHERE tc.TABLE_SCHEMA = DATABASE()") == 1
 
 
+def test_mysql_selected_relation_schema_keeps_declared_foreign_key() -> None:
+    connection = _ScriptedConnection(
+        [
+            {
+                "TABLE_SCHEMA": "shop",
+                "TABLE_NAME": "orders",
+                "TABLE_TYPE": "BASE TABLE",
+                "TABLE_COMMENT": "订单",
+            }
+        ],
+        [
+            {
+                "COLUMN_NAME": "store_id",
+                "COLUMN_TYPE": "varchar(36)",
+                "IS_NULLABLE": "NO",
+            }
+        ],
+        [
+            {
+                "TABLE_NAME": "orders",
+                "CONSTRAINT_NAME": "orders_store_fk",
+                "CONSTRAINT_TYPE": "FOREIGN KEY",
+                "COLUMN_NAME": "store_id",
+                "ORDINAL_POSITION": 1,
+                "REFERENCED_TABLE_SCHEMA": "shop",
+                "REFERENCED_TABLE_NAME": "stores",
+                "REFERENCED_COLUMN_NAME": "store_id",
+                "UPDATE_RULE": "CASCADE",
+                "DELETE_RULE": "RESTRICT",
+            }
+        ],
+    )
+
+    entry = MySQLAdapter().get_bounded_relation_schema(
+        connection,
+        table_name="orders",
+        max_columns=8,
+    )
+
+    assert entry["schema"] == "shop"
+    assert entry["constraint_metadata_status"] == "available"
+    assert entry["foreign_keys"][0]["referenced_table"] == "stores"
+    assert "tc.TABLE_NAME = %s" in connection.executed[2]
+
+
 def test_postgresql_catalog_uses_ordered_catalog_arrays_for_composite_constraints() -> None:
     connection = _ScriptedConnection(
         [("orders", "BASE TABLE")],
@@ -217,6 +262,37 @@ def test_postgresql_catalog_uses_ordered_catalog_arrays_for_composite_constraint
     assert catalog[0]["foreign_keys"][0]["on_update"] == "CASCADE"
     assert catalog[0]["foreign_keys"][0]["on_delete"] == "RESTRICT"
     assert "pg_catalog.pg_constraint" in connection.executed[2]
+
+
+def test_postgresql_selected_relation_schema_keeps_declared_foreign_key() -> None:
+    connection = _ScriptedConnection(
+        [("orders", "table", "订单")],
+        [("store_id", "uuid", "NO")],
+        [
+            (
+                "orders",
+                "orders_store_fk",
+                "f",
+                ["store_id"],
+                "public",
+                "stores",
+                ["store_id"],
+                "c",
+                "r",
+            )
+        ],
+    )
+
+    entry = PostgreSQLAdapter().get_bounded_relation_schema(
+        connection,
+        table_name="orders",
+        max_columns=8,
+    )
+
+    assert entry["schema"] == "public"
+    assert entry["constraint_metadata_status"] == "available"
+    assert entry["foreign_keys"][0]["referenced_table"] == "stores"
+    assert "relation.relname = %s" in connection.executed[2]
 
 
 def test_constraint_query_failure_is_explicitly_unknown_instead_of_empty() -> None:
@@ -313,6 +389,171 @@ def test_postgresql_bounded_catalog_limits_relations_and_columns_before_fetchall
     assert "LIMIT %s" in connection.executed[0]
     assert "LIMIT %s" in connection.executed[1]
     assert "LIMIT %s" in connection.executed[2]
+
+
+def test_mysql_relation_index_is_metadata_only_bounded_and_keeps_comments() -> None:
+    connection = _ScriptedConnection(
+        [
+            {
+                "TABLE_SCHEMA": "shop",
+                "TABLE_NAME": "alpha",
+                "TABLE_TYPE": "BASE TABLE",
+                "TABLE_COMMENT": "2024 年商品主数据",
+            },
+            {
+                "TABLE_SCHEMA": "shop",
+                "TABLE_NAME": "beta",
+                "TABLE_TYPE": "VIEW",
+                "TABLE_COMMENT": "",
+            },
+            {
+                "TABLE_SCHEMA": "shop",
+                "TABLE_NAME": "gamma",
+                "TABLE_TYPE": "BASE TABLE",
+                "TABLE_COMMENT": "未返回",
+            },
+        ]
+    )
+
+    index = MySQLAdapter().get_bounded_relation_index(connection, max_relations=2)
+
+    assert index.relations == [
+        {
+            "name": "alpha",
+            "schema": "shop",
+            "kind": "table",
+            "comment": "2024 年商品主数据",
+        },
+        {"name": "beta", "schema": "shop", "kind": "view", "comment": None},
+    ]
+    assert index.truncated is True
+    assert index.unread_relations_at_least == 1
+    assert "TABLE_COMMENT" in connection.executed[0]
+    assert "LIMIT 3" in connection.executed[0]
+
+
+def test_postgresql_relation_index_uses_catalog_comments_and_kind() -> None:
+    connection = _ScriptedConnection(
+        [
+            ("products", "partitioned_table", "按年份分区的商品表"),
+            ("sales_view", "materialized_view", None),
+        ]
+    )
+
+    index = PostgreSQLAdapter().get_bounded_relation_index(
+        connection,
+        max_relations=5,
+    )
+
+    assert index.relations == [
+        {
+            "name": "products",
+            "schema": "public",
+            "kind": "partitioned_table",
+            "comment": "按年份分区的商品表",
+        },
+        {
+            "name": "sales_view",
+            "schema": "public",
+            "kind": "materialized_view",
+            "comment": None,
+        },
+    ]
+    assert index.truncated is False
+    assert "pg_catalog.obj_description" in connection.executed[0]
+
+
+def test_sqlite_relation_index_pages_without_repeating_the_first_tables(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(SIDECAR_ENV, raising=False)
+    database_path = tmp_path / "paged-index.db"
+    with sqlite3.connect(database_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE alpha (id INTEGER);
+            CREATE TABLE beta (id INTEGER);
+            CREATE TABLE gamma (id INTEGER);
+            """
+        )
+
+    manager = DatabaseManager(DatabaseConfig(driver="sqlite", database=str(database_path)))
+    first = manager.get_bounded_relation_index(max_relations=2)
+    second = manager.get_bounded_relation_index(
+        max_relations=2,
+        after=first.relations[-1]["name"],
+    )
+
+    assert [item["name"] for item in first.relations] == ["alpha", "beta"]
+    assert first.truncated is True
+    assert [item["name"] for item in second.relations] == ["gamma"]
+    assert second.truncated is False
+
+
+def test_selected_relation_schema_reads_the_requested_table_not_catalog_prefix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(SIDECAR_ENV, raising=False)
+    database_path = tmp_path / "selected-schema.db"
+    with sqlite3.connect(database_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE alpha (ignored INTEGER);
+            CREATE TABLE omega (published_at TEXT, sales_amount REAL);
+            """
+        )
+
+    manager = DatabaseManager(DatabaseConfig(driver="sqlite", database=str(database_path)))
+    selected = manager.get_bounded_relation_schema("omega", max_columns=8)
+
+    assert selected["name"] == "omega"
+    assert [item["name"] for item in selected["columns"]] == [
+        "published_at",
+        "sales_amount",
+    ]
+
+
+def test_selected_sqlite_relation_schema_preserves_declared_foreign_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(SIDECAR_ENV, raising=False)
+    database_path = tmp_path / "selected-relationship.db"
+    with sqlite3.connect(database_path) as conn:
+        conn.executescript(
+            """
+            PRAGMA foreign_keys = ON;
+            CREATE TABLE stores (store_id TEXT PRIMARY KEY, name TEXT);
+            CREATE TABLE orders (
+                order_id TEXT PRIMARY KEY,
+                store_id TEXT NOT NULL,
+                FOREIGN KEY (store_id) REFERENCES stores(store_id)
+            );
+            """
+        )
+
+    manager = DatabaseManager(
+        DatabaseConfig(driver="sqlite", database=str(database_path))
+    )
+    selected = manager.get_bounded_relation_schema("orders", max_columns=8)
+
+    assert selected["constraint_metadata_status"] == "available"
+    assert selected["primary_key"]["columns"] == ["order_id"]
+    assert selected["foreign_keys"] == [
+        {
+            "name": None,
+            "catalog_id": 0,
+            "columns": ["store_id"],
+            "referenced_schema": "main",
+            "referenced_table": "stores",
+            "referenced_columns": ["store_id"],
+            "on_update": "NO ACTION",
+            "on_delete": "NO ACTION",
+            "match": "NONE",
+        }
+    ]
 
 
 def test_database_preflight_prioritizes_declared_grain_and_emits_fk_evidence_only(

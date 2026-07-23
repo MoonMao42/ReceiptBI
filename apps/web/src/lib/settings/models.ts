@@ -25,6 +25,19 @@ export type ModelTestResult = {
   response_time_ms?: number;
 } & ModelDiagnostics;
 
+export type ModelJsonMapField = "headers" | "queryParams";
+export type ModelJsonMapErrorReason = "invalidJson" | "objectRequired";
+
+export class ModelJsonMapError extends Error {
+  constructor(
+    readonly field: ModelJsonMapField,
+    readonly reason: ModelJsonMapErrorReason
+  ) {
+    super();
+    this.name = "ModelJsonMapError";
+  }
+}
+
 export type ModelPreset = Pick<
   ModelFormData,
   "provider" | "api_format" | "base_url" | "api_key_optional" | "healthcheck_mode"
@@ -86,11 +99,19 @@ export function prettifyJson(value: Record<string, string> | undefined): string 
   return JSON.stringify(value || {}, null, 2);
 }
 
-export function parseJsonMap(value: string, label: string): Record<string, string> {
+export function parseJsonMap(
+  value: string,
+  field: ModelJsonMapField
+): Record<string, string> {
   if (!value.trim()) return {};
-  const parsed = JSON.parse(value);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new ModelJsonMapError(field, "invalidJson");
+  }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`${label} must be a JSON object`);
+    throw new ModelJsonMapError(field, "objectRequired");
   }
 
   const normalized: Record<string, string> = {};
@@ -112,8 +133,8 @@ export function buildModelPayload(formData: ModelFormData) {
       api_format: formData.api_format,
       api_key_optional: formData.api_key_optional,
       healthcheck_mode: formData.healthcheck_mode,
-      headers: parseJsonMap(formData.headersText, "Headers"),
-      query_params: parseJsonMap(formData.queryParamsText, "Query Params"),
+      headers: parseJsonMap(formData.headersText, "headers"),
+      query_params: parseJsonMap(formData.queryParamsText, "queryParams"),
     },
   };
 }

@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useLocale } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { CircleAlert } from "lucide-react";
 import type {
   AnalysisRunSummary,
@@ -14,7 +14,7 @@ import type {
   StandingPrepareResponse,
   SuggestedQuestionsResponse,
 } from "@/lib/types/api";
-import { getErrorMessage } from "@/lib/types/api";
+import { getErrorMessage, UserFacingError } from "@/lib/types/api";
 import { api } from "@/lib/api/client";
 import {
   migratePendingTaskStorage,
@@ -90,6 +90,99 @@ interface RunPromptOptions {
   correctionId?: string;
 }
 
+type StandingAttentionMessageKey =
+  | "standingNeedsAttention"
+  | "standingReasonPlaybookUnavailable"
+  | "standingReasonPlaybookChanged"
+  | "standingReasonPlaybookSourcesUnbound"
+  | "standingReasonSourcePendingConfirmation"
+  | "standingReasonSourceNotUnique"
+  | "standingReasonSourceChangedSinceBaseline"
+  | "standingReasonSourceNotReady"
+  | "standingReasonSourceWorkingCopyMissing"
+  | "standingReasonSourceSchemaChanged"
+  | "standingReasonSourceVersionInvalid"
+  | "standingReasonSourceRecipeChanged"
+  | "standingReasonSemanticMissing"
+  | "standingReasonSemanticInactive"
+  | "standingReasonSemanticChanged"
+  | "standingReasonRelationshipUnavailable"
+  | "standingReasonRelationshipChanged"
+  | "standingReasonProjectInputUnavailable"
+  | "standingReasonRunMissing"
+  | "standingReasonResultRejected"
+  | "standingReasonExecutionFailed";
+
+type StandingAttentionTranslator = (
+  key: StandingAttentionMessageKey,
+  values?: Record<string, string>,
+) => string;
+
+export function standingAttentionFeedback(
+  prepared: Pick<
+    StandingPrepareResponse,
+    "attention_reason" | "attention_reason_code" | "attention_reason_params"
+  >,
+  t: StandingAttentionTranslator,
+  _locale: string,
+): string {
+  const fallbackReason = t("standingNeedsAttention");
+  const params = prepared.attention_reason_params || {};
+  const sourceValues = params.source ? { source: params.source } : null;
+  switch (prepared.attention_reason_code) {
+    case "standing_playbook_unavailable":
+      return t("standingReasonPlaybookUnavailable");
+    case "standing_playbook_changed":
+      return t("standingReasonPlaybookChanged");
+    case "standing_playbook_sources_unbound":
+      return t("standingReasonPlaybookSourcesUnbound");
+    case "standing_source_pending_confirmation":
+      return sourceValues
+        ? t("standingReasonSourcePendingConfirmation", sourceValues)
+        : fallbackReason;
+    case "standing_source_not_unique":
+      return sourceValues ? t("standingReasonSourceNotUnique", sourceValues) : fallbackReason;
+    case "standing_source_changed_since_baseline":
+      return sourceValues
+        ? t("standingReasonSourceChangedSinceBaseline", sourceValues)
+        : fallbackReason;
+    case "standing_source_not_ready":
+      return sourceValues ? t("standingReasonSourceNotReady", sourceValues) : fallbackReason;
+    case "standing_source_working_copy_missing":
+      return sourceValues
+        ? t("standingReasonSourceWorkingCopyMissing", sourceValues)
+        : fallbackReason;
+    case "standing_source_schema_changed":
+      return sourceValues ? t("standingReasonSourceSchemaChanged", sourceValues) : fallbackReason;
+    case "standing_source_version_invalid":
+      return sourceValues ? t("standingReasonSourceVersionInvalid", sourceValues) : fallbackReason;
+    case "standing_source_recipe_changed_since_baseline":
+      return sourceValues
+        ? t("standingReasonSourceRecipeChanged", sourceValues)
+        : fallbackReason;
+    case "standing_semantic_definition_missing":
+      return t("standingReasonSemanticMissing");
+    case "standing_semantic_definition_inactive":
+      return t("standingReasonSemanticInactive");
+    case "standing_semantic_definition_changed_since_baseline":
+      return t("standingReasonSemanticChanged");
+    case "standing_relationship_definition_unavailable":
+      return t("standingReasonRelationshipUnavailable");
+    case "standing_relationship_definition_changed":
+      return t("standingReasonRelationshipChanged");
+    case "standing_project_input_unavailable":
+      return t("standingReasonProjectInputUnavailable");
+    case "standing_in_flight_run_missing":
+      return t("standingReasonRunMissing");
+    case "standing_result_rejected":
+      return t("standingReasonResultRejected");
+    case "standing_execution_failed":
+      return t("standingReasonExecutionFailed");
+    default:
+      return fallbackReason;
+  }
+}
+
 export function ChatArea({
   sidebarOpen: _sidebarOpen,
   onToggleSidebar,
@@ -101,6 +194,8 @@ export function ChatArea({
 }: ChatAreaProps) {
   const router = useRouter();
   const locale = useLocale();
+  const tArea = useTranslations("chatArea");
+  const tProjectDefaults = useTranslations("projectDefaults");
   const queryClient = useQueryClient();
   const [dataPanelOpen, setDataPanelOpen] = useState(false);
   const [dataPanelView, setDataPanelView] = useState<"sources" | "understanding">(
@@ -131,6 +226,7 @@ export function ChatArea({
     messages,
     isLoading,
     activeStreamId,
+    stopRequestedStreamId,
     isConversationLoading,
     conversationLoadError,
     currentConversationId,
@@ -157,7 +253,6 @@ export function ChatArea({
     currentProjectId,
     sources,
     pendingKnowledgeCount,
-    suggestedQuestionsRevisionByProject,
     isUploading,
     error: projectError,
     bootstrap,
@@ -166,9 +261,6 @@ export function ChatArea({
     refreshCurrent,
   } = useProjectStore();
   const currentProject = projects.find((project) => project.id === currentProjectId);
-  const suggestedQuestionsRevision = currentProjectId
-    ? suggestedQuestionsRevisionByProject[currentProjectId] || 0
-    : 0;
   const readySources = sources.filter((source) =>
     ["ready", "needs_confirmation"].includes(source.status)
   );
@@ -235,7 +327,7 @@ export function ChatArea({
     },
   });
 
-  const { data: appSettings } = useQuery({
+  const { data: appSettings, isLoading: appSettingsLoading } = useQuery({
     queryKey: ["app-settings"],
     queryFn: async () => {
       const response = await api.get("/api/v1/settings");
@@ -299,27 +391,33 @@ export function ChatArea({
   const sourceSuggestionKey = readySources
     .map((source) => `${source.id}:${source.updated_at}`)
     .join("|");
-  const { data: suggestedQuestions, isLoading: suggestionsLoading } =
-    useQuery<SuggestedQuestionsResponse>({
-      queryKey: [
-        "suggested-questions",
-        currentProjectId,
-        selectedModelId,
-        sourceSuggestionKey,
-        suggestedQuestionsRevision,
-      ],
-      queryFn: async () => {
-        const response = await api.post(
-          `/api/v1/projects/${currentProjectId}/suggested-questions`,
-          { model_id: selectedModelId || null },
-          { timeout: 20_000 }
-        );
-        return response.data.data as SuggestedQuestionsResponse;
-      },
-      enabled: Boolean(currentProjectId && readySources.length),
-      staleTime: 5 * 60_000,
-      retry: false,
-    });
+  const {
+    data: suggestedQuestions,
+    error: suggestionsError,
+    isPending: suggestionsLoading,
+    mutate: generateSuggestions,
+    reset: resetSuggestions,
+  } = useMutation<SuggestedQuestionsResponse>({
+    mutationFn: async () => {
+      if (!currentProjectId) throw new Error(tArea("noAnalyzableProject"));
+      const response = await api.post(
+        `/api/v1/projects/${currentProjectId}/suggested-questions`,
+        { model_id: selectedModelId || null, locale: locale === "en" ? "en" : "zh" },
+        { timeout: 20_000 }
+      );
+      return response.data.data as SuggestedQuestionsResponse;
+    },
+  });
+
+  useEffect(() => {
+    resetSuggestions();
+  }, [currentProjectId, locale, resetSuggestions, selectedModelId, sourceSuggestionKey]);
+
+  const selfAnalysisEnabled = appSettings?.self_analysis_enabled === true;
+  const handleGenerateSuggestions = () => {
+    if (!selfAnalysisEnabled || !currentProjectId || !readySources.length) return;
+    generateSuggestions();
+  };
 
   useEffect(() => {
     if (!currentProjectId) return;
@@ -457,7 +555,7 @@ export function ChatArea({
     if (!modelReady || !selectedModelId) {
       setStandingFeedback((current) => ({
         ...current,
-        [standing.id]: "分析能力尚未就绪，请先在设置中选择后再检查。",
+        [standing.id]: tArea("modelNotReady"),
       }));
       router.push("/settings");
       return;
@@ -465,13 +563,13 @@ export function ChatArea({
     if (isLoading) {
       setStandingFeedback((current) => ({
         ...current,
-        [standing.id]: "当前调查完成后再检查这项变化。",
+        [standing.id]: tArea("waitForRun"),
       }));
       return;
     }
 
     setCheckingStandingId(standing.id);
-    setStandingFeedback((current) => ({ ...current, [standing.id]: "正在核对最新数据…" }));
+    setStandingFeedback((current) => ({ ...current, [standing.id]: tArea("checkingData") }));
     try {
       const response = await api.post(
         `/api/v1/projects/${originProjectId}/standing-analyses/${standing.id}/prepare-run`,
@@ -486,21 +584,21 @@ export function ChatArea({
       if (prepared.outcome === "no_change") {
         setStandingFeedback((current) => ({
           ...current,
-          [standing.id]: "数据和口径没有变化，当前结论仍然有效。",
+          [standing.id]: tArea("noChanges"),
         }));
         return;
       }
       if (prepared.outcome === "paused") {
         setStandingFeedback((current) => ({
           ...current,
-          [standing.id]: "这项持续关注已经暂停。",
+          [standing.id]: tArea("standingPaused"),
         }));
         return;
       }
       if (prepared.outcome === "already_completed") {
         setStandingFeedback((current) => ({
           ...current,
-          [standing.id]: "这次检查已经完成，最新结果已保存在调查记录中。",
+          [standing.id]: tArea("standingCompleted"),
         }));
         return;
       }
@@ -520,7 +618,7 @@ export function ChatArea({
           }
           setStandingFeedback((current) => ({
             ...current,
-            [standing.id]: "这项变化已经在检查，已打开对应调查。",
+            [standing.id]: tArea("standingInvestigating"),
           }));
           return;
         }
@@ -528,12 +626,12 @@ export function ChatArea({
       if (prepared.outcome === "needs_attention") {
         setStandingFeedback((current) => ({
           ...current,
-          [standing.id]: prepared.attention_reason || "需要先处理项目中的数据变化。",
+          [standing.id]: standingAttentionFeedback(prepared, tArea, locale),
         }));
         return;
       }
       if (!prepared.run_id || !prepared.conversation_id) {
-        throw new Error("持续检查缺少可继续的调查记录");
+        throw new UserFacingError(tArea("standingResumeMissing"));
       }
       await resumePreparedRun(
         {
@@ -565,6 +663,9 @@ export function ChatArea({
       onSubmit={handleInputSubmit}
       onStop={stopGeneration}
       isLoading={isLoading}
+      isStopping={Boolean(
+        activeStreamId && stopRequestedStreamId === activeStreamId
+      )}
       projectName={currentProject?.name}
       dataReady={readySources.length > 0}
       sourceCount={sources.length}
@@ -613,20 +714,25 @@ export function ChatArea({
             <CircleAlert size={17} className="mt-0.5 shrink-0 text-warning" />
             <div>
               <div className="font-semibold">
-                {currentProjectId ? "数据来源刷新失败" : "本地工作区尚未连接"}
+                {currentProjectId ? tArea("sourceRefreshFailed") : tArea("localNotConnected")}
               </div>
               <div className="mt-0.5 text-xs leading-5 text-muted-foreground">
                 {currentProjectId
-                  ? `${projectError}。当前项目仍保留，可以重新连接后继续。`
-                  : "当前可以先整理任务；读取文件、连接数据库和运行调查，需要打开桌面应用或启动本地工作区。"}
+                  ? tArea("projectStillAvailable")
+                  : tArea("localWorkspaceHint")}
               </div>
             </div>
             <button
               type="button"
-              onClick={() => void bootstrap()}
+              onClick={() =>
+                void bootstrap({
+                  name: tProjectDefaults("initialName"),
+                  description: tProjectDefaults("initialDescription"),
+                })
+              }
               className="ml-auto shrink-0 border border-warning/40 bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-warning/10"
             >
-              重新连接
+              {tArea("reconnect")}
             </button>
           </div>
         )}
@@ -643,6 +749,10 @@ export function ChatArea({
           recentRuns={recentRuns}
           suggestedQuestions={suggestedQuestions?.items || []}
           suggestionsLoading={Boolean(readySources.length && suggestionsLoading)}
+          settingsLoaded={!appSettingsLoading}
+          selfAnalysisEnabled={selfAnalysisEnabled}
+          canGenerateSuggestions={Boolean(currentProjectId && readySources.length)}
+          suggestionsError={suggestionsError ? getErrorMessage(suggestionsError) : null}
           emptyComposer={taskComposer}
           activityLoading={standingLoading || recentRunsLoading}
           checkingStandingId={checkingStandingId}
@@ -654,6 +764,8 @@ export function ChatArea({
           onChangeAnalysisService={handleChangeAnalysisService}
           onManageAnalysisServices={handleManageAnalysisServices}
           onOpenSettings={() => router.push("/settings")}
+          onOpenProcessingSettings={() => router.push("/settings?tab=execution")}
+          onGenerateSuggestions={handleGenerateSuggestions}
           onOpenData={() => openDataPanel("sources")}
           onOpenUnderstanding={() => openDataPanel("understanding")}
           onUsePrompt={setInput}
@@ -675,6 +787,9 @@ export function ChatArea({
             onSubmit={handleInputSubmit}
             onStop={stopGeneration}
             isLoading={isLoading}
+            isStopping={Boolean(
+              activeStreamId && stopRequestedStreamId === activeStreamId
+            )}
             projectName={currentProject?.name}
             dataReady={readySources.length > 0}
             sourceCount={sources.length}
@@ -698,7 +813,7 @@ export function ChatArea({
       {dataPanelOpen && (
         <button
           type="button"
-          aria-label="关闭数据来源"
+          aria-label={tArea("closeDataSource")}
           onClick={closeDataPanel}
           className="fixed inset-0 z-30 bg-slate-950/25 md:hidden"
         />
@@ -707,6 +822,12 @@ export function ChatArea({
         open={dataPanelOpen}
         onClose={closeDataPanel}
         onConfigureConnection={() => router.push("/settings?tab=connections")}
+        preprocessingEnabled={appSettings?.preprocessing_enabled === true}
+        settingsLoaded={!appSettingsLoading}
+        onOpenPreprocessingSettings={() => {
+          closeDataPanel();
+          router.push("/settings?tab=execution");
+        }}
         connections={connections}
         view={dataPanelView}
         onViewChange={setDataPanelView}

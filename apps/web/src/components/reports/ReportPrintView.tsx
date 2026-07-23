@@ -20,9 +20,9 @@ const FILTER_OPERATORS = new Set<ReportFilterOperator>([
 ]);
 
 function blockStyle(block: ReportBlock): CSSProperties {
+  const width = block.block_type === "table" ? 12 : block.layout.w;
   return {
-    "--report-column": `${block.layout.x + 1} / span ${block.layout.w}`,
-    "--report-row": `${block.layout.y + 1} / span ${block.layout.h}`,
+    "--report-column-span": `span ${width} / span ${width}`,
   } as CSSProperties;
 }
 
@@ -71,6 +71,10 @@ export function ReportPrintView({
     >
       {pages.map((page, pageIndex) => {
         const filters = pageFilters(page, filterValues);
+        const narrative =
+          typeof page.config.narrative === "string"
+            ? page.config.narrative.trim()
+            : "";
         return (
           <article className="report-print-page" key={page.id}>
             <header className="report-print-header">
@@ -78,6 +82,7 @@ export function ReportPrintView({
                 <p className="report-print-kicker">{page.title}</p>
                 <h1>{report.title}</h1>
                 {report.description && <p>{report.description}</p>}
+                {narrative && <p className="report-print-narrative">{narrative}</p>}
               </div>
               <span>{pageIndex + 1} / {pages.length}</span>
             </header>
@@ -90,6 +95,7 @@ export function ReportPrintView({
                     key={block.id}
                     style={blockStyle(block)}
                     className="report-print-block"
+                    data-block-type={block.block_type}
                   >
                     <ReportBlockCard
                       block={displayedBlock}

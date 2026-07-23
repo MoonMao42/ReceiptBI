@@ -342,6 +342,8 @@ async def test_invalid_completion_keeps_the_prior_baseline_and_marks_attention(
     assert failed["baseline"] == baseline
     assert failed["in_flight"] is None
     assert "没有通过校验" in failed["attention_reason"]
+    assert failed["attention_reason_code"] == "standing_result_rejected"
+    assert failed["attention_reason_params"] == {}
     standing_artifacts = list(
         (
             await db_session.execute(

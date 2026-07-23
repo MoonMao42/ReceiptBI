@@ -9,12 +9,27 @@ import type { ConfiguredConnection } from "@/lib/types/api";
 import {
   buildModelFormData,
   buildModelPayload,
+  ModelJsonMapError,
   parseJsonMap,
 } from "@/lib/settings/models";
 
 describe("settings helpers", () => {
   it("parses JSON map and normalizes values to strings", () => {
-    expect(parseJsonMap('{"x-test": 1}', "Headers")).toEqual({ "x-test": "1" });
+    expect(parseJsonMap('{"x-test": 1}', "headers")).toEqual({ "x-test": "1" });
+  });
+
+  it("returns structured errors for invalid advanced JSON parameters", () => {
+    expect(() => parseJsonMap("{", "headers")).toThrow(ModelJsonMapError);
+
+    try {
+      parseJsonMap("[]", "queryParams");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ModelJsonMapError);
+      expect(error).toMatchObject({
+        field: "queryParams",
+        reason: "objectRequired",
+      });
+    }
   });
 
   it("builds model payload with normalized fields", () => {

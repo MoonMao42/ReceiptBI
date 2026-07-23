@@ -3,19 +3,25 @@
 import { useMemo, useState } from "react";
 import { CheckCircle, ChevronDown, Plus, X, XCircle } from "lucide-react";
 import { ModelSettingsForm } from "@/components/settings/model-settings/ModelSettingsForm";
-import { ModelSettingsList } from "@/components/settings/model-settings/ModelSettingsList";
+import {
+  ModelSettingsList,
+  getModelTestResultMessage,
+  type ModelTestResultMessages,
+} from "@/components/settings/model-settings/ModelSettingsList";
 import { useModelSettingsResource } from "@/components/settings/hooks/useModelSettingsResource";
 import {
   MODEL_PRESETS,
   buildModelFormData,
   buildModelPayload,
   initialModelFormData,
+  ModelJsonMapError,
   type ModelFormData,
 } from "@/lib/settings/models";
 import type { ConfiguredModel } from "@/lib/types/api";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 
 export function ModelSettings() {
+  const t = useTranslations("modelSettings");
   const {
     models,
     isLoading,
@@ -29,7 +35,13 @@ export function ModelSettings() {
     updateModel,
     deleteModel,
     testModel,
-  } = useModelSettingsResource();
+  } = useModelSettingsResource({
+    connectionCheckFailed: t("testFailed"),
+    savedButConnectionCheckFailed: t("savedButConnectionCheckFailed"),
+    addModelFailed: t("addModelFailed"),
+    updateModelFailed: t("updateModelFailed"),
+    deleteModelFailed: t("deleteModelFailed"),
+  });
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<ModelFormData>(initialModelFormData);
@@ -39,26 +51,13 @@ export function ModelSettings() {
     [formData.provider]
   );
   const displayError = validationError ?? error;
-  const t = useTranslations("modelSettings");
-  const isChinese = useLocale() === "zh";
-  const copy = isChinese
-    ? {
-        title: "分析服务",
-        description: "添加一个可用的模型服务，ReceiptBI 会在调查中自动使用默认项。",
-        add: "添加服务",
-        lastCheck: "最近一次连接检查",
-        advancedResult: "高级连接详情",
-        advancedResultHint: "排查兼容服务或网关问题时再查看。",
-      }
-    : {
-        title: "Analysis services",
-        description:
-          "Add a model service. ReceiptBI automatically uses the default one during investigations.",
-        add: "Add service",
-        lastCheck: "Latest connection check",
-        advancedResult: "Advanced connection details",
-        advancedResultHint: "Review only when troubleshooting a compatible service or gateway.",
-      };
+  const testResultMessages: ModelTestResultMessages = {
+    success: t("testResultSuccess"),
+    credentials: t("testResultCredentials"),
+    configuration: t("testResultConfiguration"),
+    temporary: t("testResultTemporary"),
+    failed: t("testResultFailed"),
+  };
 
   const resetForm = () => {
     setShowForm(false);
@@ -96,7 +95,16 @@ export function ModelSettings() {
     try {
       buildModelPayload(formData);
     } catch (error) {
-      setValidationError(error instanceof Error ? error.message : t("validationError"));
+      if (error instanceof ModelJsonMapError) {
+        const field = error.field === "headers" ? t("form.headers") : t("form.params");
+        const messageKey =
+          error.reason === "invalidJson"
+            ? "validation.invalidJson"
+            : "validation.objectRequired";
+        setValidationError(t(messageKey, { field }));
+      } else {
+        setValidationError(t("validationError"));
+      }
       return;
     }
 
@@ -133,7 +141,7 @@ export function ModelSettings() {
           className="flex items-center gap-2 bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           <Plus size={16} />
-          {copy.add}
+          {t("addService")}
         </button>
       </div>
 
@@ -173,11 +181,14 @@ export function ModelSettings() {
             ) : (
               <XCircle size={16} className="text-destructive" />
             )}
-            {copy.lastCheck}
+            {t("latestConnectionCheck")}
           </div>
           <div className="mt-3 grid gap-2 text-sm text-muted-foreground md:grid-cols-2">
             <div>
-              {t("result") + ":"} <span className="text-foreground">{testResult.message}</span>
+              {t("result") + ":"}{" "}
+              <span className="text-foreground">
+                {getModelTestResultMessage(testResult, testResultMessages)}
+              </span>
             </div>
             <div>
               {t("latency") + ":"} <span className="text-foreground">{testResult.response_time_ms || "-"} ms</span>
@@ -189,9 +200,11 @@ export function ModelSettings() {
           >
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-xs text-muted-foreground marker:content-none">
               <span>
-                <span className="font-semibold text-foreground">{copy.advancedResult}</span>
+                <span className="font-semibold text-foreground">
+                  {t("advancedConnectionDetails")}
+                </span>
                 <span className="ml-2 hidden text-muted-foreground sm:inline">
-                  {copy.advancedResultHint}
+                  {t("advancedConnectionDetailsHint")}
                 </span>
               </span>
               <ChevronDown size={14} className="transition-transform group-open:rotate-180" />

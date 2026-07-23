@@ -6,7 +6,7 @@ import {
   CONNECTION_DRIVERS,
   type ConnectionFormData,
 } from "@/lib/settings/connections";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 
 interface ConnectionSettingsFormProps {
   editingId: string | null;
@@ -29,38 +29,6 @@ export function ConnectionSettingsForm({
 }: ConnectionSettingsFormProps) {
   const t = useTranslations("connectionSettings");
   const tc = useTranslations("common");
-  const isChinese = useLocale() === "zh";
-  const advancedCopy = isChinese
-    ? {
-        title: "连接安全与范围",
-        tls: "加密方式",
-        schema: "Schema",
-        ca: "CA 证书路径",
-        cert: "客户端证书路径",
-        key: "客户端私钥路径",
-        modes: {
-          prefer: "自动（推荐）",
-          require: "强制加密",
-          "verify-ca": "验证 CA",
-          "verify-full": "验证 CA 与主机",
-          disable: "关闭",
-        },
-      }
-    : {
-        title: "Connection security and scope",
-        tls: "Encryption",
-        schema: "Schema",
-        ca: "CA certificate path",
-        cert: "Client certificate path",
-        key: "Client key path",
-        modes: {
-          prefer: "Automatic (recommended)",
-          require: "Require encryption",
-          "verify-ca": "Verify CA",
-          "verify-full": "Verify CA and host",
-          disable: "Off",
-        },
-      };
   const hasAdvancedOptions =
     formData.extra_options.sslmode !== "prefer" ||
     Boolean(
@@ -195,12 +163,12 @@ export function ConnectionSettingsForm({
             data-testid="connection-security-options"
           >
             <summary className="cursor-pointer select-none text-sm font-medium text-foreground">
-              {advancedCopy.title}
+              {t("security.title")}
             </summary>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">
-                  {advancedCopy.tls}
+                  {t("security.encryption")}
                 </label>
                 <select
                   value={formData.extra_options.sslmode}
@@ -221,17 +189,17 @@ export function ConnectionSettingsForm({
                   data-testid="connection-sslmode-select"
                   className="w-full border border-border bg-background px-3 py-2.5 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
                 >
-                  {Object.entries(advancedCopy.modes).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
+                  <option value="prefer">{t("security.sslMode.prefer")}</option>
+                  <option value="require">{t("security.sslMode.require")}</option>
+                  <option value="verify-ca">{t("security.sslMode.verifyCa")}</option>
+                  <option value="verify-full">{t("security.sslMode.verifyFull")}</option>
+                  <option value="disable">{t("security.sslMode.disable")}</option>
                 </select>
               </div>
               {formData.driver === "postgresql" && (
                 <div>
                   <label className="mb-1 block text-sm font-medium text-foreground">
-                    {advancedCopy.schema}
+                    {t("security.schema")}
                   </label>
                   <input
                     type="text"
@@ -255,7 +223,7 @@ export function ConnectionSettingsForm({
                 <>
                   <div>
                     <label className="mb-1 block text-sm font-medium text-foreground">
-                      {advancedCopy.ca}
+                      {t("security.caCertificatePath")}
                     </label>
                     <input
                       type="text"
@@ -276,7 +244,7 @@ export function ConnectionSettingsForm({
                   </div>
                   <div>
                     <label className="mb-1 block text-sm font-medium text-foreground">
-                      {advancedCopy.cert}
+                      {t("security.clientCertificatePath")}
                     </label>
                     <input
                       type="text"
@@ -297,7 +265,7 @@ export function ConnectionSettingsForm({
                   </div>
                   <div>
                     <label className="mb-1 block text-sm font-medium text-foreground">
-                      {advancedCopy.key}
+                      {t("security.clientKeyPath")}
                     </label>
                     <input
                       type="text"

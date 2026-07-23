@@ -94,6 +94,7 @@ async def _stream_with_engine(
     *,
     engine: _FailingEngine,
     checkpoint: dict | None = None,
+    language: str = "zh",
 ) -> tuple[list[SSEEvent], AnalysisRun]:
     project = Project(name="最小可信报告项目")
     conversation = Conversation(title="调查门店订单", status="active")
@@ -109,7 +110,7 @@ async def _stream_with_engine(
     )
     db_session.add(run)
     await db_session.commit()
-    service = ExecutionService(db_session, project_id=project.id)
+    service = ExecutionService(db_session, project_id=project.id, language=language)
 
     async def fake_load_inputs(**_kwargs):
         return SimpleNamespace(model_config={"model": "test"}, history=[])
@@ -170,9 +171,36 @@ async def test_output_schema_failure_with_verified_final_table_persists_minimal_
     )
     assert {artifact.kind for artifact in artifacts} == {"report", "table", "evidence"}
     report_artifact = next(artifact for artifact in artifacts if artifact.kind == "report")
-    assert "UnexpectedModelBehavior" in report_artifact.technical_details[
-        "report_fallback"
-    ]["technical_error"]
+    assert (
+        "UnexpectedModelBehavior"
+        in report_artifact.technical_details["report_fallback"]["technical_error"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_minimal_report_fallback_uses_requested_english(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    events, _run = await _stream_with_engine(
+        db_session,
+        monkeypatch,
+        engine=_FailingEngine(
+            _invalid_report_output_error(),
+            _verified_dependencies(),
+        ),
+        language="en",
+    )
+
+    result = next(event for event in events if event.type == SSEEventType.RESULT)
+    report = result.data["report"]
+    assert report["title"] == "Verified data result"
+    assert "model could not complete the business explanation" in report["summary"]
+    assert report["findings"][0] == "The verified table contains 1 row and 2 columns."
+    assert report["evidence"] == [
+        "The final table contents, row count, and fields match this investigation's validation record."
+    ]
+    assert "模型未能补充业务解释" not in report["summary"]
 
 
 @pytest.mark.asyncio

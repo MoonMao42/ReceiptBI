@@ -28,10 +28,16 @@ SemanticSourceScope = Literal[
     "cross_source",
     "unresolved",
 ]
+SemanticScopeKind = Literal["project", "source", "table", "context", "period"]
 AnalysisState = Literal[
     "understanding", "waiting_confirmation", "investigating", "completed", "needs_attention"
 ]
 SanitationRevisionState = Literal["candidate", "confirmed", "reverted"]
+
+SemanticSynonym = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=120),
+]
 
 
 class RelationshipEndpoint(BaseModel):
@@ -55,6 +61,24 @@ class RelationshipDefinition(BaseModel):
     default_join: Literal["left", "inner"] = "left"
     minimum_left_match_rate: float = Field(default=0.8, ge=0, le=1)
     maximum_expansion_ratio: float = Field(default=1.2, ge=1)
+    business_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=160,
+    )
+    description: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=1000,
+    )
+    synonyms: list[SemanticSynonym] = Field(
+        default_factory=list,
+        max_length=20,
+    )
+    example_questions: list[str] = Field(
+        default_factory=list,
+        max_length=5,
+    )
 
     model_config = {"extra": "forbid"}
 
@@ -132,6 +156,148 @@ class AggregateMetricDefinition(BaseModel):
     operation: Literal["sum", "avg"]
     source: BusinessRuleSourceBinding
     null_policy: Literal["ignore"] = "ignore"
+    business_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=160,
+        exclude_if=lambda value: value is None,
+    )
+    description: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=1000,
+        exclude_if=lambda value: value is None,
+    )
+    synonyms: list[SemanticSynonym] = Field(
+        default_factory=list,
+        max_length=20,
+        exclude_if=lambda value: not value,
+    )
+    example_questions: list[str] = Field(
+        default_factory=list,
+        max_length=5,
+        exclude_if=lambda value: not value,
+    )
+
+    model_config = {"extra": "forbid"}
+
+
+class DimensionDefinition(BaseModel):
+    """A schema-bound grouping field with business-facing presentation."""
+
+    version: Literal[1] = 1
+    kind: Literal["dimension"]
+    role: Literal["time", "category", "identifier"]
+    source: BusinessRuleSourceBinding
+    business_name: str = Field(..., min_length=1, max_length=160)
+    description: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=1000,
+        exclude_if=lambda value: value is None,
+    )
+    synonyms: list[SemanticSynonym] = Field(
+        default_factory=list,
+        max_length=20,
+        exclude_if=lambda value: not value,
+    )
+    example_questions: list[str] = Field(
+        default_factory=list,
+        max_length=5,
+        exclude_if=lambda value: not value,
+    )
+    time_granularities: list[
+        Literal["year", "quarter", "month", "week", "day"]
+    ] = Field(default_factory=list, max_length=5)
+    timezone: str | None = Field(default=None, min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_time_presentation(self):
+        if self.role != "time" and (self.time_granularities or self.timezone):
+            raise ValueError("time_granularities and timezone require a time dimension")
+        return self
+
+    model_config = {"extra": "forbid"}
+
+
+class DerivedMetricDefinition(BaseModel):
+    """A bounded row formula followed by one deterministic aggregate."""
+
+    version: Literal[1] = 1
+    kind: Literal["derived_metric"]
+    aggregate: Literal["sum", "avg"]
+    formula: BusinessRuleMetricFormulaAction
+    sources: list[BusinessRuleSourceBinding] = Field(..., min_length=1, max_length=8)
+    business_name: str = Field(..., min_length=1, max_length=160)
+    description: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=1000,
+        exclude_if=lambda value: value is None,
+    )
+    synonyms: list[SemanticSynonym] = Field(
+        default_factory=list,
+        max_length=20,
+        exclude_if=lambda value: not value,
+    )
+    example_questions: list[str] = Field(
+        default_factory=list,
+        max_length=5,
+        exclude_if=lambda value: not value,
+    )
+
+    @model_validator(mode="after")
+    def validate_formula_bindings(self):
+        from app.services.metric_formula import metric_formula_columns
+
+        referenced = set(metric_formula_columns(self.formula.model_dump(mode="python")))
+        bound_columns = [binding.action_column for binding in self.sources]
+        if len(bound_columns) != len(set(bound_columns)) or set(bound_columns) != referenced:
+            raise ValueError("derived metric bindings must exactly match formula columns")
+        if any(binding.canonical_type != "number" for binding in self.sources):
+            raise ValueError("derived metric bindings must be numeric")
+        physical_scopes = {
+            (
+                binding.source_logical_name,
+                binding.source_kind,
+                binding.table_or_view,
+                binding.schema_signature,
+            )
+            for binding in self.sources
+        }
+        if len(physical_scopes) != 1:
+            raise ValueError("derived metric bindings must share one source and table")
+        return self
+
+    model_config = {"extra": "forbid"}
+
+
+class ScopePresentationDefinition(BaseModel):
+    """Governed display metadata for one physical source or table scope.
+
+    This mirrors the label/synonym split used by mature semantic layers: the
+    stable source/table binding remains machine-owned while business-facing
+    names can be reviewed, versioned, and localized independently.
+    """
+
+    version: Literal[1] = 1
+    kind: Literal["scope_presentation"]
+    scope_kind: Literal["source", "table"]
+    source_logical_name: str = Field(..., min_length=1, max_length=255)
+    source_kind: Literal["file", "connection"]
+    table_or_view: str | None = Field(default=None, min_length=1, max_length=255)
+    business_name: str = Field(..., min_length=1, max_length=160)
+    description: str | None = Field(default=None, min_length=1, max_length=1000)
+    synonyms: list[SemanticSynonym] = Field(default_factory=list, max_length=20)
+    example_questions: list[str] = Field(default_factory=list, max_length=5)
+
+    @model_validator(mode="after")
+    def validate_scope_binding(self):
+        if self.scope_kind == "table" and not self.table_or_view:
+            raise ValueError("table scope presentation requires table_or_view")
+        if self.scope_kind == "source" and self.table_or_view is not None:
+            raise ValueError("source scope presentation cannot bind a table")
+        return self
 
     model_config = {"extra": "forbid"}
 
@@ -175,10 +341,22 @@ class BusinessRuleStrategyDefinition(BaseModel):
 
 
 SemanticEntryType = Literal[
-    "metric", "dimension", "relationship", "business_rule", "cleaning_rule", "verified_query"
+    "metric",
+    "dimension",
+    "relationship",
+    "scope_presentation",
+    "business_rule",
+    "cleaning_rule",
+    "verified_query",
 ]
 SemanticDefinitionVariant = Literal[
-    "relationship", "aggregate_metric", "business_rule_strategy", "raw"
+    "relationship",
+    "aggregate_metric",
+    "derived_metric",
+    "dimension",
+    "scope_presentation",
+    "business_rule_strategy",
+    "raw",
 ]
 
 
@@ -197,17 +375,27 @@ def semantic_definition_variant(value: Any) -> SemanticDefinitionVariant:
         kind = value.get("kind")
         if kind == "aggregate_metric":
             return "aggregate_metric"
+        if kind == "derived_metric":
+            return "derived_metric"
+        if kind == "dimension":
+            return "dimension"
+        if kind == "scope_presentation":
+            return "scope_presentation"
         if kind == "business_rule_strategy":
             return "business_rule_strategy"
-        if kind == "relationship" or (
-            kind is None and ("left" in value or "right" in value)
-        ):
+        if kind == "relationship" or (kind is None and ("left" in value or "right" in value)):
             return "relationship"
         return "raw"
     if isinstance(value, BusinessRuleStrategyDefinition):
         return "business_rule_strategy"
     if isinstance(value, AggregateMetricDefinition):
         return "aggregate_metric"
+    if isinstance(value, DerivedMetricDefinition):
+        return "derived_metric"
+    if isinstance(value, DimensionDefinition):
+        return "dimension"
+    if isinstance(value, ScopePresentationDefinition):
+        return "scope_presentation"
     if isinstance(value, RelationshipDefinition):
         return "relationship"
     return "raw"
@@ -216,11 +404,17 @@ def semantic_definition_variant(value: Any) -> SemanticDefinitionVariant:
 _SEMANTIC_DEFINITION_ENTRY_TYPES: dict[SemanticDefinitionVariant, SemanticEntryType] = {
     "relationship": "relationship",
     "aggregate_metric": "metric",
+    "derived_metric": "metric",
+    "dimension": "dimension",
+    "scope_presentation": "scope_presentation",
     "business_rule_strategy": "business_rule",
 }
 _SEMANTIC_DEFINITION_COMPATIBILITY_ERRORS: dict[SemanticDefinitionVariant, str] = {
     "relationship": "数据关联定义只能用于数据关联类型",
     "aggregate_metric": "聚合指标定义只能用于指标类型",
+    "derived_metric": "派生指标定义只能用于指标类型",
+    "dimension": "维度定义只能用于维度类型",
+    "scope_presentation": "数据范围名称只能用于范围说明类型",
     "business_rule_strategy": "业务规则执行定义只能用于业务口径类型",
 }
 
@@ -245,13 +439,22 @@ def validate_semantic_definition_compatibility(
 
 
 def is_executable_semantic_definition(definition: Any) -> bool:
-    return definition is not None and semantic_definition_variant(definition) != "raw"
+    return semantic_definition_variant(definition) in {
+        "relationship",
+        "aggregate_metric",
+        "derived_metric",
+        "dimension",
+        "business_rule_strategy",
+    }
 
 
 SemanticDefinition = Annotated[
     Annotated[RelationshipDefinition, Tag("relationship")]
     | Annotated[BusinessRuleStrategyDefinition, Tag("business_rule_strategy")]
     | Annotated[AggregateMetricDefinition, Tag("aggregate_metric")]
+    | Annotated[DerivedMetricDefinition, Tag("derived_metric")]
+    | Annotated[DimensionDefinition, Tag("dimension")]
+    | Annotated[ScopePresentationDefinition, Tag("scope_presentation")]
     | Annotated[dict[str, Any], Tag("raw")],
     Discriminator(semantic_definition_variant),
 ]
@@ -274,6 +477,7 @@ class ProjectUpdate(BaseModel):
 
 class SuggestedQuestionsRequest(BaseModel):
     model_id: UUID | None = None
+    locale: Literal["zh", "en"] = "zh"
 
 
 class SuggestedQuestion(BaseModel):
@@ -321,6 +525,31 @@ class DataSourceResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RelationIndexRelation(BaseModel):
+    """One selectable table or view discovered from database metadata only."""
+
+    name: str = Field(..., min_length=1)
+    schema: str | None = None
+    kind: str = Field(..., min_length=1)
+    comment: str | None = None
+
+
+class RelationIndexSnapshot(BaseModel):
+    relations: list[RelationIndexRelation] = Field(default_factory=list, max_length=512)
+    relations_loaded: int = Field(..., ge=0, le=512)
+    relations_total: int | None = Field(default=None, ge=0)
+    relations_total_at_least: int = Field(..., ge=0)
+    complete: bool
+    truncated: bool
+    unread_relations_at_least: int = Field(..., ge=0)
+
+
+class RelationIndexRefreshResponse(BaseModel):
+    source_id: UUID
+    relation_index: RelationIndexSnapshot
+    semantic_scope_table_count: int = Field(..., ge=0)
+
+
 class PreflightIssue(BaseModel):
     code: str
     title: str
@@ -335,6 +564,18 @@ class PreflightAmbiguity(BaseModel):
     question: str
     reason: str
     options: list[str] = Field(default_factory=list)
+    presentation_code: str | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    presentation_facts: dict[str, str] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+    )
+    option_codes: dict[str, str] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+    )
 
 
 class PreflightReportResponse(BaseModel):
@@ -525,6 +766,7 @@ class SourceCleaningApplyResponse(BaseModel):
 
 
 class SemanticEntryCreate(BaseModel):
+    scope_id: UUID | None = None
     key: str = Field(..., min_length=1, max_length=160)
     value: str = Field(..., min_length=1)
     entry_type: SemanticEntryType = "business_rule"
@@ -543,6 +785,7 @@ class SemanticEntryCreate(BaseModel):
 
 class SemanticEntryUpdate(BaseModel):
     expected_active_revision_id: UUID | None = None
+    scope_id: UUID | None = None
     key: str | None = Field(default=None, min_length=1, max_length=160)
     value: str | None = Field(default=None, min_length=1)
     entry_type: SemanticEntryType | None = None
@@ -589,6 +832,39 @@ class SemanticSourceRef(BaseModel):
     format: str | None = None
 
 
+class SemanticScopePathItem(BaseModel):
+    id: UUID
+    kind: SemanticScopeKind
+    stable_key: str
+    business_name: str
+    source_logical_name: str | None = None
+    table_or_view: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class SemanticScopeNodeResponse(BaseModel):
+    id: UUID
+    project_id: UUID
+    parent_id: UUID | None = None
+    kind: SemanticScopeKind
+    stable_key: str
+    business_name: str
+    description: str | None = None
+    synonyms: list[str] = Field(default_factory=list, max_length=20)
+    source_logical_name: str | None = None
+    table_or_view: str | None = None
+    context_facts: dict[str, Any] = Field(default_factory=dict)
+    is_active: bool = True
+    direct_entry_count: int = Field(default=0, ge=0)
+    child_count: int = Field(default=0, ge=0)
+    path: list[SemanticScopePathItem] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class SemanticEntryResponse(SemanticEntryCreate):
     id: UUID
     project_id: UUID
@@ -600,6 +876,8 @@ class SemanticEntryResponse(SemanticEntryCreate):
     allowed_actions: list[SemanticEntryAction] = Field(default_factory=list)
     source_refs: list[SemanticSourceRef] = Field(default_factory=list)
     source_scope: SemanticSourceScope = "project"
+    scope_path: list[SemanticScopePathItem] = Field(default_factory=list)
+    recommendation_batch_id: UUID | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -653,11 +931,198 @@ class SemanticEntryBatchResponse(BaseModel):
     action: SemanticEntryAction
     items: list[SemanticEntryResponse]
     queued_entry_ids: list[UUID] = Field(default_factory=list)
-    validation_selection: list[SemanticEntryBatchItem] = Field(default_factory=list)
-    validation_prompt: str | None = None
+    validation_job_id: UUID | None = None
+    validation_status: Literal["queued", "running", "completed", "failed"] | None = None
+
+
+class SemanticRecommendationScope(BaseModel):
+    source_id: UUID
+    tables: list[str] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def normalize_tables(self):
+        normalized = [table.strip() for table in self.tables if table.strip()]
+        if len(normalized) != len(set(table.casefold() for table in normalized)):
+            raise ValueError("scope tables must be unique")
+        self.tables = normalized
+        return self
+
+    model_config = {"extra": "forbid"}
+
+
+class SemanticRecommendationRequest(BaseModel):
+    locale: Literal["zh", "en"]
+    model_id: UUID | None = None
+    scopes: list[SemanticRecommendationScope] = Field(..., min_length=1, max_length=20)
+    limit: int = Field(..., ge=1, le=50)
+
+    @model_validator(mode="after")
+    def validate_unique_sources(self):
+        source_ids = [scope.source_id for scope in self.scopes]
+        if len(source_ids) != len(set(source_ids)):
+            raise ValueError("recommendation scopes must reference unique sources")
+        return self
+
+    model_config = {"extra": "forbid"}
+
+
+class SemanticRecommendationResponse(BaseModel):
+    batch_id: UUID
+    generated_by: Literal["ai", "preflight"]
+    items: list[SemanticEntryResponse]
+
+
+SemanticInventoryDepth = Literal["structure", "sampled"]
+SemanticInventoryJobStatus = Literal[
+    "queued",
+    "running",
+    "completed",
+    "completed_with_errors",
+    "cancelled",
+    "failed",
+]
+SemanticInventoryItemStatus = Literal[
+    "queued", "running", "succeeded", "failed", "cancelled"
+]
+SemanticInventoryItemPhase = Literal[
+    "structure", "sample", "recommend", "complete"
+]
+SemanticInventoryTableName = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=512),
+]
+
+
+class SemanticInventoryJobRequest(BaseModel):
+    """Explicit user consent for a bounded source inventory job.
+
+    An empty table list means all relations in the captured metadata index. A
+    sampled run must stay explicitly bounded to user-selected relations.
+    """
+
+    locale: Literal["zh", "en"]
+    model_id: UUID | None = None
+    tables: list[SemanticInventoryTableName] = Field(default_factory=list)
+    depth: SemanticInventoryDepth
+
+    @model_validator(mode="after")
+    def validate_selection(self):
+        if len(self.tables) != len({table.casefold() for table in self.tables}):
+            raise ValueError("inventory tables must be unique")
+        if self.depth == "sampled" and not self.tables:
+            raise ValueError("sampled inventory requires explicit tables")
+        if self.depth == "sampled" and len(self.tables) > 512:
+            raise ValueError("sampled inventory accepts at most 512 explicit tables")
+        return self
+
+    model_config = {"extra": "forbid"}
+
+
+class SemanticInventoryJobProgress(BaseModel):
+    total: int = Field(..., ge=0)
+    queued: int = Field(..., ge=0)
+    running: int = Field(..., ge=0)
+    succeeded: int = Field(..., ge=0)
+    failed: int = Field(..., ge=0)
+    cancelled: int = Field(..., ge=0)
+
+
+class SemanticInventoryJobItemResponse(BaseModel):
+    id: UUID
+    ordinal: int = Field(..., ge=0)
+    table: str = Field(..., min_length=1, max_length=512, validation_alias="table_name")
+    status: SemanticInventoryItemStatus
+    phase: SemanticInventoryItemPhase
+    attempt_count: int = Field(..., ge=0)
+    retryable: bool
+    code: str | None = None
+    message: str | None = None
+    recommendation_batch_id: UUID | None = None
+    candidate_count: int = Field(..., ge=0)
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+    model_config = {"from_attributes": True, "populate_by_name": True}
+
+
+class SemanticInventoryJobResponse(BaseModel):
+    id: UUID
+    project_id: UUID
+    source_id: UUID
+    status: SemanticInventoryJobStatus
+    depth: SemanticInventoryDepth
+    locale: Literal["zh", "en"]
+    model_id: UUID | None = None
+    retryable: bool = False
+    candidate_count: int = Field(default=0, ge=0)
+    reviewable_count: int = Field(default=0, ge=0)
+    next_review_item: SemanticInventoryJobItemResponse | None = None
+    failed_item_preview: list[SemanticInventoryJobItemResponse] = Field(
+        default_factory=list
+    )
+    tables: list[str] = Field(default_factory=list)
+    progress: SemanticInventoryJobProgress
+    items: list[SemanticInventoryJobItemResponse] = Field(default_factory=list)
+    created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class SemanticInventoryJobItemPageResponse(BaseModel):
+    job_id: UUID
+    items: list[SemanticInventoryJobItemResponse] = Field(
+        default_factory=list,
+        max_length=100,
+    )
+    next_after_ordinal: int | None = Field(default=None, ge=0)
+    has_more: bool = False
+
+    model_config = {"extra": "forbid"}
+
+
+SemanticValidationJobStatus = Literal["queued", "running", "completed", "failed"]
+SemanticValidationItemStatus = Literal[
+    "queued", "running", "verified", "blocked", "failed"
+]
+
+
+class SemanticValidationProgress(BaseModel):
+    total: int = Field(..., ge=0)
+    queued: int = Field(..., ge=0)
+    running: int = Field(..., ge=0)
+    verified: int = Field(..., ge=0)
+    blocked: int = Field(..., ge=0)
+    failed: int = Field(..., ge=0)
+
+
+class SemanticValidationItemResponse(BaseModel):
+    id: UUID
+    entry_id: UUID
+    semantic_revision_id: UUID
+    definition_hash: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    status: SemanticValidationItemStatus
+    code: str | None = None
+    facts: dict[str, Any] = Field(default_factory=dict)
+    details: dict[str, Any] = Field(default_factory=dict)
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+class SemanticValidationJobResponse(BaseModel):
+    id: UUID
+    project_id: UUID
+    status: SemanticValidationJobStatus
+    progress: SemanticValidationProgress
+    items: list[SemanticValidationItemResponse]
+    created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
 
 
 class SemanticRevisionSnapshot(BaseModel):
+    scope_id: UUID | None = None
     key: str
     value: str
     entry_type: SemanticEntryType
@@ -828,6 +1293,8 @@ class AnalysisRunResponse(BaseModel):
 
 
 class ArtifactResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
     id: UUID
     project_id: UUID
     analysis_run_id: UUID
@@ -846,6 +1313,51 @@ class ArtifactResponse(BaseModel):
     technical_details: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
+
+
+class ReportDraftCurrentReportContext(BaseModel):
+    """Bounded context used to make a draft complement an existing report."""
+
+    title: str = Field(default="", max_length=200)
+    description: str = Field(default="", max_length=1200)
+    pages: list[
+        Annotated[
+            str,
+            StringConstraints(strip_whitespace=True, min_length=1, max_length=160),
+        ]
+    ] = Field(default_factory=list, max_length=30)
+    existing_artifact_ids: list[UUID] = Field(default_factory=list, max_length=200)
+    has_user_edits: bool = False
+
+    model_config = {"extra": "forbid"}
+
+
+class ReportDraftPlanRequest(BaseModel):
+    analysis_run_id: UUID
+    language: Literal["zh", "en"] = "zh"
+    current_report: ReportDraftCurrentReportContext | None = None
+
+    model_config = {"extra": "forbid"}
+
+
+class ReportDraftSectionResponse(BaseModel):
+    role: Literal["overview", "detail", "evidence"]
+    title: str = Field(..., min_length=1, max_length=160)
+    purpose: str = Field(..., min_length=1, max_length=400)
+    narrative: str | None = Field(default=None, max_length=800)
+    artifact_ids: list[UUID] = Field(default_factory=list, max_length=12)
+
+
+class ReportDraftPlanResponse(BaseModel):
+    title: str
+    description: str
+    overview_text: str | None = None
+    sections: list[ReportDraftSectionResponse] = Field(..., min_length=2, max_length=4)
+    selected_overview: list[UUID] = Field(default_factory=list, max_length=4)
+    selected_detail: list[UUID] = Field(default_factory=list, max_length=8)
+    selected_evidence: list[UUID] = Field(default_factory=list, max_length=6)
+    highlights: dict[UUID, str] = Field(default_factory=dict)
+    generated_by: Literal["ai", "fallback"] = "ai"
 
     model_config = {"from_attributes": True}
 
@@ -1193,6 +1705,30 @@ class StandingChangeBrief(BaseModel):
         return self
 
 
+StandingAttentionReasonCode = Literal[
+    "standing_playbook_unavailable",
+    "standing_playbook_changed",
+    "standing_playbook_sources_unbound",
+    "standing_source_pending_confirmation",
+    "standing_source_not_unique",
+    "standing_source_changed_since_baseline",
+    "standing_source_not_ready",
+    "standing_source_working_copy_missing",
+    "standing_source_schema_changed",
+    "standing_source_version_invalid",
+    "standing_source_recipe_changed_since_baseline",
+    "standing_semantic_definition_missing",
+    "standing_semantic_definition_inactive",
+    "standing_semantic_definition_changed_since_baseline",
+    "standing_relationship_definition_unavailable",
+    "standing_relationship_definition_changed",
+    "standing_project_input_unavailable",
+    "standing_in_flight_run_missing",
+    "standing_result_rejected",
+    "standing_execution_failed",
+]
+
+
 class StandingAnalysisResponse(BaseModel):
     schema_version: Literal[1] = 1
     id: str = Field(..., pattern=r"^standing_[0-9a-f]{20}$")
@@ -1212,6 +1748,8 @@ class StandingAnalysisResponse(BaseModel):
     last_run_id: UUID | None = None
     last_brief_artifact_id: UUID | None = None
     attention_reason: str | None = Field(default=None, min_length=1, max_length=1000)
+    attention_reason_code: StandingAttentionReasonCode | None = None
+    attention_reason_params: dict[str, str] = Field(default_factory=dict, max_length=4)
     created_at: datetime
     updated_at: datetime
 
@@ -1231,6 +1769,20 @@ class StandingAnalysisResponse(BaseModel):
             raise ValueError("attention_reason is only valid in needs_attention state")
         if self.attention_reason is not None and not self.attention_reason.strip():
             raise ValueError("attention_reason must not be blank")
+        if self.state != "needs_attention" and (
+            self.attention_reason_code is not None or self.attention_reason_params
+        ):
+            raise ValueError("attention reason metadata is only valid in needs_attention state")
+        if self.attention_reason_code is None and self.attention_reason_params:
+            raise ValueError("attention reason params require a reason code")
+        if any(
+            not key.strip()
+            or len(key) > 80
+            or not value.strip()
+            or len(value) > 255
+            for key, value in self.attention_reason_params.items()
+        ):
+            raise ValueError("attention reason params must be non-empty and bounded")
         if self.in_flight is not None and self.state != "active":
             raise ValueError("only an active standing analysis can hold an in-flight claim")
         if self.last_brief_artifact_id is not None and (
@@ -1299,6 +1851,8 @@ class StandingPrepareResponse(BaseModel):
     input_token: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     brief_artifact_id: UUID | None = None
     attention_reason: str | None = Field(default=None, min_length=1, max_length=1000)
+    attention_reason_code: StandingAttentionReasonCode | None = None
+    attention_reason_params: dict[str, str] = Field(default_factory=dict, max_length=4)
 
     model_config = {"extra": "forbid"}
 
@@ -1333,8 +1887,16 @@ class StandingPrepareResponse(BaseModel):
                 raise ValueError("needs_attention requires attention_reason")
             if self.attention_reason != self.standing_analysis.attention_reason:
                 raise ValueError("attention reason must match the standing analysis state")
-        elif self.attention_reason is not None:
-            raise ValueError("attention_reason is only valid for needs_attention")
+            if self.attention_reason_code != self.standing_analysis.attention_reason_code:
+                raise ValueError("attention reason code must match the standing analysis state")
+            if self.attention_reason_params != self.standing_analysis.attention_reason_params:
+                raise ValueError("attention reason params must match the standing analysis state")
+        elif (
+            self.attention_reason is not None
+            or self.attention_reason_code is not None
+            or self.attention_reason_params
+        ):
+            raise ValueError("attention reason fields are only valid for needs_attention")
         if self.outcome == "paused" and self.standing_analysis.state != "paused":
             raise ValueError("paused outcome requires a paused standing analysis")
         if self.outcome == "needs_attention" and self.standing_analysis.state != "needs_attention":
@@ -1508,9 +2070,7 @@ class AnalysisPlaybookStructuredQueryFilter(BaseModel):
         "is_null",
         "not_null",
     ] = "eq"
-    value: (
-        AnalysisPlaybookFilterScalar | list[AnalysisPlaybookFilterScalar] | None
-    ) = None
+    value: AnalysisPlaybookFilterScalar | list[AnalysisPlaybookFilterScalar] | None = None
 
     @model_validator(mode="after")
     def validate_filter_value(self):
@@ -1986,10 +2546,7 @@ class ProjectBundle(BaseModel):
                 raise ValueError("sanitation active head must reference the final revision")
             if history.head.operations != active_revision.operations:
                 raise ValueError("sanitation head operations do not match the active revision")
-            if (
-                active_revision.input_contract.get("fingerprint")
-                != history.head.input_fingerprint
-            ):
+            if active_revision.input_contract.get("fingerprint") != history.head.input_fingerprint:
                 raise ValueError("sanitation input fingerprint does not match the active revision")
             if (
                 active_revision.output_contract.get("fingerprint")

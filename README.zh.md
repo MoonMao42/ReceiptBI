@@ -8,13 +8,11 @@
 
 </div>
 
-![ReceiptBI](docs/images/chat.png)
-
 ## 功能特点
 
-- **对话式分析** — 用自然语言提问，AI 代理会自动为你查询、关联并分析数据
+- **对话式分析** — 用自然语言提问，由 ReceiptBI 安全地查询、关联并分析数据
 - **数据清洗与准备** — 提供可视化的文件清洗功能，非破坏性地处理类型和异常值
-- **业务语义层** — 随时间学习并锁定你的业务定义（如 GMV、活跃用户），保持查询准确
+- **可治理的业务语义** — 将已确认的业务背景、指标、维度和表关系放在它们真正适用的数据层级下
 - **可编辑报告** — 将对话分析结果转化为持久可验证的图表、指标和报告页面
 
 ## 工作原理
@@ -30,11 +28,31 @@ flowchart LR
     validate --> report["生成带证据支持的报告"]
 ```
 
-## 界面截图
+## 产品一览
 
-<!-- TODO: 启动项目后添加截图 -->
-<!-- ![数据源管理](docs/images/sources.png) -->
-<!-- ![报告视图](docs/images/report.png) -->
+### 从一个业务问题开始调查
+
+ReceiptBI 把问题、依据、发现、图表和后续调查放在同一个工作区里。
+
+![包含核心指标、关键发现和图表的数据调查报告](docs/images/zh/workspace-analysis.png)
+
+### 把调查结果整理成可编辑报表
+
+先选择调查并核对整理方案，再生成草稿；你已经手动编辑的报表内容不会被直接覆盖。
+
+![将一次调查智能整理为报表前的来源确认](docs/images/zh/report-organizing.png)
+
+### 预览并导出分页报表
+
+报表采用稳定的页面布局，让指标、图表和核查依据在打印或导出时仍然清楚。
+
+![多页报表的打印预览](docs/images/zh/report-print-preview.png)
+
+### 让业务定义留在它真正适用的数据下面
+
+业务背景按照“项目 → 数据来源 → 表”组织。只有进入已经确认的范围后，模型才能采用该层级的指标与维度，避免把其他表里的同名字段混在一起。
+
+![按数据表分层治理的业务语义](docs/images/zh/semantic-governance.png)
 
 ## 快速开始
 
@@ -126,4 +144,3 @@ MIT
 | 版本 | 基于 | 分支 |
 |------|------|------|
 | v2 | [gptme](https://github.com/ErikBjare/gptme) | [v2](https://github.com/MoonMao42/ReceiptBI/tree/v2) |
-| v1 | [open-interpreter](https://github.com/OpenInterpreter/open-interpreter) | [v1](https://github.com/MoonMao42/ReceiptBI/tree/v1) |

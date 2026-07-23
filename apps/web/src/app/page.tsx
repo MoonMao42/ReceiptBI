@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Sidebar } from "@/components/chat/Sidebar";
 import { ChatArea } from "@/components/chat/ChatArea";
 import { api } from "@/lib/api/client";
@@ -16,6 +17,10 @@ import type { AnalysisRunSummary } from "@/lib/types/api";
 
 export default function Home() {
   const router = useRouter();
+  const tSidebar = useTranslations("sidebar");
+  const tProjectDefaults = useTranslations("projectDefaults");
+  const initialProjectName = tProjectDefaults("initialName");
+  const initialProjectDescription = tProjectDefaults("initialDescription");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<{
     conversationId: string;
@@ -80,9 +85,12 @@ export default function Home() {
     };
     syncSidebar(desktop);
     desktop.addEventListener("change", syncSidebar);
-    void bootstrap();
+    void bootstrap({
+      name: initialProjectName,
+      description: initialProjectDescription,
+    });
     return () => desktop.removeEventListener("change", syncSidebar);
-  }, [bootstrap]);
+  }, [bootstrap, initialProjectDescription, initialProjectName]);
 
   useEffect(() => {
     if (!currentProjectId || isLoading || activeStreamId) return;
@@ -139,7 +147,7 @@ export default function Home() {
       {sidebarOpen && (
         <button
           type="button"
-          aria-label="关闭项目导航"
+          aria-label={tSidebar("closeNav")}
           onClick={() => setSidebarOpen(false)}
           className="fixed inset-0 z-30 bg-slate-950/25 md:hidden"
         />

@@ -14,18 +14,128 @@ export function createLocalId(kind: "page" | "block"): string {
   return `local-${kind}-${Date.now()}-${localSequence}`;
 }
 
-export const REPORT_BLOCK_OPTIONS: Array<{
+export const REPORT_BLOCK_TYPES: readonly ReportBlockType[] = [
+  "metric",
+  "chart",
+  "table",
+  "text",
+  "evidence",
+  "filter",
+];
+
+export interface ReportBlocksCopy {
+  labels: Record<ReportBlockType, string>;
+  descriptions: Record<ReportBlockType, string>;
+  genericBlock: string;
+  filterValuePlaceholder: string;
+  newPage: string;
+  evidenceStatusPassed: string;
+  evidenceStatusFailed: string;
+  evidenceStatusDefinitionOnly: string;
+  evidenceStatusReviewed: string;
+  validationRelationship: string;
+  validationApplication: string;
+  validationGoldenRegression: string;
+  validationAnalysis: string;
+  validationRows: (count: string) => string;
+  validationColumns: (count: number) => string;
+  businessAdjustment: (rule: string) => string;
+  businessAdjustmentReviewed: string;
+  correctionSummaryVerified: string;
+  correctionSummaryRelationshipVerified: string;
+  correctionSummaryDefinitionOnly: string;
+  correctionSummaryFailed: string;
+  metricFallback: string;
+  changePercent: (value: string) => string;
+  changeDelta: (value: string) => string;
+  changeLine: (values: {
+    metric: string;
+    before: string;
+    after: string;
+    change: string;
+  }) => string;
+  driverLine: (values: { group: string; change: string }) => string;
+  materialChange: string;
+  noMaterialChange: string;
+  mainDrivers: string;
+  groupFallback: string;
+  changedGroups: (count: number) => string;
+  evidencePreserved: string;
+  evidencePreservedDetail: string;
+  investigationSummary: string;
+}
+
+type ReportBlocksTranslationValues = Record<string, string | number>;
+type ReportBlocksTranslator = (
+  key: string,
+  values?: ReportBlocksTranslationValues
+) => string;
+
+export function createReportBlocksCopy(t: ReportBlocksTranslator): ReportBlocksCopy {
+  return {
+    labels: {
+      metric: t("labelMetric"),
+      chart: t("labelChart"),
+      table: t("labelTable"),
+      text: t("labelText"),
+      evidence: t("labelEvidence"),
+      filter: t("labelFilter"),
+    },
+    descriptions: {
+      metric: t("descriptionMetric"),
+      chart: t("descriptionChart"),
+      table: t("descriptionTable"),
+      text: t("descriptionText"),
+      evidence: t("descriptionEvidence"),
+      filter: t("descriptionFilter"),
+    },
+    genericBlock: t("genericBlock"),
+    filterValuePlaceholder: t("filterValuePlaceholder"),
+    newPage: t("newPage"),
+    evidenceStatusPassed: t("evidenceStatusPassed"),
+    evidenceStatusFailed: t("evidenceStatusFailed"),
+    evidenceStatusDefinitionOnly: t("evidenceStatusDefinitionOnly"),
+    evidenceStatusReviewed: t("evidenceStatusReviewed"),
+    validationRelationship: t("validationRelationship"),
+    validationApplication: t("validationApplication"),
+    validationGoldenRegression: t("validationGoldenRegression"),
+    validationAnalysis: t("validationAnalysis"),
+    validationRows: (count) => t("validationRows", { count }),
+    validationColumns: (count) => t("validationColumns", { count }),
+    businessAdjustment: (rule) => t("businessAdjustment", { rule }),
+    businessAdjustmentReviewed: t("businessAdjustmentReviewed"),
+    correctionSummaryVerified: t("correctionSummaryVerified"),
+    correctionSummaryRelationshipVerified: t("correctionSummaryRelationshipVerified"),
+    correctionSummaryDefinitionOnly: t("correctionSummaryDefinitionOnly"),
+    correctionSummaryFailed: t("correctionSummaryFailed"),
+    metricFallback: t("metricFallback"),
+    changePercent: (value) => t("changePercent", { value }),
+    changeDelta: (value) => t("changeDelta", { value }),
+    changeLine: ({ metric, before, after, change }) =>
+      t("changeLine", { metric, before, after, change }),
+    driverLine: ({ group, change }) => t("driverLine", { group, change }),
+    materialChange: t("materialChange"),
+    noMaterialChange: t("noMaterialChange"),
+    mainDrivers: t("mainDrivers"),
+    groupFallback: t("groupFallback"),
+    changedGroups: (count) => t("changedGroups", { count }),
+    evidencePreserved: t("evidencePreserved"),
+    evidencePreservedDetail: t("evidencePreservedDetail"),
+    investigationSummary: t("investigationSummary"),
+  };
+}
+
+export function reportBlockOptions(copy: ReportBlocksCopy): Array<{
   type: ReportBlockType;
   label: string;
   description: string;
-}> = [
-  { type: "metric", label: "指标", description: "突出一个重要数字" },
-  { type: "chart", label: "图表", description: "呈现趋势或对比" },
-  { type: "table", label: "表格", description: "展示明细或汇总" },
-  { type: "text", label: "文字", description: "记录结论和说明" },
-  { type: "evidence", label: "依据", description: "保留来源和判断依据" },
-  { type: "filter", label: "筛选", description: "控制报告中的数据范围" },
-];
+}> {
+  return REPORT_BLOCK_TYPES.map((type) => ({
+    type,
+    label: copy.labels[type],
+    description: copy.descriptions[type],
+  }));
+}
 
 export type ReportFilterOperator =
   | "contains"
@@ -42,13 +152,16 @@ export interface ActiveReportFilter {
   value: string;
 }
 
-export function blockTypeLabel(type: ReportBlockType): string {
-  return REPORT_BLOCK_OPTIONS.find((option) => option.type === type)?.label || "区块";
+export function blockTypeLabel(type: ReportBlockType, copy: ReportBlocksCopy): string {
+  return copy.labels[type] || copy.genericBlock;
 }
 
 function defaultLayout(type: ReportBlockType): ReportBlockLayout {
-  if (type === "metric" || type === "filter") return { x: 0, y: 0, w: 4, h: 2 };
-  if (type === "text" || type === "evidence") return { x: 0, y: 0, w: 6, h: 3 };
+  if (type === "metric") return { x: 0, y: 0, w: 4, h: 2 };
+  if (type === "filter") return { x: 0, y: 0, w: 12, h: 3 };
+  if (type === "table") return { x: 0, y: 0, w: 12, h: 6 };
+  if (type === "evidence") return { x: 0, y: 0, w: 12, h: 4 };
+  if (type === "text") return { x: 0, y: 0, w: 12, h: 3 };
   return { x: 0, y: 0, w: 6, h: 4 };
 }
 
@@ -60,7 +173,10 @@ function defaultContent(type: ReportBlockType): Record<string, unknown> {
   return { rows: [] };
 }
 
-function defaultConfig(type: ReportBlockType): Record<string, unknown> {
+function defaultConfig(
+  type: ReportBlockType,
+  copy: ReportBlocksCopy
+): Record<string, unknown> {
   if (type === "chart") {
     return {
       chart_type: "bar",
@@ -75,23 +191,26 @@ function defaultConfig(type: ReportBlockType): Record<string, unknown> {
     return {
       field: "",
       operator: "contains",
-      placeholder: "输入筛选值",
+      placeholder: copy.filterValuePlaceholder,
     };
   }
   return {};
 }
 
-export function createManualBlock(type: ReportBlockType): ReportBlock {
+export function createManualBlock(
+  type: ReportBlockType,
+  copy: ReportBlocksCopy
+): ReportBlock {
   return {
     id: createLocalId("block"),
     block_type: type,
-    title: blockTypeLabel(type),
+    title: blockTypeLabel(type, copy),
     order_index: 0,
     source_kind: "manual",
     analysis_run_id: null,
     artifact_id: null,
     content: defaultContent(type),
-    config: defaultConfig(type),
+    config: defaultConfig(type, copy),
     layout: defaultLayout(type),
   };
 }
@@ -121,7 +240,10 @@ export function applyReportBlockUpdates(
   return next;
 }
 
-export function createReportPage(title = "新页面", orderIndex = 0): ReportPage {
+export function createReportPage(
+  title: string,
+  orderIndex = 0
+): ReportPage {
   return {
     id: createLocalId("page"),
     title,
@@ -136,8 +258,17 @@ export function reflowBlocks(blocks: ReportBlock[]): ReportBlock[] {
   let y = 0;
   let rowHeight = 1;
   return blocks.map((block, orderIndex) => {
-    const w = Math.max(3, Math.min(12, Math.round(block.layout.w || 6)));
-    const h = Math.max(2, Math.min(8, Math.round(block.layout.h || 3)));
+    const requestedWidth = Math.max(3, Math.min(12, Math.round(block.layout.w || 6)));
+    const w = block.block_type === "table" ? 12 : requestedWidth;
+    const minimumHeight =
+      block.block_type === "table"
+        ? 6
+        : block.block_type === "chart" || block.block_type === "evidence"
+          ? 4
+          : block.block_type === "filter"
+            ? 3
+            : 2;
+    const h = Math.max(minimumHeight, Math.min(8, Math.round(block.layout.h || 3)));
     if (x > 0 && x + w > 12) {
       x = 0;
       y += rowHeight;
@@ -175,7 +306,7 @@ function contentRows(
   return null;
 }
 
-export function reportFilterFields(blocks: ReportBlock[]): string[] {
+export function reportFilterFields(blocks: ReportBlock[], locale: string): string[] {
   const fields = new Set<string>();
   for (const block of blocks) {
     if (block.block_type !== "chart" && block.block_type !== "table") continue;
@@ -184,7 +315,7 @@ export function reportFilterFields(blocks: ReportBlock[]): string[] {
       Object.keys(row).forEach((field) => fields.add(field));
     }
   }
-  return [...fields].sort((left, right) => left.localeCompare(right, "zh-CN"));
+  return [...fields].sort((left, right) => left.localeCompare(right, locale));
 }
 
 function normalizedComparable(value: unknown): string {
@@ -283,38 +414,67 @@ function artifactBlockType(kind: AnalysisArtifact["kind"]): ReportBlockType {
   return "text";
 }
 
-function evidenceStatus(value: unknown): string {
-  if (value === "verified" || value === "passed" || value === "success") return "已通过";
-  if (value === "failed" || value === "rejected") return "未通过";
-  if (value === "definition_only") return "已记录，尚待验证";
-  return "已核对";
+function evidenceStatus(value: unknown, copy: ReportBlocksCopy): string {
+  if (value === "verified" || value === "passed" || value === "success") {
+    return copy.evidenceStatusPassed;
+  }
+  if (value === "failed" || value === "rejected") return copy.evidenceStatusFailed;
+  if (value === "definition_only") return copy.evidenceStatusDefinitionOnly;
+  return copy.evidenceStatusReviewed;
 }
 
-function validationLabel(item: Record<string, unknown>): string {
-  if (typeof item.purpose === "string" && item.purpose.trim()) return item.purpose.trim();
-  if (item.kind === "relationship_validation") return "数据关联已核对";
-  if (item.kind === "relationship_application") return "数据关联已用于本次分析";
-  if (item.kind === "golden_regression_validation") return "关键结果已回归核对";
-  return "分析结果已核对";
+function validationLabel(
+  item: Record<string, unknown>,
+  copy: ReportBlocksCopy
+): string {
+  if (item.kind === "relationship_validation") return copy.validationRelationship;
+  if (item.kind === "relationship_application") return copy.validationApplication;
+  if (item.kind === "golden_regression_validation") {
+    return copy.validationGoldenRegression;
+  }
+  return copy.validationAnalysis;
 }
 
-function validationDetail(item: Record<string, unknown>): string {
+function validationDetail(
+  item: Record<string, unknown>,
+  copy: ReportBlocksCopy,
+  locale: string
+): string {
   const profile = record(item.profile);
   const rowCount = profile?.returned_rows ?? profile?.materialized_rows ?? profile?.rows;
-  if (typeof rowCount === "number") return `${rowCount.toLocaleString("zh-CN")} 行数据已核对`;
-  if (Array.isArray(profile?.columns) && profile.columns.length) {
-    return `${profile.columns.length} 个字段已核对`;
+  if (typeof rowCount === "number") {
+    return copy.validationRows(rowCount.toLocaleString(locale));
   }
-  return evidenceStatus(item.status);
+  if (Array.isArray(profile?.columns) && profile.columns.length) {
+    return copy.validationColumns(profile.columns.length);
+  }
+  return evidenceStatus(item.status, copy);
 }
 
-function humanEvidenceItems(payload: Record<string, unknown>): Record<string, unknown>[] {
+function isTechnicalEvidenceText(value: string): boolean {
+  return (
+    /\b(sql|python|schema|json|tool|agent|token|api|exception|traceback|validation|binding)\b/i.test(
+      value
+    ) ||
+    /\b[a-z][a-z0-9]*_[a-z0-9_]+\b/i.test(value) ||
+    /(字段绑定|内部状态|错误码|异常堆栈|查询执行|验证任务)/u.test(value)
+  );
+}
+
+function humanEvidenceItems(
+  payload: Record<string, unknown>,
+  copy: ReportBlocksCopy,
+  locale: string
+): Record<string, unknown>[] {
   const items: Record<string, unknown>[] = [];
   if (Array.isArray(payload.validations)) {
     for (const candidate of payload.validations) {
       const item = record(candidate);
       if (!item) continue;
-      items.push({ label: validationLabel(item), text: validationDetail(item) });
+      items.push({
+        label: validationLabel(item, copy),
+        text: validationDetail(item, copy, locale),
+      });
     }
   }
   if (Array.isArray(payload.correction_applications)) {
@@ -324,12 +484,9 @@ function humanEvidenceItems(payload: Record<string, unknown>): Record<string, un
       items.push({
         label:
           typeof item.rule_value === "string" && item.rule_value.trim()
-            ? `业务调整：${item.rule_value.trim()}`
-            : "业务调整已核对",
-        text:
-          typeof item.summary === "string" && item.summary.trim()
-            ? item.summary.trim()
-            : evidenceStatus(item.status),
+            ? copy.businessAdjustment(item.rule_value.trim())
+            : copy.businessAdjustmentReviewed,
+        text: correctionApplicationSummary(item, copy, locale),
       });
     }
   }
@@ -338,53 +495,106 @@ function humanEvidenceItems(payload: Record<string, unknown>): Record<string, un
     if (!Array.isArray(values)) continue;
     for (const candidate of values) {
       if (typeof candidate === "string" && candidate.trim()) {
-        items.push({ label: candidate.trim(), text: "已核对" });
+        const label = candidate.trim();
+        if (!isTechnicalEvidenceText(label)) {
+          items.push({ label, text: copy.evidenceStatusReviewed });
+        }
         continue;
       }
       const item = record(candidate);
       if (!item) continue;
       const label = firstValue(item, ["label", "title", "summary", "message", "purpose"]);
       if (typeof label === "string" && label.trim()) {
-        items.push({ label: label.trim(), text: evidenceStatus(item.status) });
+        const businessLabel = label.trim();
+        if (!isTechnicalEvidenceText(businessLabel)) {
+          items.push({
+            label: businessLabel,
+            text: evidenceStatus(item.status, copy),
+          });
+        }
       }
     }
   }
   return items;
 }
 
-function formatChangeNumber(value: unknown): string {
+function correctionApplicationSummary(
+  item: Record<string, unknown>,
+  copy: ReportBlocksCopy,
+  locale: string
+): string {
+  switch (item.summary_code) {
+    case "correction_verified":
+      return copy.correctionSummaryVerified;
+    case "correction_relationship_verified":
+      return copy.correctionSummaryRelationshipVerified;
+    case "correction_definition_only":
+      return copy.correctionSummaryDefinitionOnly;
+    case "correction_failed":
+      return copy.correctionSummaryFailed;
+  }
+
+  const summary = typeof item.summary === "string" ? item.summary.trim() : "";
+  if (summary) {
+    const containsCjk = /[\u3400-\u9fff]/u.test(summary);
+    const isEnglish = locale.toLowerCase().startsWith("en");
+    const isTechnical =
+      /\b(sql|python|schema|json|tool|agent|token|api|exception|traceback)\b/i.test(
+        summary
+      );
+    if (isEnglish !== containsCjk && !isTechnical) return summary;
+  }
+  return evidenceStatus(item.status, copy);
+}
+
+function formatChangeNumber(value: unknown, locale: string): string {
   return typeof value === "number" && Number.isFinite(value)
-    ? new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(value)
+    ? new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(value)
     : String(value ?? "—");
 }
 
-function changeLine(change: Record<string, unknown>): string {
-  const metric = typeof change.metric === "string" ? change.metric : "指标";
+function changeLine(
+  change: Record<string, unknown>,
+  copy: ReportBlocksCopy,
+  locale: string
+): string {
+  const metric = typeof change.metric === "string" ? change.metric : copy.metricFallback;
   const delta = typeof change.delta === "number" ? change.delta : null;
   const percent = typeof change.percent_change === "number" ? change.percent_change : null;
   const suffix =
     percent !== null
-      ? `，${percent >= 0 ? "+" : ""}${(percent * 100).toFixed(1)}%`
+      ? copy.changePercent(`${percent >= 0 ? "+" : ""}${(percent * 100).toFixed(1)}%`)
       : delta !== null
-        ? `，变化 ${delta >= 0 ? "+" : ""}${formatChangeNumber(delta)}`
+        ? copy.changeDelta(
+            `${delta >= 0 ? "+" : ""}${formatChangeNumber(delta, locale)}`
+          )
         : "";
-  return `${metric}：${formatChangeNumber(change.before)} → ${formatChangeNumber(change.after)}${suffix}`;
+  return copy.changeLine({
+    metric,
+    before: formatChangeNumber(change.before, locale),
+    after: formatChangeNumber(change.after, locale),
+    change: suffix,
+  });
 }
 
-function changeBriefText(payload: Record<string, unknown>): string {
+function changeBriefText(
+  payload: Record<string, unknown>,
+  copy: ReportBlocksCopy,
+  locale: string
+): string {
   const lines = [
     payload.status === "material_change"
-      ? "发现值得关注的变化。"
-      : "本次变化未超过关注范围。",
+      ? copy.materialChange
+      : copy.noMaterialChange,
   ];
   if (Array.isArray(payload.overall)) {
     for (const candidate of payload.overall.slice(0, 4)) {
       const item = record(candidate);
-      if (item) lines.push(changeLine(item));
+      if (item) lines.push(changeLine(item, copy, locale));
     }
   }
   if (Array.isArray(payload.top_drivers) && payload.top_drivers.length) {
-    lines.push("主要变化来源：");
+    lines.push(copy.mainDrivers);
     for (const candidate of payload.top_drivers.slice(0, 5)) {
       const driver = record(candidate);
       const key = record(driver?.key);
@@ -392,20 +602,29 @@ function changeBriefText(payload: Record<string, unknown>): string {
       if (!driver || !change) continue;
       const keyLabel = key
         ? Object.values(key).map((value) => String(value)).join(" · ")
-        : "分组";
-      lines.push(`${keyLabel}：${changeLine(change)}`);
+        : copy.groupFallback;
+      lines.push(
+        copy.driverLine({
+          group: keyLabel,
+          change: changeLine(change, copy, locale),
+        })
+      );
     }
   } else if (Array.isArray(payload.by_key) && payload.by_key.length) {
-    lines.push(`${payload.by_key.length} 个分组发生变化。`);
+    lines.push(copy.changedGroups(payload.by_key.length));
   }
   return lines.join("\n");
 }
 
-function artifactContent(artifact: AnalysisArtifact): Record<string, unknown> {
+function artifactContent(
+  artifact: AnalysisArtifact,
+  copy: ReportBlocksCopy,
+  locale: string
+): Record<string, unknown> {
   const payload = { ...artifact.payload };
   const type = artifactBlockType(artifact.kind);
   if (artifact.kind === "change_brief") {
-    return { ...payload, text: changeBriefText(payload) };
+    return { ...payload, text: changeBriefText(payload, copy, locale) };
   }
   if (artifact.kind === "chart") {
     if (payload.format === "png" && typeof payload.relative_path === "string") {
@@ -433,7 +652,8 @@ function artifactContent(artifact: AnalysisArtifact): Record<string, unknown> {
     };
   }
   if (type === "text" || type === "evidence") {
-    const evidenceItems = type === "evidence" ? humanEvidenceItems(payload) : [];
+    const evidenceItems =
+      type === "evidence" ? humanEvidenceItems(payload, copy, locale) : [];
     return {
       ...payload,
       ...(type === "evidence"
@@ -442,8 +662,8 @@ function artifactContent(artifact: AnalysisArtifact): Record<string, unknown> {
               ? evidenceItems
               : [
                   {
-                    label: "调查依据已保留",
-                    text: "可在原调查中查看完整核对记录",
+                    label: copy.evidencePreserved,
+                    text: copy.evidencePreservedDetail,
                   },
                 ],
           }
@@ -456,7 +676,11 @@ function artifactContent(artifact: AnalysisArtifact): Record<string, unknown> {
   return payload;
 }
 
-export function artifactToReportBlock(artifact: AnalysisArtifact): ReportBlock {
+export function artifactToReportBlock(
+  artifact: AnalysisArtifact,
+  copy: ReportBlocksCopy,
+  locale: string
+): ReportBlock {
   const type = artifactBlockType(artifact.kind);
   const chart =
     artifact.kind === "chart" ? normalizeChartSpec(artifact.payload.chart) : null;
@@ -489,12 +713,12 @@ export function artifactToReportBlock(artifact: AnalysisArtifact): ReportBlock {
       (typeof chart?.title === "string" && chart.title.trim()) ||
       (typeof legacyChart?.title === "string" && legacyChart.title.trim()) ||
       artifact.title ||
-      blockTypeLabel(type),
+      blockTypeLabel(type, copy),
     order_index: 0,
     source_kind: "artifact",
     analysis_run_id: artifact.analysis_run_id,
     artifact_id: artifact.id,
-    content: artifactContent(artifact),
+    content: artifactContent(artifact, copy, locale),
     config:
       artifact.kind === "chart"
         ? {
@@ -513,16 +737,19 @@ export function artifactToReportBlock(artifact: AnalysisArtifact): ReportBlock {
                 }
               : {}),
           }
-        : defaultConfig(type),
+        : defaultConfig(type, copy),
     layout: defaultLayout(type),
   };
 }
 
-export function analysisSummaryToReportBlock(run: AnalysisRunSummary): ReportBlock {
+export function analysisSummaryToReportBlock(
+  run: AnalysisRunSummary,
+  copy: ReportBlocksCopy
+): ReportBlock {
   return {
     id: createLocalId("block"),
     block_type: "text",
-    title: run.report.title?.trim() || run.query.trim() || "调查摘要",
+    title: run.report.title?.trim() || run.query.trim() || copy.investigationSummary,
     order_index: 0,
     source_kind: "analysis_run",
     analysis_run_id: run.id,

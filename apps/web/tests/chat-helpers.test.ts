@@ -34,6 +34,8 @@ describe("chat helpers", () => {
     const progressMessages = applyStreamEvent(buildMessages(), {
       type: "progress",
       data: {
+        stage: "investigating",
+        step: "read_files",
         message: "SQL ready",
         analysis_run_id: "run-a",
         project_id: "project-a",
@@ -84,6 +86,7 @@ describe("chat helpers", () => {
       analysisRunId: "run-a",
       projectId: "project-a",
       analysisState: "investigating",
+      thinkingStage: "read_files",
       correctionApplication: {
         correction_id: "correction-a",
         status: "verified",
@@ -111,7 +114,7 @@ describe("chat helpers", () => {
     );
 
     expect(updated[1].status).toBe("old task stopped");
-    expect(updated[3].status).toBe("Analyzing...");
+    expect(updated[3].status).toBeUndefined();
   });
 
   it("applies python and visualization payloads incrementally", () => {

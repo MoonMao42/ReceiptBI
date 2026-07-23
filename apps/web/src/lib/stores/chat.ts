@@ -18,6 +18,7 @@ import {
   markStoppedMessage,
 } from "@/lib/stores/chat-helpers";
 import type { ChatMessage } from "@/lib/types/chat";
+import { runtimeMessage } from "@/i18n/runtime";
 
 export interface AnalysisSettlement {
   id: string;
@@ -153,6 +154,7 @@ interface ChatState {
   conversationLoadError: string | null;
   abortController: AbortController | null;
   activeStreamId: string | null;
+  stopRequestedStreamId: string | null;
   lastConnectionId: string | null;
   lastModelId: string | null;
   lastContextRounds: number | null;
@@ -220,6 +222,7 @@ function settleActiveStream(
     isLoading: false,
     abortController: null,
     activeStreamId: null,
+    stopRequestedStreamId: null,
     pendingAnalysisSettlements: [
       ...state.pendingAnalysisSettlements,
       {
@@ -241,6 +244,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   conversationLoadError: null,
   abortController: null,
   activeStreamId: null,
+  stopRequestedStreamId: null,
   lastConnectionId: null,
   lastModelId: null,
   lastContextRounds: null,
@@ -262,7 +266,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     semanticValidationSelection?: readonly SemanticValidationSelection[] | null
   ) => {
     if (get().isLoading || get().activeStreamId) {
-      throw new Error("已有一项调查正在进行，请完成或停止后再开始新的调查");
+      throw new Error(runtimeMessage("analysisAlreadyRunning"));
     }
 
     if (connectionId !== undefined) set({ lastConnectionId: connectionId });
@@ -282,7 +286,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       project_id: projectId || undefined,
     };
 
-    const streamId = `stream-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const streamId = `stream-${
+      globalThis.crypto?.randomUUID?.() ||
+      `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    }`;
     const originalQuery = originalQueryOverride || query;
     const preservedValidationSelection = semanticValidationSelection?.map((item) => ({
       entry_id: item.entry_id,
@@ -301,12 +308,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ],
       isLoading: true,
       activeStreamId: streamId,
+      stopRequestedStreamId: null,
     }));
 
     try {
       const params: Record<string, string> = {
         query,
         language: language || get().lastLanguage || "zh",
+        client_stream_id: streamId,
       };
 
       if (currentConversationId) params.conversation_id = currentConversationId;
@@ -380,14 +389,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }));
       }
 
-      throw new Error("分析连接意外中断，未收到完成状态，请重试。");
+      throw new Error(runtimeMessage("analysisConnectionInterrupted"));
     } catch (error: unknown) {
       if (error instanceof DOMException && error.name === "AbortError") {
         set((state) =>
           settleActiveStream(
             state,
             streamId,
-            finalizeStreamMessage(state.messages, streamId),
+            markStoppedMessage(state.messages, streamId),
             projectId || null,
             "stopped"
           )
@@ -409,7 +418,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   resumePreparedRun: async (prepared, modelId, contextRounds, language) => {
     if (get().isLoading || get().activeStreamId) {
-      throw new Error("已有一项调查正在进行，请完成或停止后再检查变化");
+      throw new Error(runtimeMessage("analysisAlreadyRunningForCheck"));
     }
     set({
       messages: [],
@@ -454,7 +463,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       live.currentConversationId !== originConversationId ||
       (originProjectId && live.lastProjectId && live.lastProjectId !== originProjectId)
     ) {
-      throw new Error("确认已经保存；你已切换到其他调查，请回到原调查后继续");
+      throw new Error(runtimeMessage("confirmationSavedElsewhere"));
     }
     const state = get();
     const originalQuery = state.messages.find(
@@ -488,33 +497,57 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   stopGeneration: () => {
-    const { abortController, currentConversationId, activeStreamId } = get();
+    const {
+      abortController,
+      currentConversationId,
+      activeStreamId,
+      stopRequestedStreamId,
+    } = get();
+    if (!activeStreamId || stopRequestedStreamId === activeStreamId) return;
 
-    if (currentConversationId) {
-      void api.post("/api/v1/chat/stop", { conversation_id: currentConversationId });
-      if (abortController) {
-        window.setTimeout(() => abortController.abort(), 3_000);
-      }
-    } else if (abortController) {
-      abortController.abort();
+    // A stop is a request, not a terminal result. Keep the stream active until
+    // the server confirms cancellation (or the bounded fallback aborts it), so
+    // a late successful completion cannot be overwritten as "stopped".
+    set({ stopRequestedStreamId: activeStreamId });
+
+    if (!currentConversationId) {
+      abortController?.abort();
+      return;
     }
 
-    if (!activeStreamId) return;
-    set((state) =>
-      settleActiveStream(
-        state,
-        activeStreamId,
-        markStoppedMessage(state.messages, activeStreamId),
-        state.lastProjectId,
-        "stopped"
-      )
-    );
+    const abortIfStillStopping = () => {
+      if (!abortController) return;
+      window.setTimeout(() => {
+        const current = get();
+        if (
+          current.activeStreamId === activeStreamId &&
+          current.stopRequestedStreamId === activeStreamId &&
+          current.abortController === abortController
+        ) {
+          abortController.abort();
+        }
+      }, 3_000);
+    };
+
+    // The POST can be delayed or can race with stream registration. Start the
+    // bounded client fallback now; its identity guards make it harmless if a
+    // terminal event wins first or a newer investigation starts.
+    abortIfStillStopping();
+    void api
+      .post("/api/v1/chat/stop", {
+        conversation_id: currentConversationId,
+        client_stream_id: activeStreamId,
+      })
+      .catch(() => {
+        // The guarded AbortController fallback remains responsible for ending
+        // this exact client stream when the acknowledgement is unavailable.
+      });
   },
 
   setCurrentConversation: (id: string, expectedProjectId?: string | null) => {
     const safeConversationId = normalizeConversationId(id);
     if (!safeConversationId) {
-      set({ conversationLoadError: "这份调查记录的标识无效，已停止恢复。" });
+      set({ conversationLoadError: runtimeMessage("invalidConversationRecord") });
       return;
     }
     const { abortController, currentConversationId, isLoading, activeStreamId } = get();
@@ -523,7 +556,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
     if (abortController) {
       if (currentConversationId) {
-        void api.post("/api/v1/chat/stop", { conversation_id: currentConversationId });
+        void api.post("/api/v1/chat/stop", {
+          conversation_id: currentConversationId,
+          ...(activeStreamId ? { client_stream_id: activeStreamId } : {}),
+        });
       }
       abortController.abort();
     }
@@ -536,6 +572,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       conversationLoadError: null,
       abortController: null,
       activeStreamId: null,
+      stopRequestedStreamId: null,
       ...(expectedProjectId ? { lastProjectId: expectedProjectId } : {}),
     });
     void get().loadConversation(safeConversationId, expectedProjectId);
@@ -547,10 +584,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       currentConversationId,
       currentConversationMeta,
       lastProjectId,
+      activeStreamId,
     } = get();
     if (abortController) {
       if (currentConversationId) {
-        void api.post("/api/v1/chat/stop", { conversation_id: currentConversationId });
+        void api.post("/api/v1/chat/stop", {
+          conversation_id: currentConversationId,
+          ...(activeStreamId ? { client_stream_id: activeStreamId } : {}),
+        });
       }
       abortController.abort();
     }
@@ -563,6 +604,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       conversationLoadError: null,
       abortController: null,
       activeStreamId: null,
+      stopRequestedStreamId: null,
     });
     if (options?.forget !== false) {
       const projectId =
@@ -595,7 +637,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           currentConversationId: null,
           currentConversationMeta: null,
           isConversationLoading: false,
-          conversationLoadError: "这份调查记录不属于当前项目，已停止恢复。",
+          conversationLoadError: runtimeMessage("conversationProjectMismatch"),
         });
         return;
       }
@@ -639,7 +681,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (get().currentConversationId !== id) return;
       set({
         isConversationLoading: false,
-        conversationLoadError: "这份调查记录暂时无法打开，请稍后重试。",
+        conversationLoadError: runtimeMessage("conversationOpenFailed"),
       });
     }
   },

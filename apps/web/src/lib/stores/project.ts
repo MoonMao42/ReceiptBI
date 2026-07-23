@@ -1,11 +1,17 @@
 "use client";
 
 import { create } from "zustand";
+import { runtimeMessage } from "@/i18n/runtime";
 import { api } from "@/lib/api/client";
 import {
   migrateProjectStorage,
   PROJECT_STORAGE_KEY,
 } from "@/lib/storage/legacy";
+import {
+  getErrorHttpStatus,
+  getUserFacingErrorMessage,
+  UserFacingError,
+} from "@/lib/types/api";
 import type {
   PreflightReport,
   Project,
@@ -22,6 +28,11 @@ import type {
 } from "@/lib/types/api";
 
 let refreshGeneration = 0;
+
+interface ProjectBootstrapDefaults {
+  name: string;
+  description: string;
+}
 
 export function storedProjectId(storage?: Storage): string | null {
   try {
@@ -69,8 +80,8 @@ interface ProjectState {
     kind: "profile" | "reorganize" | "accept_replacement" | "keep_trusted" | "remove";
   } | null;
   error: string | null;
-  bootstrap: () => Promise<void>;
-  createProject: (name?: string) => Promise<Project>;
+  bootstrap: (defaults: ProjectBootstrapDefaults) => Promise<void>;
+  createProject: (name: string) => Promise<Project>;
   renameProject: (id: string, name: string) => Promise<Project>;
   selectProject: (id: string) => Promise<void>;
   refreshCurrent: () => Promise<void>;
@@ -133,27 +144,7 @@ interface ProjectState {
 }
 
 function messageFrom(error: unknown): string {
-  if (typeof error === "object" && error && "response" in error) {
-    const response = error.response;
-    if (typeof response === "object" && response && "data" in response) {
-      const data = response.data;
-      if (typeof data === "object" && data) {
-        if ("detail" in data && typeof data.detail === "string") return data.detail;
-        if ("message" in data && typeof data.message === "string") return data.message;
-      }
-    }
-  }
-  if (typeof error === "object" && error && "message" in error) {
-    return String(error.message);
-  }
-  return "数据准备失败，请稍后重试";
-}
-
-function responseStatus(error: unknown): number | null {
-  if (typeof error !== "object" || !error || !("response" in error)) return null;
-  const response = error.response;
-  if (typeof response !== "object" || !response || !("status" in response)) return null;
-  return typeof response.status === "number" ? response.status : null;
+  return getUserFacingErrorMessage(error, runtimeMessage("dataPreparationFailed"));
 }
 
 interface SemanticKnowledgeSummary {
@@ -269,7 +260,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   sourceAction: null,
   error: null,
 
-  bootstrap: async () => {
+  bootstrap: async (defaults) => {
     if (get().isBootstrapping) return;
     set({ isBootstrapping: true, error: null });
     try {
@@ -277,8 +268,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       let projects = response.data.data as Project[];
       if (!projects.length) {
         const created = await api.post("/api/v1/projects", {
-          name: "我的分析项目",
-          description: "订单、门店和业务口径都保存在这里",
+          name: defaults.name,
+          description: defaults.description,
         });
         projects = [created.data.data as Project];
       }
@@ -295,7 +286,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
   },
 
-  createProject: async (name = "新的分析项目") => {
+  createProject: async (name) => {
     const response = await api.post("/api/v1/projects", { name });
     const project = response.data.data as Project;
     set((state) => ({ projects: [project, ...state.projects] }));
@@ -400,7 +391,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   loadRecipeRevisions: async (id) => {
     const projectId = get().currentProjectId;
-    if (!projectId) throw new Error("当前没有可查看的项目");
+    if (!projectId) throw new UserFacingError(runtimeMessage("noProjectToView"));
     const cached = get().recipeRevisionsByRecipe[id];
     if (cached) return cached;
     if (get().recipeRevisionLoadingByRecipe[id]) return [];
@@ -434,7 +425,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         set((state) => ({
           recipeRevisionErrorByRecipe: {
             ...state.recipeRevisionErrorByRecipe,
-            [id]: "整理方法的修改记录暂时无法加载，请重试。",
+            [id]: runtimeMessage("recipeHistoryLoadFailed"),
           },
         }));
       }
@@ -453,10 +444,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   restoreRecipeRevision: async (id, revisionId) => {
     const projectId = get().currentProjectId;
-    if (!projectId) throw new Error("当前没有可更新的项目");
+    if (!projectId) throw new UserFacingError(runtimeMessage("noProjectToUpdate"));
     const recipe = get().recipes.find((item) => item.id === id);
     if (!recipe?.active_revision_id) {
-      throw new Error("这套整理方法的修改记录还没有准备好，请刷新后重试。");
+      throw new UserFacingError(runtimeMessage("recipeHistoryNotReady"));
     }
     set((state) => ({
       recipeRevisionRestoringByRecipe: {
@@ -489,13 +480,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       }
       return restored;
     } catch (error) {
-      const status = responseStatus(error);
+      const status = getErrorHttpStatus(error);
       const message =
         status === 409
-          ? "整理方法刚刚有了新修改，刷新后再选择要恢复的版本。"
+          ? runtimeMessage("recipeChangedBeforeRestore")
           : status === 404
-            ? "这个历史版本已经不可用，请刷新后重新选择。"
-            : "这次恢复没有完成，请稍后重试。";
+            ? runtimeMessage("recipeRevisionUnavailable")
+            : runtimeMessage("recipeRestoreFailed");
       if (get().currentProjectId === projectId) {
         set((state) => ({
           recipeRevisionErrorByRecipe: {
@@ -504,7 +495,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           },
         }));
       }
-      throw new Error(message);
+      throw new UserFacingError(message);
     } finally {
       if (get().currentProjectId === projectId) {
         set((state) => ({
@@ -519,7 +510,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   previewRecipeTemplate: async (templateId, sourceId) => {
     const projectId = get().currentProjectId;
-    if (!projectId) throw new Error("当前没有可整理的项目");
+    if (!projectId) throw new UserFacingError(runtimeMessage("noProjectToClean"));
     set({
       recipeTemplateAction: { templateId, kind: "preview" },
       error: null,
@@ -557,7 +548,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const projectId = get().currentProjectId;
     const preview = get().recipeTemplatePreviewById[templateId];
     if (!projectId || !preview) {
-      throw new Error("请先查看这套整理方法会带来什么变化");
+      throw new UserFacingError(runtimeMessage("previewRecipeFirst"));
     }
     set({
       recipeTemplateAction: { templateId, kind: "bind" },
@@ -606,7 +597,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   previewSourceCleaning: async (sourceId, operations) => {
     const projectId = get().currentProjectId;
-    if (!projectId) throw new Error("当前没有可整理的项目");
+    if (!projectId) throw new UserFacingError(runtimeMessage("noProjectToClean"));
     set({
       cleaningAction: { sourceId, kind: "preview" },
       error: null,
@@ -632,7 +623,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return preview;
     } catch (error) {
       if (get().currentProjectId === projectId) {
-        set({ error: "暂时无法预览整理结果，请重试。" });
+        set({ error: runtimeMessage("cleaningPreviewFailed") });
       }
       throw error;
     } finally {
@@ -659,7 +650,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const projectId = get().currentProjectId;
     const preview = get().cleaningPreviewBySource[sourceId];
     if (!projectId || !preview) {
-      throw new Error("请先预览整理后的变化");
+      throw new UserFacingError(runtimeMessage("previewCleaningFirst"));
     }
     set({
       cleaningAction: { sourceId, kind: "apply" },
@@ -688,9 +679,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         if (get().currentProjectId === projectId) {
           set({
             error:
-              responseStatus(error) === 409 || responseStatus(error) === 422
-                ? "数据刚刚发生了变化，请重新预览后再应用。"
-                : "暂时无法应用这次整理，请重试。",
+              getErrorHttpStatus(error) === 409 || getErrorHttpStatus(error) === 422
+                ? runtimeMessage("sourceChangedBeforeApply")
+                : runtimeMessage("cleaningApplyFailed"),
           });
         }
         throw error;
@@ -719,7 +710,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   loadKnowledgeRevisions: async (id) => {
     const projectId = get().currentProjectId;
-    if (!projectId) throw new Error("当前没有可查看的项目");
+    if (!projectId) throw new UserFacingError(runtimeMessage("noProjectToView"));
     const cached = get().knowledgeRevisionsByEntry[id];
     if (cached) return cached;
     if (get().knowledgeRevisionLoadingByEntry[id]) return [];
@@ -753,7 +744,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         set((state) => ({
           knowledgeRevisionErrorByEntry: {
             ...state.knowledgeRevisionErrorByEntry,
-            [id]: "修改记录暂时无法加载，请重试。",
+            [id]: runtimeMessage("revisionHistoryLoadFailed"),
           },
         }));
       }
@@ -772,18 +763,18 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   restoreKnowledgeRevision: async (id, revisionId) => {
     const projectId = get().currentProjectId;
-    if (!projectId) throw new Error("当前没有可更新的项目");
+    if (!projectId) throw new UserFacingError(runtimeMessage("noProjectToUpdate"));
     const entry = get().knowledge.find((item) => item.id === id);
     const expectedActiveRevisionId = entry?.active_revision_id;
     if (!expectedActiveRevisionId) {
-      const message = "这条理解仍在准备修改记录，请刷新后再恢复。";
+      const message = runtimeMessage("understandingRevisionNotReady");
       set((state) => ({
         knowledgeRevisionErrorByEntry: {
           ...state.knowledgeRevisionErrorByEntry,
           [id]: message,
         },
       }));
-      throw new Error(message);
+      throw new UserFacingError(message);
     }
 
     set((state) => ({
@@ -839,7 +830,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       }
       return restored;
     } catch (error) {
-      const status = responseStatus(error);
+      const status = getErrorHttpStatus(error);
       const refreshed =
         status === 409 || status === 404
           ? await fetchKnowledgeRestoreState(projectId, id, { includeEntry: true })
@@ -850,13 +841,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const message =
         status === 409
           ? refreshCompleted
-            ? "这条理解刚刚有了新修改，已刷新最新版本；请确认后再恢复。"
-            : "这条理解刚刚有了新修改，请刷新后再尝试恢复。"
+            ? runtimeMessage("understandingChangedRefreshThenRestore")
+            : runtimeMessage("understandingChangedBeforeRestore")
           : status === 404
             ? refreshCompleted
-              ? "这个历史版本已不可用，已刷新修改记录，请重新选择。"
-              : "这个历史版本已不可用，请刷新后重新选择。"
-            : "历史版本暂时无法恢复，请稍后重试。";
+              ? runtimeMessage("understandingRevisionUnavailableRefreshed")
+              : runtimeMessage("understandingRevisionUnavailable")
+            : runtimeMessage("understandingRestoreFailed");
       if (get().currentProjectId === projectId) {
         set((state) => {
           const fallbackKnowledge = refreshed.entry
@@ -883,7 +874,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           };
         });
       }
-      throw new Error(message);
+      throw new UserFacingError(message);
     } finally {
       if (get().currentProjectId === projectId) {
         set((state) => ({
@@ -898,7 +889,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   updateKnowledge: async (id, changes) => {
     const projectId = get().currentProjectId;
-    if (!projectId) throw new Error("当前没有可更新的项目");
+    if (!projectId) throw new UserFacingError(runtimeMessage("noProjectToUpdate"));
     const activeRevisionId = get().knowledge.find((item) => item.id === id)?.active_revision_id;
     set({ isUpdatingKnowledge: true, error: null });
     try {
@@ -950,7 +941,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   createKnowledge: async (entry) => {
     const projectId = get().currentProjectId;
-    if (!projectId) throw new Error("当前没有可更新的项目");
+    if (!projectId) throw new UserFacingError(runtimeMessage("noProjectToUpdate"));
     set({ isUpdatingKnowledge: true, error: null });
     try {
       const response = await api.post(`/api/v1/projects/${projectId}/knowledge`, entry);
@@ -1001,16 +992,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     try {
       const form = new FormData();
       form.append("file", file);
-      const uploaded = await api.post(
+      await api.post(
         `/api/v1/projects/${projectId}/sources/files`,
         form,
         { headers: { "Content-Type": "multipart/form-data" }, timeout: 120000 }
-      );
-      const source = uploaded.data.data as ProjectDataSource;
-      await api.post(
-        `/api/v1/projects/${projectId}/sources/${source.id}/preflight`,
-        undefined,
-        { timeout: 120000 }
       );
       await get().refreshCurrent();
     } catch (error) {
@@ -1027,12 +1012,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (!projectId) return;
     set({ isUploading: true, error: null });
     try {
-      const attached = await api.post(
+      await api.post(
         `/api/v1/projects/${projectId}/sources/connections`,
         { connection_id: connectionId, name }
       );
-      const source = attached.data.data as ProjectDataSource;
-      await api.post(`/api/v1/projects/${projectId}/sources/${source.id}/preflight`);
       await get().refreshCurrent();
     } catch (error) {
       const message = messageFrom(error);
@@ -1066,7 +1049,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   reorganizeSource: async (sourceId) => {
     const projectId = get().currentProjectId;
-    if (!projectId) throw new Error("当前没有可整理的项目");
+    if (!projectId) throw new UserFacingError(runtimeMessage("noProjectToClean"));
     set({ sourceAction: { sourceId, kind: "reorganize" }, error: null });
     try {
       const recipesResponse = await api.get(`/api/v1/projects/${projectId}/recipes`);
@@ -1102,7 +1085,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   acceptReplacement: async (sourceId) => {
     const projectId = get().currentProjectId;
-    if (!projectId) throw new Error("当前没有可处理的项目");
+    if (!projectId) throw new UserFacingError(runtimeMessage("noProjectToProcess"));
     set({ sourceAction: { sourceId, kind: "accept_replacement" }, error: null });
     try {
       const response = await api.post(
@@ -1124,7 +1107,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
                   status: accepted.status,
                   summary:
                     accepted.profile_data.summary ||
-                    "这版数据已确认启用，上个可信版本保留在历史中",
+                    runtimeMessage("sourceVersionAccepted"),
                   source_snapshot: {
                     ...report.source_snapshot,
                     replacement: {
@@ -1153,14 +1136,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   keepTrustedSource: async (sourceId) => {
     const projectId = get().currentProjectId;
-    if (!projectId) throw new Error("当前没有可处理的项目");
+    if (!projectId) throw new UserFacingError(runtimeMessage("noProjectToProcess"));
     set({ sourceAction: { sourceId, kind: "keep_trusted" }, error: null });
     try {
       const recipesResponse = await api.get(`/api/v1/projects/${projectId}/recipes`);
       const recipe = (recipesResponse.data.data as Array<{ id: string; data_source_id: string }>).find(
         (item) => item.data_source_id === sourceId
       );
-      if (!recipe) throw new Error("没有可撤销的本次整理记录");
+      if (!recipe) throw new UserFacingError(runtimeMessage("noCleaningActionToUndo"));
       await api.post(`/api/v1/projects/${projectId}/recipes/${recipe.id}/undo`);
       if (get().currentProjectId === projectId) await get().refreshCurrent();
     } catch (error) {
@@ -1178,7 +1161,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   removeSource: async (sourceId) => {
     const projectId = get().currentProjectId;
-    if (!projectId) throw new Error("当前没有可处理的项目");
+    if (!projectId) throw new UserFacingError(runtimeMessage("noProjectToProcess"));
     set({ sourceAction: { sourceId, kind: "remove" }, error: null });
     try {
       await api.delete(`/api/v1/projects/${projectId}/sources/${sourceId}`);

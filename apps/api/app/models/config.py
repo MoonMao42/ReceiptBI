@@ -388,6 +388,8 @@ class AppSettings(BaseModel):
     python_enabled: bool = True
     diagnostics_enabled: bool = True
     auto_repair_enabled: bool = True
+    preprocessing_enabled: bool = True
+    self_analysis_enabled: bool = True
 
 
 class AppSettingsUpdate(BaseModel):
@@ -399,6 +401,8 @@ class AppSettingsUpdate(BaseModel):
     python_enabled: bool | None = None
     diagnostics_enabled: bool | None = None
     auto_repair_enabled: bool | None = None
+    preprocessing_enabled: bool | None = None
+    self_analysis_enabled: bool | None = None
 
 
 class SystemCapabilities(BaseModel):

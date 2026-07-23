@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import {
   AreaChart as AreaChartIcon,
   BarChart3,
@@ -39,15 +40,6 @@ interface ChartDisplayProps {
   spec: ChartSpec;
 }
 
-const TYPE_LABELS: Record<ChartSpec["type"], string> = {
-  bar: "柱状图",
-  horizontal_bar: "横向柱状图",
-  line: "折线图",
-  area: "面积图",
-  pie: "饼图",
-  scatter: "散点图",
-};
-
 const TOOLTIP_STYLE = {
   backgroundColor: "hsl(var(--card))",
   border: "1px solid hsl(var(--border))",
@@ -58,21 +50,21 @@ const TOOLTIP_STYLE = {
 // Deterministic local chart-type switching: the same data can be re-rendered
 // without another LLM round-trip. Scatter is excluded because it needs a
 // numeric x field, which arbitrary category data cannot guarantee.
-const TYPE_OPTIONS: Array<{
+const TYPE_OPTIONS_BASE: Array<{
   value: ChartSpec["type"];
-  label: string;
   Icon: typeof BarChart3;
 }> = [
-  { value: "bar", label: "柱状图", Icon: BarChart3 },
-  { value: "horizontal_bar", label: "横向柱状图", Icon: BarChartHorizontal },
-  { value: "line", label: "折线图", Icon: LineChartIcon },
-  { value: "area", label: "面积图", Icon: AreaChartIcon },
-  { value: "pie", label: "饼图", Icon: PieChartIcon },
+  { value: "bar", Icon: BarChart3 },
+  { value: "horizontal_bar", Icon: BarChartHorizontal },
+  { value: "line", Icon: LineChartIcon },
+  { value: "area", Icon: AreaChartIcon },
+  { value: "pie", Icon: PieChartIcon },
 ];
 
 function formatChartValue(
   value: unknown,
   format: ChartValueFormat = "auto",
+  locale = "en",
 ): string {
   if (value === null || value === undefined) return "—";
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -80,31 +72,31 @@ function formatChartValue(
   }
   switch (format) {
     case "integer":
-      return new Intl.NumberFormat("zh-CN", {
+      return new Intl.NumberFormat(locale, {
         maximumFractionDigits: 0,
       }).format(value);
     case "compact":
-      return new Intl.NumberFormat("zh-CN", {
+      return new Intl.NumberFormat(locale, {
         notation: "compact",
         maximumFractionDigits: 1,
       }).format(value);
     case "currency":
-      return new Intl.NumberFormat("zh-CN", {
+      return new Intl.NumberFormat(locale, {
         style: "currency",
         currency: "CNY",
         maximumFractionDigits: 2,
       }).format(value);
     case "percent":
-      return new Intl.NumberFormat("zh-CN", {
+      return new Intl.NumberFormat(locale, {
         style: "percent",
         maximumFractionDigits: 1,
       }).format(value);
     case "number":
-      return new Intl.NumberFormat("zh-CN", {
+      return new Intl.NumberFormat(locale, {
         maximumFractionDigits: 2,
       }).format(value);
     default:
-      return new Intl.NumberFormat("zh-CN", {
+      return new Intl.NumberFormat(locale, {
         maximumFractionDigits: 4,
       }).format(value);
   }
@@ -114,15 +106,30 @@ function encodingLabel(encoding: { field: string; label?: string }): string {
   return encoding.label || encoding.field;
 }
 
-function chartSummary(spec: ChartSpec, chartType: ChartSpec["type"]): string {
+function chartSummary(
+  spec: ChartSpec,
+  chartType: ChartSpec["type"],
+  typeLabels: Record<ChartSpec["type"], string>,
+  locale: string,
+  t: ReturnType<typeof useTranslations<"chartDisplay">>,
+): string {
   const x = spec.encoding.x;
-  const series = spec.encoding.y.map(encodingLabel).join("、");
-  return `${spec.title || "分析结果图"}，${TYPE_LABELS[chartType]}，${
-    x ? `按${encodingLabel(x)}展示` : "未指定分类字段"
-  }，指标为${series}，共 ${spec.data.length} 条记录。`;
+  const series = new Intl.ListFormat(locale, {
+    style: "short",
+    type: "conjunction",
+  }).format(spec.encoding.y.map(encodingLabel));
+  return t("summaryTemplate", {
+    title: spec.title || t("defaultTitle"),
+    type: typeLabels[chartType],
+    encoding: x ? t("encodingBy", { field: encodingLabel(x) }) : t("encodingUnknown"),
+    series,
+    count: spec.data.length,
+  });
 }
 
 export function ChartDisplay({ spec }: ChartDisplayProps) {
+  const locale = useLocale();
+  const t = useTranslations("chartDisplay");
   const instanceId = useId().replace(/:/g, "");
   const [typeOverride, setTypeOverride] = useState<ChartSpec["type"] | null>(
     null,
@@ -136,13 +143,21 @@ export function ChartDisplay({ spec }: ChartDisplayProps) {
   const horizontal =
     chartType === "horizontal_bar" ||
     spec.presentation.orientation === "horizontal";
-  const summary = chartSummary(spec, chartType);
+  const typeLabels: Record<ChartSpec["type"], string> = {
+    bar: t("typeBar"),
+    horizontal_bar: t("typeBarHorizontal"),
+    line: t("typeLine"),
+    area: t("typeArea"),
+    pie: t("typePie"),
+    scatter: t("typeScatter"),
+  };
+  const summary = chartSummary(spec, chartType, typeLabels, locale, t);
   const chartId = `chart-${spec.data_ref?.result_hash?.slice(0, 12) || instanceId}`;
 
   if (!x || y.length === 0 || spec.data.length === 0) {
     return (
       <div className="mt-4 flex h-48 items-center justify-center bg-secondary text-muted-foreground">
-        暂无可显示的数据
+        {t("noData")}
       </div>
     );
   }
@@ -169,7 +184,7 @@ export function ChartDisplay({ spec }: ChartDisplayProps) {
           // stackOffset="expand" normalizes only the rendered stack. Tooltip
           // payloads still contain the original measure, so preserve its own
           // format instead of turning values such as 120 into 12,000%.
-          formatChartValue(value, encoding?.format),
+          formatChartValue(value, encoding?.format, locale),
           encoding ? encodingLabel(encoding) : String(name),
         ];
       }}
@@ -196,6 +211,7 @@ export function ChartDisplay({ spec }: ChartDisplayProps) {
                     formatChartValue(
                       value,
                       percentStack ? "percent" : y[0]?.format,
+                      locale,
                     )
                   }
                   className="stroke-muted-foreground"
@@ -235,6 +251,7 @@ export function ChartDisplay({ spec }: ChartDisplayProps) {
                     formatChartValue(
                       value,
                       percentStack ? "percent" : y[0]?.format,
+                      locale,
                     )
                   }
                   className="stroke-muted-foreground"
@@ -272,7 +289,7 @@ export function ChartDisplay({ spec }: ChartDisplayProps) {
             />
             <YAxis
               tick={{ fontSize: 12 }}
-              tickFormatter={(value) => formatChartValue(value, y[0]?.format)}
+              tickFormatter={(value) => formatChartValue(value, y[0]?.format, locale)}
               className="stroke-muted-foreground"
             />
             {tooltip}
@@ -317,6 +334,7 @@ export function ChartDisplay({ spec }: ChartDisplayProps) {
                 formatChartValue(
                   value,
                   percentStack ? "percent" : y[0]?.format,
+                  locale,
                 )
               }
               className="stroke-muted-foreground"
@@ -386,7 +404,7 @@ export function ChartDisplay({ spec }: ChartDisplayProps) {
               name={encodingLabel(value)}
               tick={{ fontSize: 12 }}
               tickFormatter={(axisValue) =>
-                formatChartValue(axisValue, value.format)
+                formatChartValue(axisValue, value.format, locale)
               }
               className="stroke-muted-foreground"
             />
@@ -414,15 +432,16 @@ export function ChartDisplay({ spec }: ChartDisplayProps) {
             spec.title ? "text-sm font-medium text-foreground" : "sr-only"
           }
         >
-          {spec.title || "分析结果图"}
+          {spec.title || t("defaultTitle")}
         </span>
         <span
           className="flex items-center gap-0.5 border border-border bg-background p-0.5"
           role="group"
-          aria-label="切换图表类型"
+          aria-label={t("switchTypeAria")}
         >
-          {TYPE_OPTIONS.map(({ value, label, Icon }) => {
+          {TYPE_OPTIONS_BASE.map(({ value, Icon }) => {
             const active = chartType === value;
+            const label = typeLabels[value];
             return (
               <button
                 key={value}
@@ -466,7 +485,7 @@ export function ChartDisplay({ spec }: ChartDisplayProps) {
               <th scope="row">{String(row[x.field] ?? "—")}</th>
               {y.map((encoding) => (
                 <td key={encoding.field}>
-                  {formatChartValue(row[encoding.field], encoding.format)}
+                  {formatChartValue(row[encoding.field], encoding.format, locale)}
                 </td>
               ))}
             </tr>

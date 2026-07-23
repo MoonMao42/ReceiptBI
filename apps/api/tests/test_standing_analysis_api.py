@@ -642,8 +642,17 @@ async def test_pending_replacement_and_playbook_shape_drift_stop_before_run(
     url = f"/api/v1/projects/{project.id}/standing-analyses/{definition['id']}/prepare-run"
     attention = await client.post(url, json={"trigger": "source_version"})
     assert attention.status_code == 200, attention.text
-    assert attention.json()["data"]["outcome"] == "needs_attention"
-    assert attention.json()["data"]["standing_analysis"]["baseline"] == baseline
+    attention_data = attention.json()["data"]
+    assert attention_data["outcome"] == "needs_attention"
+    assert attention_data["attention_reason_code"] == "standing_source_pending_confirmation"
+    assert attention_data["attention_reason_params"] == {"source": "orders"}
+    assert attention_data["standing_analysis"]["attention_reason_code"] == (
+        "standing_source_pending_confirmation"
+    )
+    assert attention_data["standing_analysis"]["baseline"] == baseline
+    repeated = (await client.post(url, json={"trigger": "manual"})).json()["data"]
+    assert repeated["attention_reason_code"] == "standing_source_pending_confirmation"
+    assert repeated["attention_reason_params"] == {"source": "orders"}
     run_count = await db_session.scalar(select(func.count()).select_from(AnalysisRun))
     assert run_count == 1
 
@@ -668,6 +677,8 @@ async def test_playbook_shape_drift_stops_without_moving_baseline(
     assert response.status_code == 200, response.text
     prepared = response.json()["data"]
     assert prepared["outcome"] == "needs_attention"
+    assert prepared["attention_reason_code"] == "standing_playbook_changed"
+    assert prepared["attention_reason_params"] == {}
     assert prepared["standing_analysis"]["baseline"] == baseline
     run_count = await db_session.scalar(select(func.count()).select_from(AnalysisRun))
     assert run_count == 1

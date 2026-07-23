@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from threading import RLock
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -12,6 +13,12 @@ from app.db.tables import Conversation, Message
 from app.models import SSEEvent
 
 RESULT_DATA_PREVIEW_MAX_ROWS = 100
+_CLIENT_STREAM_TOMBSTONE_LIMIT = 4096
+_QUERY_ACTIVE = "active"
+_QUERY_STOPPED = "stopped"
+_QUERY_FINALIZING = "finalizing"
+_STREAM_STOPPED_BEFORE_START = "stopped_before_start"
+_STREAM_RELEASED = "released"
 
 
 class ModelSelectionConflictError(ValueError):
@@ -22,29 +29,65 @@ class ActiveQueryRegistry:
     """Track active chat runs for the local single-instance deployment mode."""
 
     def __init__(self) -> None:
-        self._queries: dict[str, bool] = {}
+        self._queries: dict[str, str] = {}
         self._query_conversations: dict[str, str] = {}
+        self._query_client_streams: dict[str, str] = {}
+        self._client_stream_queries: dict[tuple[str, str], str] = {}
+        self._client_stream_tombstones: dict[tuple[str, str], str] = {}
         self._conversation_queries: dict[str, list[str]] = {}
         self._current_query: dict[str, str] = {}
         self._shutdown_requested = False
+        self._lock = RLock()
 
-    def start(self, conversation_id: UUID | str) -> str:
-        conversation_key = str(conversation_id)
-        previous = self._current_query.get(conversation_key)
-        if previous in self._queries:
-            self._queries[previous] = False
-        query_key = f"{conversation_key}:{uuid4().hex}"
-        # A request racing with the desktop shutdown handshake is registered so
-        # its generator can release normally, but starts in the stopped state.
-        self._queries[query_key] = not self._shutdown_requested
-        self._query_conversations[query_key] = conversation_key
-        self._conversation_queries.setdefault(conversation_key, []).append(query_key)
-        self._current_query[conversation_key] = query_key
-        return query_key
+    def _remember_client_stream(
+        self,
+        client_key: tuple[str, str],
+        state: str,
+    ) -> None:
+        self._client_stream_tombstones.pop(client_key, None)
+        self._client_stream_tombstones[client_key] = state
+        while len(self._client_stream_tombstones) > _CLIENT_STREAM_TOMBSTONE_LIMIT:
+            oldest = next(iter(self._client_stream_tombstones))
+            self._client_stream_tombstones.pop(oldest, None)
+
+    def start(
+        self,
+        conversation_id: UUID | str,
+        client_stream_id: str | None = None,
+    ) -> str:
+        with self._lock:
+            conversation_key = str(conversation_id)
+            previous = self._current_query.get(conversation_key)
+            if self._queries.get(previous) == _QUERY_ACTIVE:
+                self._queries[previous] = _QUERY_STOPPED
+            query_key = f"{conversation_key}:{uuid4().hex}"
+            initial_state = (
+                _QUERY_STOPPED if self._shutdown_requested else _QUERY_ACTIVE
+            )
+            self._query_conversations[query_key] = conversation_key
+            if client_stream_id:
+                client_key = (conversation_key, client_stream_id)
+                previous_client_query = self._client_stream_queries.get(client_key)
+                if self._queries.get(previous_client_query) == _QUERY_ACTIVE:
+                    self._queries[previous_client_query] = _QUERY_STOPPED
+                tombstone = self._client_stream_tombstones.pop(client_key, None)
+                if tombstone is not None:
+                    # Stream ids are one-shot generations. A pre-start stop is
+                    # consumed here; a released id is never reused as new work.
+                    initial_state = _QUERY_STOPPED
+                self._query_client_streams[query_key] = client_stream_id
+                self._client_stream_queries[client_key] = query_key
+            # A request racing with shutdown or an exact pre-start stop is still
+            # registered so its generator can emit cancellation and release.
+            self._queries[query_key] = initial_state
+            self._conversation_queries.setdefault(conversation_key, []).append(query_key)
+            self._current_query[conversation_key] = query_key
+            return query_key
 
     @property
     def shutdown_requested(self) -> bool:
-        return self._shutdown_requested
+        with self._lock:
+            return self._shutdown_requested
 
     async def prepare_shutdown(self, timeout_seconds: float) -> dict[str, Any]:
         """Ask all in-flight queries to stop, then briefly await their cleanup.
@@ -55,59 +98,120 @@ class ActiveQueryRegistry:
         checkpoint or claiming that pre-tool work can be resumed.
         """
 
-        self._shutdown_requested = True
-        active_query_keys = [key for key, active in self._queries.items() if active]
-        for key in active_query_keys:
-            self._queries[key] = False
+        with self._lock:
+            self._shutdown_requested = True
+            active_query_keys = [
+                key for key, state in self._queries.items() if state == _QUERY_ACTIVE
+            ]
+            for key in active_query_keys:
+                self._queries[key] = _QUERY_STOPPED
 
         loop = asyncio.get_running_loop()
         deadline = loop.time() + max(0.0, timeout_seconds)
-        while self._queries and loop.time() < deadline:
+        while loop.time() < deadline:
+            with self._lock:
+                if not self._queries:
+                    break
             await asyncio.sleep(min(0.025, max(0.0, deadline - loop.time())))
 
-        remaining = len(self._queries)
+        with self._lock:
+            remaining = len(self._queries)
         return {
             "stop_requested": len(active_query_keys),
             "released_before_timeout": remaining == 0,
             "remaining_active": remaining,
         }
 
-    def stop(self, conversation_id: UUID | str) -> bool:
-        query_key = self._current_query.get(str(conversation_id))
-        if query_key is None and str(conversation_id) in self._queries:
-            query_key = str(conversation_id)
-        if query_key not in self._queries:
-            return False
-        self._queries[query_key] = False
-        return True
+    def stop(
+        self,
+        conversation_id: UUID | str,
+        client_stream_id: str | None = None,
+    ) -> bool:
+        with self._lock:
+            conversation_key = str(conversation_id)
+            client_key = (
+                (conversation_key, client_stream_id) if client_stream_id else None
+            )
+            query_key = (
+                self._client_stream_queries.get(client_key)
+                if client_key is not None
+                else self._current_query.get(conversation_key)
+            )
+            if query_key is None and conversation_key in self._queries:
+                query_key = conversation_key
+            if query_key not in self._queries:
+                if client_key is None:
+                    return False
+                tombstone = self._client_stream_tombstones.get(client_key)
+                if tombstone == _STREAM_RELEASED:
+                    return False
+                self._remember_client_stream(
+                    client_key,
+                    _STREAM_STOPPED_BEFORE_START,
+                )
+                return True
+            state = self._queries[query_key]
+            if state == _QUERY_FINALIZING:
+                return False
+            self._queries[query_key] = _QUERY_STOPPED
+            return True
+
+    def begin_finalization(self, conversation_id: UUID | str) -> bool:
+        """Atomically let completion or stop claim the terminal transition."""
+
+        with self._lock:
+            key = str(conversation_id)
+            query_key = key if key in self._queries else self._current_query.get(key, "")
+            state = self._queries.get(query_key)
+            if state == _QUERY_FINALIZING:
+                return True
+            if state != _QUERY_ACTIVE:
+                return False
+            self._queries[query_key] = _QUERY_FINALIZING
+            return True
+
+    def finalization_guard(
+        self,
+        conversation_id: UUID | str,
+    ) -> Callable[[], bool]:
+        query_key = str(conversation_id)
+        return lambda: self.begin_finalization(query_key)
 
     def is_active(self, conversation_id: UUID | str) -> bool:
-        key = str(conversation_id)
-        query_key = key if key in self._queries else self._current_query.get(key, "")
-        return self._queries.get(query_key, False)
+        with self._lock:
+            key = str(conversation_id)
+            query_key = key if key in self._queries else self._current_query.get(key, "")
+            return self._queries.get(query_key) in {_QUERY_ACTIVE, _QUERY_FINALIZING}
 
     def stop_checker(self, conversation_id: UUID | str) -> Callable[[], bool]:
         query_key = str(conversation_id)
         return lambda: not self.is_active(query_key)
 
     def release(self, conversation_id: UUID | str) -> None:
-        query_key = str(conversation_id)
-        conversation_key = self._query_conversations.pop(query_key, None)
-        self._queries.pop(query_key, None)
-        if conversation_key is None:
-            return
-        tokens = self._conversation_queries.get(conversation_key, [])
-        self._conversation_queries[conversation_key] = [
-            token for token in tokens if token != query_key
-        ]
-        if not self._conversation_queries[conversation_key]:
-            self._conversation_queries.pop(conversation_key, None)
-        if self._current_query.get(conversation_key) == query_key:
-            remaining = self._conversation_queries.get(conversation_key, [])
-            if remaining:
-                self._current_query[conversation_key] = remaining[-1]
-            else:
-                self._current_query.pop(conversation_key, None)
+        with self._lock:
+            query_key = str(conversation_id)
+            conversation_key = self._query_conversations.pop(query_key, None)
+            client_stream_id = self._query_client_streams.pop(query_key, None)
+            self._queries.pop(query_key, None)
+            if conversation_key is None:
+                return
+            if client_stream_id:
+                client_key = (conversation_key, client_stream_id)
+                if self._client_stream_queries.get(client_key) == query_key:
+                    self._client_stream_queries.pop(client_key, None)
+                self._remember_client_stream(client_key, _STREAM_RELEASED)
+            tokens = self._conversation_queries.get(conversation_key, [])
+            self._conversation_queries[conversation_key] = [
+                token for token in tokens if token != query_key
+            ]
+            if not self._conversation_queries[conversation_key]:
+                self._conversation_queries.pop(conversation_key, None)
+            if self._current_query.get(conversation_key) == query_key:
+                remaining = self._conversation_queries.get(conversation_key, [])
+                if remaining:
+                    self._current_query[conversation_key] = remaining[-1]
+                else:
+                    self._current_query.pop(conversation_key, None)
 
 
 def merge_metadata(base: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:

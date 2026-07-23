@@ -1,17 +1,50 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api/client";
-import {
-  type ConnectionFormData,
-  type ConnectionTestResult,
-} from "@/lib/settings/connections";
+import { type ConnectionFormData } from "@/lib/settings/connections";
 import type { ConfiguredConnection } from "@/lib/types/api";
 
-export function useConnectionSettingsResource() {
-  const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
+export interface ConnectionSettingsResourceMessages {
+  success: string;
+  failure: string;
+  requestFailure: string;
+}
+
+export interface LocalizedConnectionTestResult {
+  id: string;
+  success: boolean;
+  text: string;
+}
+
+export function useConnectionSettingsResource(
+  messages: ConnectionSettingsResourceMessages
+) {
+  const [testResult, setTestResult] =
+    useState<LocalizedConnectionTestResult | null>(null);
+  const testResultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queryClient = useQueryClient();
+
+  useEffect(
+    () => () => {
+      if (testResultTimerRef.current) {
+        clearTimeout(testResultTimerRef.current);
+      }
+    },
+    []
+  );
+
+  const showTestResult = (result: LocalizedConnectionTestResult) => {
+    if (testResultTimerRef.current) {
+      clearTimeout(testResultTimerRef.current);
+    }
+    setTestResult(result);
+    testResultTimerRef.current = setTimeout(() => {
+      setTestResult((current) => (current?.id === result.id ? null : current));
+      testResultTimerRef.current = null;
+    }, 5000);
+  };
 
   const { data: connections, isLoading } = useQuery({
     queryKey: ["connections"],
@@ -53,17 +86,23 @@ export function useConnectionSettingsResource() {
   const testMutation = useMutation({
     mutationFn: async (id: string) => {
       const response = await api.post(`/api/v1/config/connections/${id}/test`);
+      const success = Boolean(response.data.data.connected);
       return {
         id,
-        success: response.data.data.connected,
-        message: response.data.data.message,
-      } as ConnectionTestResult;
+        success,
+        text: success ? messages.success : messages.failure,
+      } satisfies LocalizedConnectionTestResult;
     },
-    onSuccess: (result) => {
-      setTestResult(result);
-      setTimeout(() => {
-        setTestResult((current) => (current?.id === result.id ? null : current));
-      }, 5000);
+    onMutate: () => {
+      setTestResult(null);
+    },
+    onSuccess: (result) => showTestResult(result),
+    onError: (_error, id) => {
+      showTestResult({
+        id,
+        success: false,
+        text: messages.requestFailure,
+      });
     },
   });
 

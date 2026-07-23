@@ -192,6 +192,7 @@ def _build_relationship_receipt(
     return {
         **base,
         "status": "verified",
+        "summary_code": "correction_relationship_verified",
         "action_kind": "relationship",
         "application_result_name": join_result,
         "source_result_names": [join.get("left_result"), join.get("right_result")],
@@ -239,6 +240,7 @@ def build_correction_application_receipt(
         return {
             **base,
             "status": "definition_only",
+            "summary_code": "correction_definition_only",
             "checks": ["business_definition_recorded"],
             "summary": "已按这条修正重新调查；它目前只作为业务定义保存，尚不能自动验证执行。",
         }
@@ -347,6 +349,7 @@ def build_correction_application_receipt(
     return {
         **base,
         "status": "verified",
+        "summary_code": "correction_verified",
         "action_kind": action_kind,
         "application_result_name": application_result,
         "source_result_name": application.get("source_result"),

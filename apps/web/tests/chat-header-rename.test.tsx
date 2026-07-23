@@ -1,7 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { NextIntlClientProvider } from "next-intl";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import type { Project } from "@/lib/types/api";
+import enMessages from "@/messages/en.json";
+import zhMessages from "@/messages/zh.json";
+
+const originalLanguage = document.documentElement.lang;
 
 const project = {
   id: "project-1",
@@ -13,34 +18,49 @@ const project = {
   updated_at: "2026-07-01T00:00:00Z",
 } satisfies Project;
 
-function renderHeader(onRenameProject = vi.fn().mockResolvedValue(undefined)) {
+function renderHeader(
+  onRenameProject = vi.fn().mockResolvedValue(undefined),
+  locale: "en" | "zh" = "zh"
+) {
+  document.documentElement.lang = locale;
   render(
-    <ChatHeader
-      onToggleSidebar={vi.fn()}
-      onToggleData={vi.fn()}
-      project={project}
-      readySources={0}
-      totalSources={0}
-      onRenameProject={onRenameProject}
-    />
+    <NextIntlClientProvider
+      locale={locale}
+      messages={locale === "en" ? enMessages : zhMessages}
+    >
+      <ChatHeader
+        onToggleSidebar={vi.fn()}
+        onToggleData={vi.fn()}
+        project={project}
+        readySources={0}
+        totalSources={0}
+        onRenameProject={onRenameProject}
+      />
+    </NextIntlClientProvider>
   );
   return onRenameProject;
 }
 
 describe("project title rename", () => {
+  afterEach(() => {
+    document.documentElement.lang = originalLanguage;
+  });
+
   it("opens project understanding when business definitions are waiting for review", () => {
     const onToggleData = vi.fn();
     const onOpenUnderstanding = vi.fn();
     render(
-      <ChatHeader
-        onToggleSidebar={vi.fn()}
-        onToggleData={onToggleData}
-        onOpenUnderstanding={onOpenUnderstanding}
-        project={project}
-        readySources={2}
-        totalSources={2}
-        pendingUnderstandingCount={3}
-      />
+      <NextIntlClientProvider locale="zh" messages={zhMessages}>
+        <ChatHeader
+          onToggleSidebar={vi.fn()}
+          onToggleData={onToggleData}
+          onOpenUnderstanding={onOpenUnderstanding}
+          project={project}
+          readySources={2}
+          totalSources={2}
+          pendingUnderstandingCount={3}
+        />
+      </NextIntlClientProvider>
     );
 
     const button = screen.getByRole("button", { name: "数据，待核对 3" });
@@ -55,12 +75,14 @@ describe("project title rename", () => {
 
   it("does not invent a project title or zero-source status", () => {
     const { container } = render(
-      <ChatHeader
-        onToggleSidebar={vi.fn()}
-        onToggleData={vi.fn()}
-        readySources={0}
-        totalSources={0}
-      />
+      <NextIntlClientProvider locale="zh" messages={zhMessages}>
+        <ChatHeader
+          onToggleSidebar={vi.fn()}
+          onToggleData={vi.fn()}
+          readySources={0}
+          totalSources={0}
+        />
+      </NextIntlClientProvider>
     );
 
     expect(screen.queryByText("准备分析项目")).not.toBeInTheDocument();
@@ -104,5 +126,29 @@ describe("project title rename", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("项目名称保存失败，请重试");
     expect(screen.getByRole("textbox", { name: "项目名称" })).toBeInTheDocument();
+  });
+
+  it("shows safe retry copy without leaking API detail in English", async () => {
+    const onRenameProject = vi.fn().mockRejectedValue({
+      isAxiosError: true,
+      message: "Request failed with status code 409",
+      response: {
+        status: 409,
+        data: { detail: "项目名称已经存在" },
+      },
+    });
+    renderHeader(onRenameProject, "en");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Rename project: 新的分析项目" })
+    );
+
+    const input = screen.getByRole("textbox", { name: "Project name" });
+    fireEvent.change(input, { target: { value: "July review" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The request could not be completed. Please retry."
+    );
+    expect(screen.queryByText("项目名称已经存在")).not.toBeInTheDocument();
   });
 });

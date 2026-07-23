@@ -7,14 +7,19 @@ import {
   defaultConnectionFormData,
   type ConnectionFormData,
 } from "@/lib/settings/connections";
-import messages from "@/messages/zh.json";
+import enMessages from "@/messages/en.json";
+import zhMessages from "@/messages/zh.json";
 
 function renderForm(
   formData: ConnectionFormData,
-  onChange = vi.fn()
+  onChange = vi.fn(),
+  locale: "en" | "zh" = "zh"
 ) {
   render(
-    <NextIntlClientProvider locale="zh" messages={messages}>
+    <NextIntlClientProvider
+      locale={locale}
+      messages={locale === "zh" ? zhMessages : enMessages}
+    >
       <ConnectionSettingsForm
         editingId={null}
         formData={formData}
@@ -46,6 +51,7 @@ describe("ConnectionSettingsForm", () => {
     expect(screen.getByTestId("connection-security-options")).toHaveTextContent(
       "连接安全与范围"
     );
+    expect(screen.getByText("数据库模式")).toBeInTheDocument();
     expect(screen.getByTestId("connection-schema-input")).toBeInTheDocument();
 
     fireEvent.change(screen.getByTestId("connection-sslmode-select"), {
@@ -68,5 +74,18 @@ describe("ConnectionSettingsForm", () => {
     renderForm(applyDriverDefaults(defaultConnectionFormData, "sqlite"));
 
     expect(screen.queryByTestId("connection-security-options")).not.toBeInTheDocument();
+  });
+
+  it("reads the remote security labels from the active locale catalog", () => {
+    renderForm(
+      applyDriverDefaults(defaultConnectionFormData, "postgresql"),
+      vi.fn(),
+      "en"
+    );
+
+    expect(screen.getByTestId("connection-security-options")).toHaveTextContent(
+      "Connection security and scope"
+    );
+    expect(screen.getByRole("option", { name: "Verify CA and host" })).toBeInTheDocument();
   });
 });

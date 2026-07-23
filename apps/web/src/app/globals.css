@@ -101,6 +101,42 @@
   }
 }
 
+.report-canvas {
+  container-name: report-canvas;
+  container-type: inline-size;
+}
+
+.report-layout-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.report-layout-block {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+/* Keep the 12-column report grid only while three KPI cards remain readable. */
+@container report-canvas (min-width: 900px) {
+  .report-layout-grid {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+  }
+
+  .report-layout-block {
+    grid-column: var(--report-column-span);
+  }
+
+  .report-layout-grid[data-editing="true"] {
+    grid-auto-rows: 56px;
+  }
+
+  .report-layout-grid[data-editing="true"] .report-layout-block {
+    grid-column: var(--report-column);
+    grid-row: var(--report-row);
+  }
+}
+
 .report-print-view {
   --background: 60 14% 98%;
   --foreground: 160 35% 14%;
@@ -156,6 +192,13 @@
   color: hsl(var(--muted-foreground));
 }
 
+.report-print-header .report-print-narrative {
+  margin-top: 12px;
+  padding-left: 12px;
+  border-left: 2px solid hsl(var(--primary) / 0.55);
+  color: hsl(var(--foreground) / 0.82);
+}
+
 .report-print-kicker,
 .report-print-header > span {
   font-family: "IBM Plex Mono", "JetBrains Mono", "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -170,14 +213,18 @@
 .report-print-grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  grid-auto-rows: 60px;
   gap: 12px;
 }
 
 .report-print-block {
   min-height: 0;
-  grid-column: var(--report-column);
-  grid-row: var(--report-row);
+  min-width: 0;
+  grid-column: var(--report-column-span);
+  grid-row: auto;
+}
+
+.report-print-block[data-block-type="table"] {
+  grid-column: 1 / -1;
 }
 
 @media print {
@@ -216,6 +263,21 @@
   }
 
   .report-print-block {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .report-print-block[data-block-type="table"],
+  .report-print-block[data-block-type="table"] > article {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .report-print-block table thead {
+    display: table-header-group;
+  }
+
+  .report-print-block table tr {
     break-inside: avoid;
     page-break-inside: avoid;
   }

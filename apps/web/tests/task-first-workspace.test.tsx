@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { NextIntlClientProvider } from "next-intl";
 import { describe, expect, it, vi } from "vitest";
 import { InputBar } from "@/components/chat/InputBar";
 import { AnalysisProgress } from "@/components/chat/AnalysisProgress";
@@ -6,6 +7,8 @@ import {
   getProductAnalysisStateLabel,
   MessageList,
 } from "@/components/chat/MessageList";
+import enMessages from "@/messages/en.json";
+import messages from "@/messages/zh.json";
 import type {
   AnalysisRunSummary,
   ProjectDataSource,
@@ -26,19 +29,21 @@ describe("task-first workspace", () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
 
     render(
-      <InputBar
-        onSubmit={onSubmit}
-        onStop={vi.fn()}
-        onOpenData={vi.fn()}
-        onUploadFile={vi.fn()}
-        isLoading={false}
-        isUploading={false}
-        projectName="七月经营复盘"
-        dataReady={false}
-        sourceCount={0}
-        input="分析商品销量与线上渠道表现"
-        onInputChange={vi.fn()}
-      />
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <InputBar
+          onSubmit={onSubmit}
+          onStop={vi.fn()}
+          onOpenData={vi.fn()}
+          onUploadFile={vi.fn()}
+          isLoading={false}
+          isUploading={false}
+          projectName="七月经营复盘"
+          dataReady={false}
+          sourceCount={0}
+          input="分析商品销量与线上渠道表现"
+          onInputChange={vi.fn()}
+        />
+      </NextIntlClientProvider>
     );
 
     expect(screen.getByTestId("chat-submit")).not.toBeDisabled();
@@ -58,18 +63,20 @@ describe("task-first workspace", () => {
     const onSubmit = vi.fn().mockResolvedValue(false);
 
     render(
-      <InputBar
-        onSubmit={onSubmit}
-        onStop={vi.fn()}
-        onOpenData={vi.fn()}
-        onUploadFile={vi.fn()}
-        isLoading={false}
-        isUploading={false}
-        dataReady={false}
-        sourceCount={0}
-        input="检查本月收入"
-        onInputChange={onInputChange}
-      />
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <InputBar
+          onSubmit={onSubmit}
+          onStop={vi.fn()}
+          onOpenData={vi.fn()}
+          onUploadFile={vi.fn()}
+          isLoading={false}
+          isUploading={false}
+          dataReady={false}
+          sourceCount={0}
+          input="检查本月收入"
+          onInputChange={onInputChange}
+        />
+      </NextIntlClientProvider>
     );
 
     fireEvent.click(screen.getByTestId("chat-submit"));
@@ -82,32 +89,34 @@ describe("task-first workspace", () => {
   it("lets a new investigation choose an analysis service from the composer", () => {
     const onSelectAnalysisService = vi.fn();
     render(
-      <InputBar
-        onSubmit={vi.fn().mockResolvedValue(undefined)}
-        onStop={vi.fn()}
-        onOpenData={vi.fn()}
-        onUploadFile={vi.fn()}
-        isLoading={false}
-        isUploading={false}
-        dataReady={false}
-        sourceCount={0}
-        input=""
-        onInputChange={vi.fn()}
-        analysisServices={[
-          {
-            id: "service-1",
-            name: "经营分析",
-            provider: "custom",
-            model_id: "hidden-model-name",
-            is_default: true,
-            credential_state: "readable",
-            health_status: "healthy",
-          },
-        ]}
-        selectedAnalysisServiceId="service-1"
-        onSelectAnalysisService={onSelectAnalysisService}
-        onManageAnalysisServices={vi.fn()}
-      />
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <InputBar
+          onSubmit={vi.fn().mockResolvedValue(undefined)}
+          onStop={vi.fn()}
+          onOpenData={vi.fn()}
+          onUploadFile={vi.fn()}
+          isLoading={false}
+          isUploading={false}
+          dataReady={false}
+          sourceCount={0}
+          input=""
+          onInputChange={vi.fn()}
+          analysisServices={[
+            {
+              id: "service-1",
+              name: "经营分析",
+              provider: "custom",
+              model_id: "hidden-model-name",
+              is_default: true,
+              credential_state: "readable",
+              health_status: "healthy",
+            },
+          ]}
+          selectedAnalysisServiceId="service-1"
+          onSelectAnalysisService={onSelectAnalysisService}
+          onManageAnalysisServices={vi.fn()}
+        />
+      </NextIntlClientProvider>
     );
 
     const selector = screen.getByTestId("analysis-service-selector");
@@ -120,22 +129,24 @@ describe("task-first workspace", () => {
     const onOpenSettings = vi.fn();
 
     render(
-      <MessageList
-        messages={[]}
-        isLoading={false}
-        sources={[]}
-        {...emptyWorkspaceProps}
-        modelReady={false}
-        pendingTask="分析商品销量与线上渠道表现"
-        onRetry={vi.fn()}
-        onRerun={vi.fn()}
-        onOpenSettings={onOpenSettings}
-        onOpenData={vi.fn()}
-        onUsePrompt={vi.fn()}
-        onConfirm={vi.fn().mockResolvedValue(undefined)}
-        onContinuePending={vi.fn()}
-        onEditPending={vi.fn()}
-      />
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <MessageList
+          messages={[]}
+          isLoading={false}
+          sources={[]}
+          {...emptyWorkspaceProps}
+          modelReady={false}
+          pendingTask="分析商品销量与线上渠道表现"
+          onRetry={vi.fn()}
+          onRerun={vi.fn()}
+          onOpenSettings={onOpenSettings}
+          onOpenData={vi.fn()}
+          onUsePrompt={vi.fn()}
+          onConfirm={vi.fn().mockResolvedValue(undefined)}
+          onContinuePending={vi.fn()}
+          onEditPending={vi.fn()}
+        />
+      </NextIntlClientProvider>
     );
 
     expect(screen.getByTestId("pending-task-report")).toHaveTextContent(
@@ -148,21 +159,23 @@ describe("task-first workspace", () => {
 
   it("keeps the empty work surface free of placeholder data and standing-analysis strips", () => {
     render(
-      <MessageList
-        messages={[]}
-        isLoading={false}
-        sources={[]}
-        {...emptyWorkspaceProps}
-        modelReady={true}
-        onRetry={vi.fn()}
-        onRerun={vi.fn()}
-        onOpenSettings={vi.fn()}
-        onOpenData={vi.fn()}
-        onUsePrompt={vi.fn()}
-        onConfirm={vi.fn().mockResolvedValue(undefined)}
-        onContinuePending={vi.fn()}
-        onEditPending={vi.fn()}
-      />
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <MessageList
+          messages={[]}
+          isLoading={false}
+          sources={[]}
+          {...emptyWorkspaceProps}
+          modelReady={true}
+          onRetry={vi.fn()}
+          onRerun={vi.fn()}
+          onOpenSettings={vi.fn()}
+          onOpenData={vi.fn()}
+          onUsePrompt={vi.fn()}
+          onConfirm={vi.fn().mockResolvedValue(undefined)}
+          onContinuePending={vi.fn()}
+          onEditPending={vi.fn()}
+        />
+      </NextIntlClientProvider>
     );
 
     expect(screen.queryByText("需要时再添加数据")).not.toBeInTheDocument();
@@ -188,21 +201,23 @@ describe("task-first workspace", () => {
     } satisfies ProjectDataSource;
 
     render(
-      <MessageList
-        messages={[]}
-        isLoading={false}
-        sources={[source]}
-        {...emptyWorkspaceProps}
-        modelReady={true}
-        onRetry={vi.fn()}
-        onRerun={vi.fn()}
-        onOpenSettings={vi.fn()}
-        onOpenData={vi.fn()}
-        onUsePrompt={vi.fn()}
-        onConfirm={vi.fn().mockResolvedValue(undefined)}
-        onContinuePending={vi.fn()}
-        onEditPending={vi.fn()}
-      />
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <MessageList
+          messages={[]}
+          isLoading={false}
+          sources={[source]}
+          {...emptyWorkspaceProps}
+          modelReady={true}
+          onRetry={vi.fn()}
+          onRerun={vi.fn()}
+          onOpenSettings={vi.fn()}
+          onOpenData={vi.fn()}
+          onUsePrompt={vi.fn()}
+          onConfirm={vi.fn().mockResolvedValue(undefined)}
+          onContinuePending={vi.fn()}
+          onEditPending={vi.fn()}
+        />
+      </NextIntlClientProvider>
     );
 
     expect(screen.getByRole("button", { name: "1 项数据可用" })).toBeInTheDocument();
@@ -211,21 +226,109 @@ describe("task-first workspace", () => {
     expect(screen.queryByText("持续关注")).not.toBeInTheDocument();
   });
 
+  it("only generates analysis suggestions after an explicit click", () => {
+    const onGenerateSuggestions = vi.fn();
+    const source = {
+      id: "source-suggestions",
+      project_id: "project-1",
+      kind: "file",
+      name: "orders.csv",
+      format: "csv",
+      status: "ready",
+      profile_data: { is_current: true },
+      created_at: "2026-07-22T00:00:00Z",
+      updated_at: "2026-07-22T00:00:00Z",
+    } satisfies ProjectDataSource;
+
+    render(
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <MessageList
+          messages={[]}
+          isLoading={false}
+          sources={[source]}
+          {...emptyWorkspaceProps}
+          modelReady
+          selfAnalysisEnabled
+          canGenerateSuggestions
+          onGenerateSuggestions={onGenerateSuggestions}
+          onRetry={vi.fn()}
+          onRerun={vi.fn()}
+          onOpenSettings={vi.fn()}
+          onOpenData={vi.fn()}
+          onUsePrompt={vi.fn()}
+          onConfirm={vi.fn().mockResolvedValue(undefined)}
+          onContinuePending={vi.fn()}
+          onEditPending={vi.fn()}
+        />
+      </NextIntlClientProvider>
+    );
+
+    expect(onGenerateSuggestions).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "生成分析建议" }));
+    expect(onGenerateSuggestions).toHaveBeenCalledOnce();
+  });
+
+  it("does not expose suggestion generation while self analysis is disabled", () => {
+    const onGenerateSuggestions = vi.fn();
+    const source = {
+      id: "source-suggestions-off",
+      project_id: "project-1",
+      kind: "file",
+      name: "orders.csv",
+      format: "csv",
+      status: "ready",
+      profile_data: { is_current: true },
+      created_at: "2026-07-22T00:00:00Z",
+      updated_at: "2026-07-22T00:00:00Z",
+    } satisfies ProjectDataSource;
+
+    render(
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <MessageList
+          messages={[]}
+          isLoading={false}
+          sources={[source]}
+          {...emptyWorkspaceProps}
+          modelReady
+          selfAnalysisEnabled={false}
+          canGenerateSuggestions
+          onGenerateSuggestions={onGenerateSuggestions}
+          onRetry={vi.fn()}
+          onRerun={vi.fn()}
+          onOpenSettings={vi.fn()}
+          onOpenData={vi.fn()}
+          onUsePrompt={vi.fn()}
+          onConfirm={vi.fn().mockResolvedValue(undefined)}
+          onContinuePending={vi.fn()}
+          onEditPending={vi.fn()}
+        />
+      </NextIntlClientProvider>
+    );
+
+    expect(screen.queryByRole("button", { name: "生成分析建议" })).not.toBeInTheDocument();
+    expect(screen.queryByText("分析建议已关闭。")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "设置" })).not.toBeInTheDocument();
+    expect(onGenerateSuggestions).not.toHaveBeenCalled();
+  });
+
   it("only exposes the five product states", () => {
-    expect(getProductAnalysisStateLabel("understanding")).toBe("理解数据");
-    expect(getProductAnalysisStateLabel("waiting_confirmation")).toBe("等待确认");
-    expect(getProductAnalysisStateLabel("investigating")).toBe("调查中");
-    expect(getProductAnalysisStateLabel("completed")).toBe("完成");
-    expect(getProductAnalysisStateLabel("needs_attention")).toBe("需要处理");
-    expect(getProductAnalysisStateLabel("raw_backend_stage")).toBe("理解数据");
+    const t = (key: string) => key;
+    expect(getProductAnalysisStateLabel("understanding", t)).toBe("stateUnderstanding");
+    expect(getProductAnalysisStateLabel("waiting_confirmation", t)).toBe("statePending");
+    expect(getProductAnalysisStateLabel("investigating", t)).toBe("stateInvestigating");
+    expect(getProductAnalysisStateLabel("completed", t)).toBe("stateCompleted");
+    expect(getProductAnalysisStateLabel("needs_attention", t)).toBe("stateNeedsAttention");
+    expect(getProductAnalysisStateLabel("raw_backend_stage", t)).toBe("stateUnderstanding");
   });
 
   it("shows only the current plain-language investigation state", () => {
     render(
-      <AnalysisProgress
-        state="investigating"
-        status="running Python tool against SQL schema"
-      />
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <AnalysisProgress
+          state="investigating"
+          status="running Python tool against SQL schema"
+        />
+      </NextIntlClientProvider>
     );
 
     const progress = screen.getByRole("region", { name: "当前调查进度" });
@@ -240,6 +343,53 @@ describe("task-first workspace", () => {
     expect(liveStatus).toHaveAttribute("data-progress-state", "investigating");
   });
 
+  it("uses a stable progress step instead of a fixed Chinese server message in English", () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <AnalysisProgress
+          state="investigating"
+          stage="read_files"
+          status="正在读取服务端固定进度"
+        />
+      </NextIntlClientProvider>
+    );
+
+    const progress = screen.getByRole("region", {
+      name: "Current investigation progress",
+    });
+    expect(progress).toHaveTextContent("Reading the relevant file data");
+    expect(progress).not.toHaveTextContent("正在读取服务端固定进度");
+  });
+
+  it("preserves same-language business progress but hides an unknown cross-language status", () => {
+    const { rerender } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <AnalysisProgress
+          state="investigating"
+          stage="investigating"
+          status="Reading the July customer ledger"
+        />
+      </NextIntlClientProvider>
+    );
+
+    expect(
+      screen.getByRole("region", { name: "Current investigation progress" })
+    ).toHaveTextContent("Reading the July customer ledger");
+
+    rerender(
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <AnalysisProgress
+          state="investigating"
+          stage="investigating"
+          status="Reading the July customer ledger"
+        />
+      </NextIntlClientProvider>
+    );
+    const chineseProgress = screen.getByRole("region", { name: "当前调查进度" });
+    expect(chineseProgress).toHaveTextContent("比较数据、验证关系和异常");
+    expect(chineseProgress).not.toHaveTextContent("Reading the July customer ledger");
+  });
+
   it.each([
     ["understanding", "正在理解数据"],
     ["waiting_confirmation", "等待你的确认"],
@@ -247,7 +397,11 @@ describe("task-first workspace", () => {
     ["completed", "调查已完成"],
     ["needs_attention", "这份调查需要处理"],
   ])("renders the %s product state", (state, label) => {
-    render(<AnalysisProgress state={state} />);
+    render(
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <AnalysisProgress state={state} />
+      </NextIntlClientProvider>
+    );
     const progress = screen.getByRole("region", { name: "当前调查进度" });
     expect(progress).toHaveTextContent(label);
     expect(progress.querySelector('[aria-live="polite"]')).toHaveAttribute(
@@ -258,26 +412,28 @@ describe("task-first workspace", () => {
 
   it("keeps every turn in one investigation timeline", () => {
     render(
-      <MessageList
-        messages={[
-          { role: "user", content: "旧任务" },
-          { role: "assistant", content: "", isLoading: true },
-          { role: "user", content: "当前任务" },
-          { role: "assistant", content: "", isLoading: true },
-        ]}
-        isLoading={true}
-        sources={[]}
-        {...emptyWorkspaceProps}
-        modelReady={true}
-        onRetry={vi.fn()}
-        onRerun={vi.fn()}
-        onOpenSettings={vi.fn()}
-        onOpenData={vi.fn()}
-        onUsePrompt={vi.fn()}
-        onConfirm={vi.fn().mockResolvedValue(undefined)}
-        onContinuePending={vi.fn()}
-        onEditPending={vi.fn()}
-      />
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <MessageList
+          messages={[
+            { role: "user", content: "旧任务" },
+            { role: "assistant", content: "", isLoading: true },
+            { role: "user", content: "当前任务" },
+            { role: "assistant", content: "", isLoading: true },
+          ]}
+          isLoading={true}
+          sources={[]}
+          {...emptyWorkspaceProps}
+          modelReady={true}
+          onRetry={vi.fn()}
+          onRerun={vi.fn()}
+          onOpenSettings={vi.fn()}
+          onOpenData={vi.fn()}
+          onUsePrompt={vi.fn()}
+          onConfirm={vi.fn().mockResolvedValue(undefined)}
+          onContinuePending={vi.fn()}
+          onEditPending={vi.fn()}
+        />
+      </NextIntlClientProvider>
     );
 
     expect(screen.getByRole("region", { name: "调查时间线" })).toBeInTheDocument();
@@ -317,7 +473,9 @@ describe("task-first workspace", () => {
 
     try {
       const { rerender } = render(
-        <MessageList messages={[userMessage, assistantMessage]} {...commonProps} />
+        <NextIntlClientProvider locale="zh" messages={messages}>
+          <MessageList messages={[userMessage, assistantMessage]} {...commonProps} />
+        </NextIntlClientProvider>
       );
       const timeline = screen.getByRole("region", { name: "调查时间线" });
       Object.defineProperties(timeline, {
@@ -327,20 +485,22 @@ describe("task-first workspace", () => {
       });
 
       fireEvent.scroll(timeline);
-      expect(screen.getByRole("button", { name: "回到最新" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "回到最新位置" })).toBeInTheDocument();
 
       rerender(
-        <MessageList
-          messages={[
-            userMessage,
-            { ...assistantMessage, analysisState: "completed", content: "调查完成" },
-          ]}
-          {...commonProps}
-        />
+        <NextIntlClientProvider locale="zh" messages={messages}>
+          <MessageList
+            messages={[
+              userMessage,
+              { ...assistantMessage, analysisState: "completed", content: "调查完成" },
+            ]}
+            {...commonProps}
+          />
+        </NextIntlClientProvider>
       );
 
       const latestButton = await screen.findByRole("button", {
-        name: "有新进展，回到最新",
+        name: "有新进展，回到最新位置",
       });
       expect(timeline.scrollTop).toBe(100);
 
@@ -392,26 +552,28 @@ describe("task-first workspace", () => {
     } satisfies AnalysisRunSummary;
 
     render(
-      <MessageList
-        messages={[]}
-        isLoading={false}
-        sources={[]}
-        standingAnalyses={[standing]}
-        recentRuns={[recent]}
-        emptyComposer={<button type="button">描述任务</button>}
-        activityLoading={false}
-        modelReady={true}
-        onRetry={vi.fn()}
-        onRerun={vi.fn()}
-        onOpenSettings={vi.fn()}
-        onOpenData={vi.fn()}
-        onUsePrompt={vi.fn()}
-        onOpenReport={onOpenReport}
-        onCheckStanding={onCheckStanding}
-        onConfirm={vi.fn().mockResolvedValue(undefined)}
-        onContinuePending={vi.fn()}
-        onEditPending={vi.fn()}
-      />
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <MessageList
+          messages={[]}
+          isLoading={false}
+          sources={[]}
+          standingAnalyses={[standing]}
+          recentRuns={[recent]}
+          emptyComposer={<button type="button">描述任务</button>}
+          activityLoading={false}
+          modelReady={true}
+          onRetry={vi.fn()}
+          onRerun={vi.fn()}
+          onOpenSettings={vi.fn()}
+          onOpenData={vi.fn()}
+          onUsePrompt={vi.fn()}
+          onOpenReport={onOpenReport}
+          onCheckStanding={onCheckStanding}
+          onConfirm={vi.fn().mockResolvedValue(undefined)}
+          onContinuePending={vi.fn()}
+          onEditPending={vi.fn()}
+        />
+      </NextIntlClientProvider>
     );
 
     expect(screen.getByTestId("project-work-surface")).toHaveTextContent("现在想推进哪件事");
@@ -443,26 +605,28 @@ describe("task-first workspace", () => {
     );
 
     render(
-      <MessageList
-        messages={[]}
-        isLoading={false}
-        sources={[]}
-        standingAnalyses={[]}
-        recentRuns={reports}
-        emptyComposer={<div>任务输入</div>}
-        activityLoading={false}
-        modelReady={true}
-        onRetry={vi.fn()}
-        onRerun={vi.fn()}
-        onOpenSettings={vi.fn()}
-        onOpenData={vi.fn()}
-        onUsePrompt={vi.fn()}
-        onOpenReport={onOpenReport}
-        onCheckStanding={vi.fn()}
-        onConfirm={vi.fn().mockResolvedValue(undefined)}
-        onContinuePending={vi.fn()}
-        onEditPending={vi.fn()}
-      />
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <MessageList
+          messages={[]}
+          isLoading={false}
+          sources={[]}
+          standingAnalyses={[]}
+          recentRuns={reports}
+          emptyComposer={<div>任务输入</div>}
+          activityLoading={false}
+          modelReady={true}
+          onRetry={vi.fn()}
+          onRerun={vi.fn()}
+          onOpenSettings={vi.fn()}
+          onOpenData={vi.fn()}
+          onUsePrompt={vi.fn()}
+          onOpenReport={onOpenReport}
+          onCheckStanding={vi.fn()}
+          onConfirm={vi.fn().mockResolvedValue(undefined)}
+          onContinuePending={vi.fn()}
+          onEditPending={vi.fn()}
+        />
+      </NextIntlClientProvider>
     );
 
     expect(screen.getByText("任务输入")).toBeInTheDocument();

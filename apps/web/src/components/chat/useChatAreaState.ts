@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import { api } from "@/lib/api/client";
 import type { AppSettings, ModelSummary } from "@/lib/types/api";
 import { getAnalysisServicePresentation } from "./AnalysisServiceSelector";
@@ -17,6 +18,7 @@ export function useChatAreaState(
   isLoading: boolean,
   options: ChatAreaModelSelectionOptions = {}
 ) {
+  const t = useTranslations("chatArea");
   const queryClient = useQueryClient();
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [modelSelectionError, setModelSelectionError] = useState<string | null>(null);
@@ -42,7 +44,7 @@ export function useChatAreaState(
     { previousSettings?: AppSettings; previousModelId: string | null }
   >({
     mutationFn: async (modelId) => {
-      if (!appSettings) throw new Error("分析服务设置尚未加载");
+      if (!appSettings) throw new Error(t("serviceSettingsNotLoaded"));
       const response = await api.put("/api/v1/settings", {
         ...appSettings,
         default_model_id: modelId,
@@ -74,7 +76,7 @@ export function useChatAreaState(
         queryClient.setQueryData(["app-settings"], context.previousSettings);
       }
       setSelectedModelId(context?.previousModelId || null);
-      setModelSelectionError("未能保存分析服务，请重试。");
+      setModelSelectionError(t("serviceSaveFailed"));
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["app-settings"] });

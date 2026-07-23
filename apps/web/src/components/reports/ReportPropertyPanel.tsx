@@ -1,46 +1,52 @@
 "use client";
 
 import { LayoutPanelTop, Settings2 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import {
-  CHART_PALETTE_OPTIONS,
   type ChartPaletteId,
   type ChartValueFormat,
 } from "@/lib/charts";
 import type { ReportBlock, ReportBlockType, ReportPage } from "@/lib/reports";
 import {
-  REPORT_BLOCK_OPTIONS,
   blockTypeLabel,
+  createReportBlocksCopy,
+  reportBlockOptions,
   reportFilterFields,
 } from "./report-blocks";
 
 interface ReportPropertyPanelProps {
   page: ReportPage;
   block: ReportBlock | null;
+  disabled?: boolean;
   onChangePage: (updates: Partial<ReportPage>) => void;
   onChangeBlock: (updates: Partial<ReportBlock>) => void;
 }
 
-const CHART_VALUE_FORMAT_OPTIONS: ReadonlyArray<{
-  value: ChartValueFormat;
-  label: string;
-}> = [
-  { value: "auto", label: "自动" },
-  { value: "number", label: "数值" },
-  { value: "integer", label: "整数" },
-  { value: "compact", label: "紧凑（万/亿）" },
-  { value: "currency", label: "人民币" },
-  { value: "percent", label: "百分比" },
+const CHART_VALUE_FORMATS: readonly ChartValueFormat[] = [
+  "auto",
+  "number",
+  "integer",
+  "compact",
+  "currency",
+  "percent",
+];
+
+const CHART_PALETTE_IDS: readonly ChartPaletteId[] = [
+  "receiptbi",
+  "receiptbi-muted",
+  "categorical",
+  "monochrome",
 ];
 
 function chartValueFormat(value: unknown): ChartValueFormat {
-  return CHART_VALUE_FORMAT_OPTIONS.some((option) => option.value === value)
+  return CHART_VALUE_FORMATS.includes(value as ChartValueFormat)
     ? (value as ChartValueFormat)
     : "auto";
 }
 
 function chartPalette(value: unknown): ChartPaletteId {
-  return CHART_PALETTE_OPTIONS.some((option) => option.value === value)
+  return CHART_PALETTE_IDS.includes(value as ChartPaletteId)
     ? (value as ChartPaletteId)
     : "receiptbi";
 }
@@ -62,7 +68,7 @@ function chartSeriesLabels(value: unknown): Record<string, string> {
 function chartSeriesFormats(value: unknown): Record<string, ChartValueFormat> {
   return Object.fromEntries(
     Object.entries(configRecord(value)).flatMap(([key, format]) =>
-      CHART_VALUE_FORMAT_OPTIONS.some((option) => option.value === format)
+      CHART_VALUE_FORMATS.includes(format as ChartValueFormat)
         ? [[key, format as ChartValueFormat] as const]
         : []
     )
@@ -117,9 +123,38 @@ function numericBlockColumns(block: ReportBlock): string[] {
 export function ReportPropertyPanel({
   page,
   block,
+  disabled = false,
   onChangePage,
   onChangeBlock,
 }: ReportPropertyPanelProps) {
+  const locale = useLocale();
+  const t = useTranslations("reportProperty");
+  const tBlocks = useTranslations("reportBlocks");
+  const blocksCopy = useMemo(
+    () => createReportBlocksCopy((key, values) => tBlocks(key, values)),
+    [tBlocks]
+  );
+  const blockOptions = useMemo(() => reportBlockOptions(blocksCopy), [blocksCopy]);
+  const chartValueFormatOptions = useMemo(
+    () => [
+      { value: "auto" as const, label: t("formatAuto") },
+      { value: "number" as const, label: t("formatNumber") },
+      { value: "integer" as const, label: t("formatInteger") },
+      { value: "compact" as const, label: t("formatCompact") },
+      { value: "currency" as const, label: t("formatCurrency") },
+      { value: "percent" as const, label: t("formatPercent") },
+    ],
+    [t]
+  );
+  const chartPaletteOptions = useMemo(
+    () => [
+      { value: "receiptbi" as const, label: "ReceiptBI" },
+      { value: "receiptbi-muted" as const, label: t("paletteMuted") },
+      { value: "categorical" as const, label: t("paletteCategorical") },
+      { value: "monochrome" as const, label: t("paletteMonochrome") },
+    ],
+    [t]
+  );
   const columns = block ? blockColumns(block) : [];
   const numericColumns = block ? numericBlockColumns(block) : [];
   const chartType =
@@ -152,19 +187,22 @@ export function ReportPropertyPanel({
   const supportsStack = supportsOrientation || chartType === "area";
   const editableDataChart =
     block?.block_type === "chart" && typeof block.content.image_url !== "string";
-  const filterFields = reportFilterFields(page.blocks);
+  const filterFields = reportFilterFields(page.blocks, locale);
   return (
-    <aside className="flex h-full min-h-0 w-[300px] shrink-0 flex-col border-l border-border bg-card">
+    <aside className="flex h-full min-h-0 w-[min(300px,92vw)] shrink-0 flex-col border-l border-border bg-card">
       <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-5">
         {block ? <Settings2 size={15} className="text-primary" /> : <LayoutPanelTop size={15} className="text-primary" />}
-        <h2 className="text-xs font-semibold">{block ? "区块设置" : "页面设置"}</h2>
+        <h2 className="text-xs font-semibold">{block ? t("blockSettings") : t("pageSettings")}</h2>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+      <fieldset
+        disabled={disabled}
+        className="min-h-0 flex-1 overflow-y-auto border-0 px-5 py-5 disabled:opacity-60"
+      >
         {!block ? (
           <div className="space-y-5">
             <label className="block">
-              <FieldLabel>页面名称</FieldLabel>
+              <FieldLabel>{t("pageName")}</FieldLabel>
               <input
                 value={page.title}
                 maxLength={160}
@@ -173,39 +211,39 @@ export function ReportPropertyPanel({
               />
             </label>
             <p className="text-xs leading-5 text-muted-foreground">
-              选择画布中的区块后，可以修改它的内容、图表和大小。
+              {t("selectBlockHint")}
             </p>
           </div>
         ) : (
           <div className="space-y-5">
             <label className="block">
-              <FieldLabel>区块类型</FieldLabel>
+              <FieldLabel>{t("blockType")}</FieldLabel>
               <select
                 value={block.block_type}
                 onChange={(event) => onChangeBlock({ block_type: event.target.value as ReportBlockType })}
                 className="h-9 w-full border border-input bg-background px-3 text-sm outline-none focus:border-primary"
               >
-                {REPORT_BLOCK_OPTIONS.map((option) => (
+                {blockOptions.map((option) => (
                   <option key={option.type} value={option.type}>{option.label}</option>
                 ))}
               </select>
             </label>
 
             <label className="block">
-              <FieldLabel>标题</FieldLabel>
+              <FieldLabel>{t("title")}</FieldLabel>
               <input
                 value={block.title}
-                aria-label="区块标题"
+                aria-label={t("blockTitle")}
                 maxLength={200}
                 onChange={(event) => onChangeBlock({ title: event.target.value })}
-                placeholder={blockTypeLabel(block.block_type)}
+                placeholder={blockTypeLabel(block.block_type, blocksCopy)}
                 className="h-9 w-full border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary"
               />
             </label>
 
             {(block.block_type === "text" || block.block_type === "evidence") && (
               <label className="block">
-                <FieldLabel>{block.block_type === "evidence" ? "依据说明" : "正文"}</FieldLabel>
+                <FieldLabel>{block.block_type === "evidence" ? t("evidenceText") : t("bodyText")}</FieldLabel>
                 <textarea
                   value={textContent(block)}
                   onChange={(event) => onChangeBlock({ content: { ...block.content, text: event.target.value } })}
@@ -218,7 +256,7 @@ export function ReportPropertyPanel({
             {block.block_type === "metric" && (
               <>
                 <label className="block">
-                  <FieldLabel>显示数值</FieldLabel>
+                  <FieldLabel>{t("displayValue")}</FieldLabel>
                   <input
                     value={textContent(block)}
                     onChange={(event) => onChangeBlock({ content: { ...block.content, value: event.target.value } })}
@@ -226,7 +264,7 @@ export function ReportPropertyPanel({
                   />
                 </label>
                 <label className="block">
-                  <FieldLabel>补充说明</FieldLabel>
+                  <FieldLabel>{t("supportingText")}</FieldLabel>
                   <input
                     value={typeof block.content.context === "string" ? block.content.context : ""}
                     onChange={(event) => onChangeBlock({ content: { ...block.content, context: event.target.value } })}
@@ -239,14 +277,14 @@ export function ReportPropertyPanel({
             {block.block_type === "chart" && (
               <div className="space-y-4">
                 <label className="block">
-                  <FieldLabel>图表样式</FieldLabel>
+                  <FieldLabel>{t("chartStyle")}</FieldLabel>
                   {typeof block.content.image_url === "string" ? (
                     <div className="flex h-9 items-center border border-input bg-muted/30 px-3 text-sm text-muted-foreground">
-                      调查生成的图片
+                      {t("generatedChartImage")}
                     </div>
                   ) : (
                     <select
-                      aria-label="图表样式"
+                      aria-label={t("chartStyle")}
                       value={chartType}
                       onChange={(event) => {
                         const nextType = event.target.value;
@@ -281,19 +319,19 @@ export function ReportPropertyPanel({
                       }}
                       className="h-9 w-full border border-input bg-background px-3 text-sm outline-none focus:border-primary"
                     >
-                      <option value="bar">柱状图</option>
-                      <option value="horizontal_bar">横向条形图</option>
-                      <option value="line">折线图</option>
-                      <option value="area">面积图</option>
-                      <option value="pie">环形图</option>
-                      <option value="scatter">散点图</option>
+                      <option value="bar">{t("chartBar")}</option>
+                      <option value="horizontal_bar">{t("chartHorizontalBar")}</option>
+                      <option value="line">{t("chartLine")}</option>
+                      <option value="area">{t("chartArea")}</option>
+                      <option value="pie">{t("chartPie")}</option>
+                      <option value="scatter">{t("chartScatter")}</option>
                     </select>
                   )}
                 </label>
                 {columns.length > 1 && (
                   <div className="grid grid-cols-2 gap-3">
                     <label>
-                      <FieldLabel>分类或横轴</FieldLabel>
+                      <FieldLabel>{t("categoryAxis")}</FieldLabel>
                       <select
                         value={typeof block.config.x_key === "string" ? block.config.x_key : columns[0]}
                         onChange={(event) => onChangeBlock({ config: { ...block.config, x_key: event.target.value } })}
@@ -303,7 +341,7 @@ export function ReportPropertyPanel({
                       </select>
                     </label>
                     <fieldset>
-                      <FieldLabel>数值系列</FieldLabel>
+                      <FieldLabel>{t("valueSeries")}</FieldLabel>
                       <div className="max-h-28 overflow-y-auto border border-input bg-background px-2 py-1.5">
                         {numericColumns.map((column) => (
                           <label key={column} className="flex cursor-pointer items-center gap-2 py-1 text-xs">
@@ -338,7 +376,7 @@ export function ReportPropertyPanel({
                         ))}
                         {!numericColumns.length && (
                           <span className="block py-1 text-[11px] text-muted-foreground">
-                            没有可用的数值字段
+                            {t("noNumericFields")}
                           </span>
                         )}
                       </div>
@@ -347,13 +385,13 @@ export function ReportPropertyPanel({
                 )}
                 {editableDataChart && selectedSeries.length > 0 && (
                   <div className="space-y-2 border-t border-border pt-4">
-                    <FieldLabel>系列显示</FieldLabel>
+                    <FieldLabel>{t("seriesDisplay")}</FieldLabel>
                     {selectedSeries.map((series) => (
                       <div key={series} className="grid grid-cols-[minmax(0,1fr)_112px] gap-2">
                         <label className="min-w-0">
-                          <span className="sr-only">{series}显示名称</span>
+                          <span className="sr-only">{t("seriesDisplayName", { series })}</span>
                           <input
-                            aria-label={`${series}显示名称`}
+                            aria-label={t("seriesDisplayName", { series })}
                             value={seriesLabels[series] || ""}
                             maxLength={80}
                             placeholder={series}
@@ -374,9 +412,9 @@ export function ReportPropertyPanel({
                           />
                         </label>
                         <label>
-                          <span className="sr-only">{series}数值格式</span>
+                          <span className="sr-only">{t("seriesValueFormat", { series })}</span>
                           <select
-                            aria-label={`${series}数值格式`}
+                            aria-label={t("seriesValueFormat", { series })}
                             value={seriesFormats[series] || ""}
                             onChange={(event) => {
                               const nextFormats = { ...seriesFormats };
@@ -396,8 +434,8 @@ export function ReportPropertyPanel({
                             }}
                             className="h-9 w-full border border-input bg-background px-2 text-xs outline-none focus:border-primary"
                           >
-                            <option value="">跟随默认</option>
-                            {CHART_VALUE_FORMAT_OPTIONS.map((option) => (
+                            <option value="">{t("followDefault")}</option>
+                            {chartValueFormatOptions.map((option) => (
                               <option key={option.value} value={option.value}>{option.label}</option>
                             ))}
                           </select>
@@ -409,9 +447,9 @@ export function ReportPropertyPanel({
                 {editableDataChart && (
                   <div className="grid grid-cols-2 gap-3 border-t border-border pt-4">
                     <label>
-                      <FieldLabel>方向</FieldLabel>
+                      <FieldLabel>{t("orientation")}</FieldLabel>
                       <select
-                        aria-label="图表方向"
+                        aria-label={t("chartOrientation")}
                         value={supportsOrientation ? chartOrientation : "vertical"}
                         disabled={!supportsOrientation}
                         onChange={(event) =>
@@ -421,14 +459,14 @@ export function ReportPropertyPanel({
                         }
                         className="h-9 w-full border border-input bg-background px-2 text-xs outline-none focus:border-primary disabled:bg-muted/35 disabled:text-muted-foreground"
                       >
-                        <option value="vertical">纵向</option>
-                        <option value="horizontal">横向</option>
+                        <option value="vertical">{t("vertical")}</option>
+                        <option value="horizontal">{t("horizontal")}</option>
                       </select>
                     </label>
                     <label>
-                      <FieldLabel>堆叠</FieldLabel>
+                      <FieldLabel>{t("stacking")}</FieldLabel>
                       <select
-                        aria-label="图表堆叠"
+                        aria-label={t("chartStacking")}
                         value={
                           supportsStack &&
                           selectedSeries.length >= 2 &&
@@ -444,15 +482,15 @@ export function ReportPropertyPanel({
                         }
                         className="h-9 w-full border border-input bg-background px-2 text-xs outline-none focus:border-primary disabled:bg-muted/35 disabled:text-muted-foreground"
                       >
-                        <option value="none">不堆叠</option>
-                        <option value="normal">标准堆叠</option>
-                        <option value="percent">百分比堆叠</option>
+                        <option value="none">{t("stackNone")}</option>
+                        <option value="normal">{t("stackNormal")}</option>
+                        <option value="percent">{t("stackPercent")}</option>
                       </select>
                     </label>
                     <label>
-                      <FieldLabel>默认数值格式</FieldLabel>
+                      <FieldLabel>{t("defaultValueFormat")}</FieldLabel>
                       <select
-                        aria-label="图表数值格式"
+                        aria-label={t("chartValueFormat")}
                         value={chartValueFormat(block.config.number_format)}
                         onChange={(event) =>
                           onChangeBlock({
@@ -461,15 +499,15 @@ export function ReportPropertyPanel({
                         }
                         className="h-9 w-full border border-input bg-background px-2 text-xs outline-none focus:border-primary"
                       >
-                        {CHART_VALUE_FORMAT_OPTIONS.map((option) => (
+                        {chartValueFormatOptions.map((option) => (
                           <option key={option.value} value={option.value}>{option.label}</option>
                         ))}
                       </select>
                     </label>
                     <label>
-                      <FieldLabel>配色方案</FieldLabel>
+                      <FieldLabel>{t("palette")}</FieldLabel>
                       <select
-                        aria-label="图表配色方案"
+                        aria-label={t("chartPalette")}
                         value={chartPalette(block.config.palette)}
                         onChange={(event) =>
                           onChangeBlock({
@@ -478,7 +516,7 @@ export function ReportPropertyPanel({
                         }
                         className="h-9 w-full border border-input bg-background px-2 text-xs outline-none focus:border-primary"
                       >
-                        {CHART_PALETTE_OPTIONS.map((option) => (
+                        {chartPaletteOptions.map((option) => (
                           <option key={option.value} value={option.value}>{option.label}</option>
                         ))}
                       </select>
@@ -486,7 +524,7 @@ export function ReportPropertyPanel({
                     <label className="col-span-2 flex cursor-pointer items-center gap-2 border border-input bg-background px-3 py-2 text-xs">
                       <input
                         type="checkbox"
-                        aria-label="显示数据标签"
+                        aria-label={t("showDataLabels")}
                         checked={block.config.show_labels === true}
                         onChange={(event) =>
                           onChangeBlock({
@@ -495,7 +533,7 @@ export function ReportPropertyPanel({
                         }
                         className="h-3.5 w-3.5 accent-[hsl(var(--primary))]"
                       />
-                      显示数据标签
+                      {t("showDataLabels")}
                     </label>
                   </div>
                 )}
@@ -505,7 +543,7 @@ export function ReportPropertyPanel({
             {block.block_type === "filter" && (
               <div className="space-y-4">
                 <label className="block">
-                  <FieldLabel>筛选字段</FieldLabel>
+                  <FieldLabel>{t("filterField")}</FieldLabel>
                   <select
                     value={typeof block.config.field === "string" ? block.config.field : ""}
                     onChange={(event) =>
@@ -515,13 +553,13 @@ export function ReportPropertyPanel({
                     className="h-9 w-full border border-input bg-background px-3 text-sm outline-none focus:border-primary disabled:text-muted-foreground"
                   >
                     <option value="">
-                      {filterFields.length ? "选择字段" : "当前页面没有可筛选的数据"}
+                      {filterFields.length ? t("selectField") : t("noFilterData")}
                     </option>
                     {filterFields.map((field) => <option key={field}>{field}</option>)}
                   </select>
                 </label>
                 <label className="block">
-                  <FieldLabel>匹配方式</FieldLabel>
+                  <FieldLabel>{t("matchMode")}</FieldLabel>
                   <select
                     value={typeof block.config.operator === "string" ? block.config.operator : "contains"}
                     onChange={(event) =>
@@ -529,17 +567,17 @@ export function ReportPropertyPanel({
                     }
                     className="h-9 w-full border border-input bg-background px-3 text-sm outline-none focus:border-primary"
                   >
-                    <option value="contains">包含</option>
-                    <option value="equals">等于</option>
-                    <option value="not_equals">不等于</option>
-                    <option value="greater_than">大于</option>
-                    <option value="greater_or_equal">大于或等于</option>
-                    <option value="less_than">小于</option>
-                    <option value="less_or_equal">小于或等于</option>
+                    <option value="contains">{t("operatorContains")}</option>
+                    <option value="equals">{t("operatorEquals")}</option>
+                    <option value="not_equals">{t("operatorNotEquals")}</option>
+                    <option value="greater_than">{t("operatorGreaterThan")}</option>
+                    <option value="greater_or_equal">{t("operatorGreaterOrEqual")}</option>
+                    <option value="less_than">{t("operatorLessThan")}</option>
+                    <option value="less_or_equal">{t("operatorLessOrEqual")}</option>
                   </select>
                 </label>
                 <label className="block">
-                  <FieldLabel>输入提示</FieldLabel>
+                  <FieldLabel>{t("inputHint")}</FieldLabel>
                   <input
                     value={typeof block.config.placeholder === "string" ? block.config.placeholder : ""}
                     onChange={(event) => onChangeBlock({ config: { ...block.config, placeholder: event.target.value } })}
@@ -547,37 +585,37 @@ export function ReportPropertyPanel({
                   />
                 </label>
                 <p className="text-[11px] leading-5 text-muted-foreground">
-                  仅筛选当前页面中包含该字段的图表和表格；其他内容不会改变。
+                  {t("filterDescription")}
                 </p>
               </div>
             )}
 
             <div className="grid grid-cols-2 gap-3 border-t border-border pt-5">
               <label>
-                <FieldLabel>宽度</FieldLabel>
+                <FieldLabel>{t("width")}</FieldLabel>
                 <select
                   value={block.layout.w}
                   onChange={(event) => onChangeBlock({ layout: { ...block.layout, w: Number(event.target.value) } })}
                   className="h-9 w-full border border-input bg-background px-2 text-xs outline-none focus:border-primary"
                 >
-                  <option value={3}>四分之一</option>
-                  <option value={4}>三分之一</option>
-                  <option value={6}>一半</option>
-                  <option value={8}>三分之二</option>
-                  <option value={12}>整行</option>
+                  <option value={3}>{t("widthQuarter")}</option>
+                  <option value={4}>{t("widthThird")}</option>
+                  <option value={6}>{t("widthHalf")}</option>
+                  <option value={8}>{t("widthTwoThirds")}</option>
+                  <option value={12}>{t("widthFull")}</option>
                 </select>
               </label>
               <label>
-                <FieldLabel>高度</FieldLabel>
+                <FieldLabel>{t("height")}</FieldLabel>
                 <select
                   value={block.layout.h}
                   onChange={(event) => onChangeBlock({ layout: { ...block.layout, h: Number(event.target.value) } })}
                   className="h-9 w-full border border-input bg-background px-2 text-xs outline-none focus:border-primary"
                 >
-                  <option value={2}>紧凑</option>
-                  <option value={3}>标准</option>
-                  <option value={4}>较高</option>
-                  <option value={6}>大幅</option>
+                  <option value={2}>{t("heightCompact")}</option>
+                  <option value={3}>{t("heightStandard")}</option>
+                  <option value={4}>{t("heightTall")}</option>
+                  <option value={6}>{t("heightLarge")}</option>
                 </select>
               </label>
             </div>
@@ -585,15 +623,15 @@ export function ReportPropertyPanel({
             {block.source_kind !== "manual" && (
               <p className="border-t border-border pt-4 text-[11px] leading-5 text-muted-foreground">
                 {block.source_available === false
-                  ? "原调查内容已不可用；报告中保留的内容仍可继续编辑。"
+                  ? t("sourceUnavailable")
                   : block.config.manual_override === true
-                  ? "内容已经人工调整；原调查和来源仍会保留。"
-                  : "这个区块来自一次调查。你可以自由修改；原调查仍会保留。"}
+                  ? t("sourceEdited")
+                  : t("sourceAvailable")}
               </p>
             )}
           </div>
         )}
-      </div>
+      </fieldset>
     </aside>
   );
 }

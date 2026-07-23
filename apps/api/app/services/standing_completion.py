@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.tables import AnalysisRun, ArtifactRecord, Project
-from app.models.workspace import StandingAnalysisResponse
+from app.models.workspace import StandingAnalysisResponse, StandingAttentionReasonCode
 from app.services.golden_regression import find_matching_contract
 from app.services.standing_analysis import (
     build_validated_result_snapshot,
@@ -28,6 +28,17 @@ from app.services.standing_workspace import (
 
 class StandingCompletionError(ValueError):
     """The candidate result cannot safely replace the prior standing baseline."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason_code: StandingAttentionReasonCode = "standing_result_rejected",
+        reason_params: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+        self.reason_params = dict(reason_params or {})
 
 
 class StandingStaleRunError(StandingCompletionError):
@@ -150,6 +161,9 @@ async def mark_standing_run_needs_attention(
     db: AsyncSession,
     run: AnalysisRun,
     reason: str,
+    *,
+    reason_code: StandingAttentionReasonCode | None = None,
+    reason_params: dict[str, str] | None = None,
 ) -> bool:
     """Preserve the trusted baseline while making a failed run actionable."""
 
@@ -169,6 +183,8 @@ async def mark_standing_run_needs_attention(
             update={
                 "state": "needs_attention",
                 "attention_reason": (reason.strip() or "这次持续分析需要处理")[:1000],
+                "attention_reason_code": reason_code,
+                "attention_reason_params": dict(reason_params or {}),
                 "in_flight": None,
                 "updated_at": datetime.now(UTC),
             }
@@ -214,7 +230,11 @@ async def _finalize_standing_run_impl(
     )
     if input_state.attention_reason or input_state.token is None:
         raise StandingCompletionError(
-            input_state.attention_reason or "完成调查时项目输入已发生变化"
+            input_state.attention_reason or "完成调查时项目输入已发生变化",
+            reason_code=(
+                input_state.attention_reason_code or "standing_project_input_unavailable"
+            ),
+            reason_params=input_state.attention_reason_params,
         )
     if not claimed_token or input_state.token != claimed_token:
         raise StandingCompletionError("调查期间数据或业务定义已变化，旧基线保持不变")
@@ -331,6 +351,8 @@ async def _finalize_standing_run_impl(
             update={
                 "state": "active",
                 "attention_reason": None,
+                "attention_reason_code": None,
+                "attention_reason_params": {},
                 "in_flight": None,
                 "baseline": baseline_ref(
                     snapshot=current_snapshot,

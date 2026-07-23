@@ -6,12 +6,15 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { NextIntlClientProvider } from "next-intl";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@/lib/types/chat";
 import type { AnalysisCorrection, SemanticEntry } from "@/lib/types/api";
 import { AssistantMessageCard } from "@/components/chat/AssistantMessageCard";
 import { api } from "@/lib/api/client";
 import { useProjectStore } from "@/lib/stores/project";
+import enMessages from "@/messages/en.json";
+import messages from "@/messages/zh.json";
 
 vi.mock("@/lib/api/client", () => ({
   api: {
@@ -81,28 +84,39 @@ function renderCard(
     onRetry?: (index: number) => void;
     onChangeAnalysisService?: (index: number) => void;
     onManageAnalysisServices?: (index: number) => void;
+    onConfirm?: (
+      analysisRunId: string,
+      key: string,
+      selectedOption: string,
+    ) => Promise<void>;
   } = {},
+  locale: "en" | "zh" = "zh",
 ) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
 
   return render(
-    <QueryClientProvider client={queryClient}>
-      <AssistantMessageCard
-        message={message}
-        index={0}
-        onRetry={overrides.onRetry || vi.fn()}
-        onRerun={vi.fn()}
-        onUsePrompt={vi.fn()}
-        onRunPrompt={overrides.onRunPrompt}
-        onConfirm={vi.fn()}
-        onOpenData={vi.fn()}
-        onOpenUnderstanding={overrides.onOpenUnderstanding}
-        onChangeAnalysisService={overrides.onChangeAnalysisService}
-        onManageAnalysisServices={overrides.onManageAnalysisServices}
-      />
-    </QueryClientProvider>,
+    <NextIntlClientProvider
+      locale={locale}
+      messages={locale === "en" ? enMessages : messages}
+    >
+      <QueryClientProvider client={queryClient}>
+        <AssistantMessageCard
+          message={message}
+          index={0}
+          onRetry={overrides.onRetry || vi.fn()}
+          onRerun={vi.fn()}
+          onUsePrompt={vi.fn()}
+          onRunPrompt={overrides.onRunPrompt}
+          onConfirm={overrides.onConfirm || vi.fn()}
+          onOpenData={vi.fn()}
+          onOpenUnderstanding={overrides.onOpenUnderstanding}
+          onChangeAnalysisService={overrides.onChangeAnalysisService}
+          onManageAnalysisServices={overrides.onManageAnalysisServices}
+        />
+      </QueryClientProvider>
+    </NextIntlClientProvider>,
   );
 }
 
@@ -139,10 +153,82 @@ describe("AssistantMessageCard", () => {
       },
     });
 
-    const receipt = screen.getByRole("status", { name: "本次修正核对结果" });
+    const receipt = screen.getByRole("status", { name: "核对纠正内容" });
     expect(receipt).toHaveTextContent("本次修正已用于当前数据并重新核对");
     expect(receipt).toHaveTextContent("退款已从本期收入中排除");
     expect(receipt).toHaveTextContent("汇总结果已再次核对");
+  });
+
+  it("localizes coded correction receipt summaries in English", () => {
+    renderCard(
+      {
+        role: "assistant",
+        content: "done",
+        correctionApplication: {
+          correction_id: "correction-1",
+          source_run_id: "run-before",
+          status: "verified",
+          summary_code: "correction_verified",
+          summary: "这条修正已应用到当前数据，并在最终结果中重新核对。",
+          checks: ["current_definition_applied", "历史中文检查"],
+        },
+      },
+      {},
+      "en",
+    );
+
+    const receipt = screen.getByRole("status");
+    expect(receipt).toHaveTextContent(
+      "This correction was applied to the current data and rechecked in the final result.",
+    );
+    expect(receipt).not.toHaveTextContent("这条修正已应用到当前数据");
+    expect(receipt).toHaveTextContent("Using the currently confirmed definition");
+    expect(receipt).not.toHaveTextContent("历史中文检查");
+  });
+
+  it("localizes coded correction receipt summaries in Chinese", () => {
+    renderCard({
+      role: "assistant",
+      content: "已完成",
+      correctionApplication: {
+        correction_id: "correction-1",
+        source_run_id: "run-before",
+        status: "definition_only",
+        summary_code: "correction_definition_only",
+        summary: "The correction was saved but cannot be verified automatically.",
+        checks: [],
+      },
+    });
+
+    const receipt = screen.getByRole("status");
+    expect(receipt).toHaveTextContent(
+      "已按这条修正重新调查；它目前只作为业务定义保存，尚不能自动验证执行。",
+    );
+    expect(receipt).not.toHaveTextContent("cannot be verified automatically");
+  });
+
+  it("does not leak a cross-language legacy summary when no summary code exists", () => {
+    renderCard(
+      {
+        role: "assistant",
+        content: "done",
+        correctionApplication: {
+          correction_id: "correction-1",
+          source_run_id: "run-before",
+          status: "verified",
+          summary: "这条历史回执只有中文摘要。",
+          checks: [],
+        },
+      },
+      {},
+      "en",
+    );
+
+    const receipt = screen.getByRole("status");
+    expect(receipt).toHaveTextContent(
+      "This report uses the corrected judgement and rechecked the current data.",
+    );
+    expect(receipt).not.toHaveTextContent("这条历史回执只有中文摘要");
   });
 
   it("keeps an unverified correction amber and a failed application in the error state", () => {
@@ -158,31 +244,33 @@ describe("AssistantMessageCard", () => {
     });
 
     expect(
-      screen.getByRole("status", { name: "本次修正核对结果" }),
+      screen.getByRole("status", { name: "核对纠正内容" }),
     ).toHaveTextContent("已记住定义，执行方式尚未验证");
 
     rerender(
-      <QueryClientProvider client={new QueryClient()}>
-        <AssistantMessageCard
-          message={{
-            role: "assistant",
-            content: "",
-            errorMessage: "当前数据无法完成核对",
-            correctionApplication: {
-              correction_id: null,
-              source_run_id: null,
-              status: "failed",
-              summary: "当前数据不足以证明修正已经正确作用。",
-            },
-          }}
-          index={0}
-          onRetry={vi.fn()}
-          onRerun={vi.fn()}
-          onUsePrompt={vi.fn()}
-          onConfirm={vi.fn()}
-          onOpenData={vi.fn()}
-        />
-      </QueryClientProvider>,
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <QueryClientProvider client={new QueryClient()}>
+          <AssistantMessageCard
+            message={{
+              role: "assistant",
+              content: "",
+              errorMessage: "当前数据无法完成核对",
+              correctionApplication: {
+                correction_id: null,
+                source_run_id: null,
+                status: "failed",
+                summary: "当前数据不足以证明修正已经正确作用。",
+              },
+            }}
+            index={0}
+            onRetry={vi.fn()}
+            onRerun={vi.fn()}
+            onUsePrompt={vi.fn()}
+            onConfirm={vi.fn()}
+            onOpenData={vi.fn()}
+          />
+        </QueryClientProvider>
+      </NextIntlClientProvider>,
     );
 
     const failure = screen.getByRole("alert", { name: "本次修正未完成" });
@@ -263,10 +351,10 @@ describe("AssistantMessageCard", () => {
     });
 
     expect(screen.getByText("华东区本月销售额最高。")).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "结果明细" })).toHaveTextContent(
+    expect(screen.getByRole("region", { name: "调查结果详情" })).toHaveTextContent(
       "华东",
     );
-    expect(screen.getByRole("region", { name: "结果明细" })).toHaveTextContent(
+    expect(screen.getByRole("region", { name: "调查结果详情" })).toHaveTextContent(
       "120",
     );
     expect(
@@ -376,7 +464,7 @@ describe("AssistantMessageCard", () => {
       },
     });
 
-    const receipt = screen.getByRole("status", { name: "本次修正核对结果" });
+    const receipt = screen.getByRole("status", { name: "核对纠正内容" });
     expect(receipt).toHaveTextContent("使用的是当前确认的定义");
     expect(receipt).toHaveTextContent("这条修正已进入最终结果");
     expect(receipt).toHaveTextContent("最终结果已经重新核对");
@@ -661,7 +749,9 @@ describe("AssistantMessageCard", () => {
     expect(screen.getAllByText("100").length).toBeGreaterThan(0);
     expect(screen.getByText("区域收入明细")).toBeInTheDocument();
     expect(screen.getAllByText("华东").length).toBeGreaterThan(0);
-    expect(screen.getByText("区域收入已经核对")).toBeInTheDocument();
+    expect(screen.getByText("结果已复核")).toBeInTheDocument();
+    expect(screen.getByText("1 行结果已复核")).toBeInTheDocument();
+    expect(screen.queryByText("区域收入已经核对")).not.toBeInTheDocument();
     expect(screen.queryByText(/relative_path/)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /整理成报告/ })).toHaveAttribute(
       "href",
@@ -753,34 +843,36 @@ describe("AssistantMessageCard", () => {
     });
 
     render(
-      <QueryClientProvider client={queryClient}>
-        <AssistantMessageCard
-          message={{
-            role: "assistant",
-            content: "已完成",
-            originalQuery: "比较本月各门店净收入变化",
-            projectId: "project-1",
-            analysisRunId: "run-1",
-            analysisState: "completed",
-            report: {
-              status: "completed",
-              title: "门店净收入",
-              summary: "已完成",
-              findings: [],
-              metrics: [],
-              evidence: [],
-              follow_ups: [],
-            },
-          }}
-          index={4}
-          onRetry={vi.fn()}
-          onRerun={onRerun}
-          onUsePrompt={vi.fn()}
-          onRunPrompt={onRunPrompt}
-          onConfirm={vi.fn()}
-          onOpenData={vi.fn()}
-        />
-      </QueryClientProvider>,
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <QueryClientProvider client={queryClient}>
+          <AssistantMessageCard
+            message={{
+              role: "assistant",
+              content: "已完成",
+              originalQuery: "比较本月各门店净收入变化",
+              projectId: "project-1",
+              analysisRunId: "run-1",
+              analysisState: "completed",
+              report: {
+                status: "completed",
+                title: "门店净收入",
+                summary: "已完成",
+                findings: [],
+                metrics: [],
+                evidence: [],
+                follow_ups: [],
+              },
+            }}
+            index={4}
+            onRetry={vi.fn()}
+            onRerun={onRerun}
+            onUsePrompt={vi.fn()}
+            onRunPrompt={onRunPrompt}
+            onConfirm={vi.fn()}
+            onOpenData={vi.fn()}
+          />
+        </QueryClientProvider>
+      </NextIntlClientProvider>,
     );
 
     await screen.findByText("已记住定义，执行方式尚未验证");
@@ -932,12 +1024,14 @@ describe("AssistantMessageCard", () => {
       },
     });
     const cardForRun = (analysisRunId: string) => (
-      <QueryClientProvider client={queryClient}>
-        <AssistantMessageCard
-          message={messageForRun(analysisRunId)}
-          {...sharedProps}
-        />
-      </QueryClientProvider>
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <QueryClientProvider client={queryClient}>
+          <AssistantMessageCard
+            message={messageForRun(analysisRunId)}
+            {...sharedProps}
+          />
+        </QueryClientProvider>
+      </NextIntlClientProvider>
     );
     const view = render(cardForRun("run-1"));
 
@@ -1321,12 +1415,14 @@ describe("AssistantMessageCard", () => {
       },
     });
     const cardForRun = (analysisRunId: string) => (
-      <QueryClientProvider client={queryClient}>
-        <AssistantMessageCard
-          message={messageForRun(analysisRunId)}
-          {...sharedProps}
-        />
-      </QueryClientProvider>
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <QueryClientProvider client={queryClient}>
+          <AssistantMessageCard
+            message={messageForRun(analysisRunId)}
+            {...sharedProps}
+          />
+        </QueryClientProvider>
+      </NextIntlClientProvider>
     );
     const view = render(cardForRun("run-1"));
 
@@ -1404,12 +1500,14 @@ describe("AssistantMessageCard", () => {
       },
     });
     const cardForRun = (analysisRunId: string) => (
-      <QueryClientProvider client={queryClient}>
-        <AssistantMessageCard
-          message={messageForRun(analysisRunId)}
-          {...sharedProps}
-        />
-      </QueryClientProvider>
+      <NextIntlClientProvider locale="zh" messages={messages}>
+        <QueryClientProvider client={queryClient}>
+          <AssistantMessageCard
+            message={messageForRun(analysisRunId)}
+            {...sharedProps}
+          />
+        </QueryClientProvider>
+      </NextIntlClientProvider>
     );
     const view = render(cardForRun("run-1"));
 
@@ -1740,7 +1838,7 @@ describe("AssistantMessageCard", () => {
     fireEvent.click(await screen.findByRole("button", { name: "撤销记录" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "撤销失败，请重试",
+      "暂时无法完成，请重试。",
     );
     expect(screen.getByText("已记录这次修正")).toBeInTheDocument();
   });
@@ -1768,5 +1866,58 @@ describe("AssistantMessageCard", () => {
         name: "结论有偏差或口径不对？纠正这次理解",
       }),
     ).not.toBeInTheDocument();
+  });
+
+  it("localizes a coded refund preflight while submitting the original option", async () => {
+    const onConfirm = vi.fn().mockResolvedValue(undefined);
+    renderCard(
+      {
+        role: "assistant",
+        content: "数据同时包含金额和退款字段，不同口径会改变收入结论。",
+        analysisRunId: "run-preflight-en",
+        analysisState: "waiting_confirmation",
+        report: {
+          status: "waiting_confirmation",
+          title: "需要确认一个业务口径",
+          summary: "数据同时包含金额和退款字段，不同口径会改变收入结论。",
+          findings: [],
+          metrics: [],
+          evidence: [],
+          follow_ups: [],
+          confirmation: {
+            key: "revenue_refund_policy",
+            presentation_code: "preflight.revenue_refund_policy",
+            question: "计算收入时，退款订单需要扣除吗？",
+            reason: "数据同时包含金额和退款字段，不同口径会改变收入结论。",
+            options: ["扣除退款", "保留退款订单"],
+            option_codes: {
+              "扣除退款": "exclude_refunds",
+              "保留退款订单": "include_refunds",
+            },
+          },
+        },
+      },
+      { onConfirm },
+      "en",
+    );
+
+    expect(
+      screen.getByRole("heading", {
+        name: "Should refunded orders be deducted when calculating revenue?",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/The data contains both amount and refund fields/).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText("计算收入时，退款订单需要扣除吗？")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Deduct refunded orders" }));
+    await waitFor(() =>
+      expect(onConfirm).toHaveBeenCalledWith(
+        "run-preflight-en",
+        "revenue_refund_policy",
+        "扣除退款",
+      ),
+    );
   });
 });

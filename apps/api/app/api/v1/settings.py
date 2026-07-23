@@ -22,6 +22,8 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
             python_enabled=settings_record.python_enabled,
             diagnostics_enabled=settings_record.diagnostics_enabled,
             auto_repair_enabled=settings_record.auto_repair_enabled,
+            preprocessing_enabled=settings_record.preprocessing_enabled,
+            self_analysis_enabled=settings_record.self_analysis_enabled,
         )
     )
 
@@ -46,6 +48,8 @@ async def update_settings(
             python_enabled=settings_record.python_enabled,
             diagnostics_enabled=settings_record.diagnostics_enabled,
             auto_repair_enabled=settings_record.auto_repair_enabled,
+            preprocessing_enabled=settings_record.preprocessing_enabled,
+            self_analysis_enabled=settings_record.self_analysis_enabled,
         ),
         message="设置已更新",
     )

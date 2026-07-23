@@ -17,6 +17,7 @@ type SortDirection = "asc" | "desc" | null;
 
 export function DataTable({ data, title, maxRows = 100 }: DataTableProps) {
   const t = useTranslations("assistant");
+  const tChart = useTranslations("chartDisplay");
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -132,10 +133,20 @@ export function DataTable({ data, title, maxRows = 100 }: DataTableProps) {
               {columns.map((col) => (
                 <th
                   key={col}
-                  onClick={() => handleSort(col)}
-                  className="px-4 py-3 text-left font-medium text-foreground cursor-pointer hover:bg-muted transition-colors whitespace-nowrap"
+                  aria-sort={
+                    sortColumn === col && sortDirection
+                      ? sortDirection === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : "none"
+                  }
+                  className="p-0 text-left font-medium text-foreground whitespace-nowrap"
                 >
-                  <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleSort(col)}
+                    className="flex w-full items-center gap-1 px-4 py-3 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40"
+                  >
                     {col}
                     {sortColumn === col && (
                       sortDirection === "asc" ? (
@@ -144,7 +155,7 @@ export function DataTable({ data, title, maxRows = 100 }: DataTableProps) {
                         <ChevronDown size={14} className="text-primary" />
                       )
                     )}
-                  </div>
+                  </button>
                 </th>
               ))}
             </tr>
@@ -175,7 +186,7 @@ export function DataTable({ data, title, maxRows = 100 }: DataTableProps) {
                       title={String(value ?? "")}
                     >
                       {value === null || value === undefined ? (
-                        <span className="text-muted-foreground/50 italic">NULL</span>
+                        <span className="text-muted-foreground/50 italic">{tChart("nullValue")}</span>
                       ) : (
                         String(value)
                       )}

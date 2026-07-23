@@ -5,7 +5,9 @@ import time
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.tables import Connection, Project, ProjectDataSource
 from app.services.database import ConnectionTestResult
 
 
@@ -70,6 +72,109 @@ async def test_update_connection(client: AsyncClient):
     )
     assert response.status_code == 200
     assert response.json()["data"]["name"] == "Updated Name"
+
+
+@pytest.mark.asyncio
+async def test_connection_namespace_change_requires_linked_sources_to_be_prepared_again(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    project = Project(name="连接范围保护")
+    connection = Connection(
+        name="经营库",
+        driver="postgresql",
+        host="warehouse.internal",
+        port=5432,
+        username="analyst",
+        database_name="commerce",
+        extra_options={"schema": "public"},
+    )
+    db_session.add_all([project, connection])
+    await db_session.flush()
+    source = ProjectDataSource(
+        project_id=project.id,
+        connection_id=connection.id,
+        kind="connection",
+        name="经营库",
+        format="postgresql",
+        status="ready",
+        profile_data={
+            "logical_name": "经营库",
+            "is_current": True,
+            "tables": [
+                {
+                    "name": "orders",
+                    "schema": "public",
+                    "columns": [{"name": "amount", "type": "numeric"}],
+                }
+            ],
+        },
+    )
+    db_session.add(source)
+    await db_session.commit()
+
+    response = await client.put(
+        f"/api/v1/config/connections/{connection.id}",
+        json={
+            "name": "经营库",
+            "driver": "postgresql",
+            "host": "warehouse.internal",
+            "port": 5432,
+            "username": "analyst",
+            "database": "commerce",
+            "extra_options": {"schema": "archive"},
+        },
+    )
+
+    assert response.status_code == 200
+    await db_session.refresh(source)
+    assert source.status == "attached"
+    assert source.profile_data["is_current"] is False
+    assert source.profile_data["activation_state"] == "pending_confirmation"
+    assert any(
+        item.get("code") == "database_connection_scope_changed"
+        for item in source.profile_data["issues"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_connection_display_name_change_keeps_linked_source_current(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    project = Project(name="连接名称修改")
+    connection = Connection(
+        name="旧名称",
+        driver="sqlite",
+        database_name="warehouse.db",
+    )
+    db_session.add_all([project, connection])
+    await db_session.flush()
+    source = ProjectDataSource(
+        project_id=project.id,
+        connection_id=connection.id,
+        kind="connection",
+        name="经营库",
+        format="sqlite",
+        status="ready",
+        profile_data={"logical_name": "经营库", "is_current": True},
+    )
+    db_session.add(source)
+    await db_session.commit()
+
+    response = await client.put(
+        f"/api/v1/config/connections/{connection.id}",
+        json={
+            "name": "新名称",
+            "driver": "sqlite",
+            "database": "warehouse.db",
+        },
+    )
+
+    assert response.status_code == 200
+    await db_session.refresh(source)
+    assert source.status == "ready"
+    assert source.profile_data["is_current"] is True
 
 
 @pytest.mark.asyncio
