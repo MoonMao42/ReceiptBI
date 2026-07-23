@@ -306,6 +306,32 @@ jobs:
           path: release-assets
           merge-multiple: true
 
+      - name: Verify release source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          git fetch --force --no-tags origin \
+            "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          tagged_commit=$(git rev-parse "$RELEASE_TAG^{commit}")
+
+          [ "$tagged_commit" = "$GITHUB_SHA" ] || {
+            echo "Release tag points to $tagged_commit, but this workflow is building $GITHUB_SHA"
+            exit 1
+          }
+
+          release_json=$(gh release view "$RELEASE_TAG" \
+            --repo "${{ github.repository }}" \
+            --json isDraft,tagName)
+          is_draft=$(printf '%s' "$release_json" | jq -r '.isDraft')
+          release_tag=$(printf '%s' "$release_json" | jq -r '.tagName')
+
+          [ "$is_draft" = "true" ] && [ "$release_tag" = "$RELEASE_TAG" ] || {
+            echo "Release is missing, already published, or bound to another tag"
+            exit 1
+          }
+
       - name: Verify complete release artifact set
         shell: bash
         run: |
@@ -354,12 +380,78 @@ jobs:
             exit 1
           }
 
+          assets_json=$(gh api "repos/${{ github.repository }}/releases/$release_id/assets?per_page=100")
+          printf '%s' "$assets_json" | jq -r \
+            '.[] | select(.name | startswith("ReceiptBI-staging-")) | .id' |
+            while read -r stale_id; do
+              [ -n "$stale_id" ] && gh api --method DELETE \
+                "repos/${{ github.repository }}/releases/assets/$stale_id"
+            done
+
+          declare -A staged_ids
           for file in release-assets/*.dmg release-assets/*.zip release-assets/*.exe; do
             [ -f "$file" ] || continue
             filename=$(basename "$file")
             filesize=$(wc -c < "$file" | tr -d ' ')
             local_digest="sha256:$(sha256sum "$file" | awk '{print $1}')"
-            echo "Uploading $filename ($filesize bytes)..."
+            staging_name="ReceiptBI-staging-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$filename"
+            encoded_name=$(jq -rn --arg value "$staging_name" '$value | @uri')
+            echo "Staging $filename ($filesize bytes)..."
+
+            uploaded=false
+            for attempt in 1 2 3; do
+              response_file=$(mktemp)
+              http_code=$(curl --silent --show-error \
+                --retry 3 \
+                --retry-all-errors \
+                --retry-delay 5 \
+                --output "$response_file" \
+                --write-out '%{http_code}' \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                -H "Content-Type: application/octet-stream" \
+                --upload-file "$file" \
+                "https://uploads.github.com/repos/${{ github.repository }}/releases/$release_id/assets?name=$encoded_name" \
+                || true)
+
+              uploaded_id=$(jq -r '.id // empty' "$response_file" 2>/dev/null || true)
+              uploaded_size=$(jq -r '.size // 0' "$response_file" 2>/dev/null || true)
+              uploaded_digest=$(jq -r '.digest // empty' "$response_file" 2>/dev/null || true)
+              rm -f "$response_file"
+
+              if [ "$http_code" = "201" ] && [ "$uploaded_size" = "$filesize" ] && [ "$uploaded_digest" = "$local_digest" ]; then
+                staged_ids["$filename"]="$uploaded_id"
+                uploaded=true
+                break
+              fi
+
+              failed_assets=$(gh api \
+                "repos/${{ github.repository }}/releases/$release_id/assets?per_page=100")
+              printf '%s' "$failed_assets" | jq -r --arg name "$staging_name" \
+                '.[] | select(.name == $name) | .id' |
+                while read -r failed_id; do
+                  [ -n "$failed_id" ] && gh api --method DELETE \
+                    "repos/${{ github.repository }}/releases/assets/$failed_id"
+                done
+              sleep $((attempt * 5))
+            done
+
+            [ "$uploaded" = "true" ] || {
+              echo "Upload verification failed for $filename after 3 attempts"
+              exit 1
+            }
+          done
+
+          for filename in "${!staged_ids[@]}"; do
+            release_json=$(gh release view "$RELEASE_TAG" \
+              --repo "${{ github.repository }}" \
+              --json databaseId,isDraft)
+            current_release_id=$(printf '%s' "$release_json" | jq -r '.databaseId')
+            is_draft=$(printf '%s' "$release_json" | jq -r '.isDraft')
+
+            [ "$is_draft" = "true" ] && [ "$current_release_id" = "$release_id" ] || {
+              echo "Release changed or was published while assets were staged"
+              exit 1
+            }
 
             assets_json=$(gh api "repos/${{ github.repository }}/releases/$release_id/assets?per_page=100")
             existing=$(printf '%s' "$assets_json" | jq -r --arg name "$filename" \
@@ -368,27 +460,9 @@ jobs:
               gh api --method DELETE "repos/${{ github.repository }}/releases/assets/$existing"
             fi
 
-            encoded_name=$(jq -rn --arg value "$filename" '$value | @uri')
-            response_file=$(mktemp)
-            http_code=$(curl --silent --show-error \
-              --output "$response_file" \
-              --write-out '%{http_code}' \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H "Content-Type: application/octet-stream" \
-              --upload-file "$file" \
-              "https://uploads.github.com/repos/${{ github.repository }}/releases/$release_id/assets?name=$encoded_name")
-
-            uploaded_id=$(jq -r '.id // empty' "$response_file")
-            uploaded_size=$(jq -r '.size // 0' "$response_file")
-            uploaded_digest=$(jq -r '.digest // empty' "$response_file")
-            rm -f "$response_file"
-
-            if [ "$http_code" != "201" ] || [ "$uploaded_size" != "$filesize" ] || [ "$uploaded_digest" != "$local_digest" ]; then
-              [ -n "$uploaded_id" ] && gh api --method DELETE \
-                "repos/${{ github.repository }}/releases/assets/$uploaded_id"
-              echo "Upload verification failed for $filename"
-              exit 1
-            fi
+            gh api --method PATCH \
+              "repos/${{ github.repository }}/releases/assets/${staged_ids[$filename]}" \
+              -f name="$filename" >/dev/null
           done
 
       - name: Verify draft release assets
@@ -399,8 +473,14 @@ jobs:
         run: |
           release_json=$(gh release view "$RELEASE_TAG" \
             --repo "${{ github.repository }}" \
-            --json databaseId)
+            --json databaseId,isDraft)
           release_id=$(printf '%s' "$release_json" | jq -r '.databaseId')
+          is_draft=$(printf '%s' "$release_json" | jq -r '.isDraft')
+          [ "$is_draft" = "true" ] || {
+            echo "Release was published before final verification"
+            exit 1
+          }
+
           assets_json=$(gh api "repos/${{ github.repository }}/releases/$release_id/assets?per_page=100")
           version=$(node -p "require('./apps/desktop/package.json').version")
           expected=(
