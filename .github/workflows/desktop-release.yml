@@ -298,7 +298,7 @@ jobs:
 
   publish-release-assets:
     needs: build
-    if: needs.build.result == 'success' && (startsWith(github.ref, 'refs/tags/desktop-v') || inputs.release_tag != '')
+    if: always() && needs.build.result == 'success' && (startsWith(github.ref, 'refs/tags/desktop-v') || inputs.release_tag != '')
     runs-on: ubuntu-latest
     permissions:
       contents: write
