@@ -174,7 +174,11 @@ export function ModelSettings() {
       )}
 
       {testResult && (
-        <div data-testid="model-test-summary" className="border-y border-border bg-card px-4 py-4">
+        <div
+          data-testid="model-test-summary"
+          data-status={testResult.success ? "success" : "error"}
+          className="border-y border-border bg-card px-4 py-4"
+        >
           <div className="flex items-center gap-2 text-sm font-medium text-foreground">
             {testResult.success ? (
               <CheckCircle size={16} className="text-primary" />

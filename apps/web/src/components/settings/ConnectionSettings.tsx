@@ -147,6 +147,8 @@ export function ConnectionSettings() {
                   </div>
                   {testResult?.id === connection.id && (
                     <div
+                      data-testid={`connection-test-result-${connection.id}`}
+                      data-status={testResult.success ? "success" : "error"}
                       className={cn(
                         "mt-1 flex items-center gap-1 text-sm",
                         testResult.success ? "text-success" : "text-destructive"
