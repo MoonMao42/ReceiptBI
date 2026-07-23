@@ -11,6 +11,7 @@
 import { cpSync, existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
+  FRONTEND_NEXT_DIST_DIRECTORY,
   validateFrontendBundle,
   writeFrontendBuildManifest,
 } from '../electron/frontend-bundle.js';
@@ -20,7 +21,7 @@ const WEB_DIR = join(ROOT, 'apps/web');
 const DESKTOP_DIR = join(ROOT, 'apps/desktop');
 const NEXT_OUT = join(DESKTOP_DIR, 'next');
 const NEXT_STAGING = join(DESKTOP_DIR, 'next.staging');
-const NEXT_DIST_DIR = '.next-desktop';
+const NEXT_DIST_DIR = FRONTEND_NEXT_DIST_DIRECTORY;
 const NEXT_BUILD_OUT = join(WEB_DIR, NEXT_DIST_DIR);
 
 const BACKEND_PORT = 18080;
@@ -97,7 +98,7 @@ async function main() {
 
   // 复制静态文件（standalone 不包含 static 和 public）
   const staticSrc = join(NEXT_BUILD_OUT, 'static');
-  const staticDest = join(NEXT_STAGING, '.next/static');
+  const staticDest = join(NEXT_STAGING, NEXT_DIST_DIR, 'static');
   if (!existsSync(staticSrc)) throw new Error(`Next.js static output not found: ${staticSrc}`);
   mkdirSync(staticDest, { recursive: true });
   cpSync(staticSrc, staticDest, { recursive: true });

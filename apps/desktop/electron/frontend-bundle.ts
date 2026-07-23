@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export const FRONTEND_BUILD_MANIFEST_NAME = 'receiptbi-frontend-build.json';
+export const FRONTEND_NEXT_DIST_DIRECTORY = '.next-desktop';
 
 export interface FrontendBuildManifest {
   readonly formatVersion: 1;
@@ -22,7 +23,11 @@ function requireDirectory(directoryPath: string, label: string): void {
 }
 
 export function readFrontendBuildId(bundleDirectory: string): string {
-  const buildIdPath = path.join(bundleDirectory, '.next', 'BUILD_ID');
+  const buildIdPath = path.join(
+    bundleDirectory,
+    FRONTEND_NEXT_DIST_DIRECTORY,
+    'BUILD_ID'
+  );
   requireFile(buildIdPath, 'Next.js BUILD_ID');
   const buildId = fs.readFileSync(buildIdPath, 'utf-8').trim();
   if (!buildId || !/^[A-Za-z0-9_-]+$/.test(buildId)) {
@@ -48,13 +53,13 @@ export function writeFrontendBuildManifest(bundleDirectory: string): FrontendBui
 export function validateFrontendBundle(bundleDirectory: string): FrontendBuildManifest {
   requireFile(path.join(bundleDirectory, 'server.js'), 'Next.js standalone server');
   requireFile(
-    path.join(bundleDirectory, '.next', 'build-manifest.json'),
+    path.join(bundleDirectory, FRONTEND_NEXT_DIST_DIRECTORY, 'build-manifest.json'),
     'Next.js build manifest'
   );
 
   const buildId = readFrontendBuildId(bundleDirectory);
   requireDirectory(
-    path.join(bundleDirectory, '.next', 'static', buildId),
+    path.join(bundleDirectory, FRONTEND_NEXT_DIST_DIRECTORY, 'static', buildId),
     'Next.js build-specific static assets'
   );
 

@@ -13,6 +13,7 @@ node_modules/
 .pnpm-store/
 .next/
 .next-dev/
+.next-desktop/
 *.tsbuildinfo
 out/
 playwright-report/

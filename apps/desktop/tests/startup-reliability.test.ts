@@ -13,6 +13,7 @@ import {
   isRendererChunkFailureReport,
 } from '../electron/frontend-reliability.js';
 import {
+  FRONTEND_NEXT_DIST_DIRECTORY,
   validateFrontendBundle,
   writeFrontendBuildManifest,
 } from '../electron/frontend-bundle.js';
@@ -105,19 +106,31 @@ test('frontend readiness extracts only same-origin Next.js scripts', () => {
   );
 });
 
-test('packaged frontend validation binds the copy to its Next.js BUILD_ID', () => {
+test('packaged frontend validation binds the desktop dist copy to its BUILD_ID', () => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'receiptbi-frontend-bundle-'));
   try {
-    fs.mkdirSync(path.join(fixture, '.next', 'static', 'build_123'), { recursive: true });
+    fs.mkdirSync(
+      path.join(fixture, FRONTEND_NEXT_DIST_DIRECTORY, 'static', 'build_123'),
+      { recursive: true }
+    );
     fs.writeFileSync(path.join(fixture, 'server.js'), '/* standalone */\n');
-    fs.writeFileSync(path.join(fixture, '.next', 'BUILD_ID'), 'build_123\n');
-    fs.writeFileSync(path.join(fixture, '.next', 'build-manifest.json'), '{}\n');
+    fs.writeFileSync(
+      path.join(fixture, FRONTEND_NEXT_DIST_DIRECTORY, 'BUILD_ID'),
+      'build_123\n'
+    );
+    fs.writeFileSync(
+      path.join(fixture, FRONTEND_NEXT_DIST_DIRECTORY, 'build-manifest.json'),
+      '{}\n'
+    );
 
     const written = writeFrontendBuildManifest(fixture);
     assert.equal(written.buildId, 'build_123');
     assert.deepEqual(validateFrontendBundle(fixture), written);
 
-    fs.writeFileSync(path.join(fixture, '.next', 'BUILD_ID'), 'other_build\n');
+    fs.writeFileSync(
+      path.join(fixture, FRONTEND_NEXT_DIST_DIRECTORY, 'BUILD_ID'),
+      'other_build\n'
+    );
     assert.throws(
       () => validateFrontendBundle(fixture),
       /build-specific static assets|does not match BUILD_ID/
