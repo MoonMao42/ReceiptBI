@@ -1,6 +1,6 @@
 """数据库表定义"""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -97,7 +97,10 @@ class Message(Base, UUIDMixin):
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     extra_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+    )
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")
 
@@ -268,7 +271,11 @@ class SanitationRecipeRevisionRecord(Base, UUIDMixin):
     # Stored as durable provenance rather than an FK: deleting a correction must
     # not rewrite immutable cleaning history.
     source_correction_id: Mapped[str | None] = mapped_column(String(36), index=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        index=True,
+    )
 
 
 class SemanticScopeNode(Base, UUIDMixin, TimestampMixin):
@@ -401,7 +408,11 @@ class SemanticEntryRevision(Base, UUIDMixin):
     reason: Mapped[str | None] = mapped_column(Text)
     source_correction_id: Mapped[str | None] = mapped_column(String(36), index=True)
     snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        index=True,
+    )
 
     project: Mapped["Project"] = relationship(back_populates="semantic_revisions")
 

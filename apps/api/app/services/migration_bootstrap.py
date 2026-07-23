@@ -572,6 +572,7 @@ _SCHEMA_REVISION_ALIASES: Final[dict[str, str]] = {
     "0014_candidate_hygiene": "0013_model_health",
     "0019_retire_legacy_candidates": "0018_semantic_scope_nodes",
     "0020_retire_stale_recos": "0018_semantic_scope_nodes",
+    "0022_retire_legacy_user_scope": "0021_semantic_inventory_jobs",
 }
 
 

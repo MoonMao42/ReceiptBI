@@ -20,7 +20,7 @@ from app.services.migration_bootstrap import (
     migrate_local_sqlite_to_head,
 )
 
-HEAD = "0021_semantic_inventory_jobs"
+HEAD = "0022_retire_legacy_user_scope"
 
 
 def _engine(path: Path) -> AsyncEngine:
