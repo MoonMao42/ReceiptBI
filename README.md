@@ -144,3 +144,4 @@ MIT
 | Version | Based on | Branch |
 |---------|----------|--------|
 | v2 | [gptme](https://github.com/ErikBjare/gptme) | [v2](https://github.com/MoonMao42/ReceiptBI/tree/v2) |
+| v1 | Original architecture | [v1](https://github.com/MoonMao42/ReceiptBI/tree/v1) |

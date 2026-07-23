@@ -144,3 +144,4 @@ MIT
 | 版本 | 基于 | 分支 |
 |------|------|------|
 | v2 | [gptme](https://github.com/ErikBjare/gptme) | [v2](https://github.com/MoonMao42/ReceiptBI/tree/v2) |
+| v1 | 初代架构 | [v1](https://github.com/MoonMao42/ReceiptBI/tree/v1) |
