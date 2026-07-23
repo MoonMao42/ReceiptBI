@@ -132,14 +132,19 @@ jobs:
 
       - name: Wait for frontend and backend
         run: |
-          for url in http://127.0.0.1:8000/health http://127.0.0.1:3000; do
+          wait_for_url() {
+            url="$1"
             for _ in $(seq 1 60); do
-              if curl -fsS "$url" >/dev/null; then
-                break
+              if curl --connect-timeout 2 --max-time 5 -fsS "$url" >/dev/null; then
+                return 0
               fi
               sleep 2
             done
-            curl -fsS "$url" >/dev/null
+            echo "Timed out waiting for $url" >&2
+            return 1
+          }
+          for url in http://127.0.0.1:8000/health http://127.0.0.1:3000/health; do
+            wait_for_url "$url"
           done
 
       - name: Install Playwright browser
@@ -223,15 +228,21 @@ jobs:
 
       - name: Wait for services
         run: |
-          for url in http://127.0.0.1:8000/health http://127.0.0.1:3000; do
+          wait_for_url() {
+            url="$1"
             for _ in $(seq 1 60); do
-              if curl -fsS "$url" >/dev/null; then
-                break
+              if curl --connect-timeout 2 --max-time 5 -fsS "$url" >/dev/null; then
+                return 0
               fi
               sleep 2
             done
-            curl -fsS "$url" >/dev/null
+            echo "Timed out waiting for $url" >&2
+            return 1
+          }
+          for url in http://127.0.0.1:8000/health http://127.0.0.1:3000/health; do
+            wait_for_url "$url"
           done
+          curl --connect-timeout 2 --max-time 30 -fsS http://127.0.0.1:3000 >/dev/null
 
       - name: Status
         run: ./start.sh status
