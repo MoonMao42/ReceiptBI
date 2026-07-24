@@ -170,7 +170,7 @@ These commands create development packages. They do not prove signing, notarizat
 
 ## Documentation Rules
 
-- `README.md` and `README.zh.md` must keep the same section order and capability claims.
+- `README.md` and `README.en.md` must keep the same section order and capability claims.
 - [STATUS.md](STATUS.md) is authoritative for implemented versus open work.
 - [PRODUCT_CONTRACT.md](PRODUCT_CONTRACT.md) defines durable system responsibilities, not a fixed demo scenario.
 - [DATA_AND_PRIVACY.md](DATA_AND_PRIVACY.md) must follow the real model and storage data flow.
