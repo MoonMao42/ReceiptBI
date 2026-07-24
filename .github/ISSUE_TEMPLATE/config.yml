@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report / 安全问题
+    url: https://github.com/MoonMao42/ReceiptBI/security/advisories/new
+    about: Report a vulnerability privately. / 私密报告安全漏洞。

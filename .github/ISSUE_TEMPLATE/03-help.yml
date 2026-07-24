@@ -1,0 +1,46 @@
+name: Help wanted / 使用帮助
+description: Ask a focused question about using ReceiptBI / 询问一个具体的使用问题
+title: "[Help] "
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to do? / 你想完成什么？
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried? / 你已经尝试了什么？
+      description: Include the point where you became blocked.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: ReceiptBI version
+      placeholder: "For example: 1.0.0"
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment / 运行环境
+      placeholder: "For example: Windows 11"
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context / 补充信息
+      description: Add a screenshot or short example if it helps explain the question.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks / 提交前确认
+      options:
+        - label: I searched existing issues for the same question. / 我已搜索过相同问题。
+          required: true
+        - label: I removed credentials, personal data, and private datasets. / 我已移除凭据、个人信息和私有数据。
+          required: true

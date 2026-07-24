@@ -1,34 +1,97 @@
 <div align="center">
 
-<img src="docs/images/receiptbi-icon.png" width="200" alt="ReceiptBI logo">
+<img src="docs/images/receiptbi-icon.png" width="144" alt="ReceiptBI logo">
 
-ReceiptBI 用来调查文件和数据库,用自然语言来提供你需要的信息和内容.
+# ReceiptBI
 
-[中文](README.md) | [English](README.en.md)
+**把 CSV、Excel 和只读数据库变成可核查、可编辑的业务报表。**
+
+用自然语言调查数据，保留结论依据，再把确认过的结果整理成报表。
+
+[下载桌面版](https://github.com/MoonMao42/ReceiptBI/releases/latest) · [用示例数据试一遍](#用示例数据试一遍) · [English](README.en.md)
+
+[![CI](https://github.com/MoonMao42/ReceiptBI/actions/workflows/ci.yml/badge.svg)](https://github.com/MoonMao42/ReceiptBI/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/MoonMao42/ReceiptBI?label=release)](https://github.com/MoonMao42/ReceiptBI/releases/latest)
+[![License](https://img.shields.io/github/license/MoonMao42/ReceiptBI)](LICENSE)
 
 </div>
 
-## 功能特点
+![查看报表分页并进入编辑布局](docs/images/demo/receiptbi-report-demo.gif)
 
-### 1.自建适合数据处理流程的Agent 
+<p align="center"><sub>真实界面，使用仓库内的 12 行合成订单数据录制。</sub></p>
 
-基于 Python 与 PydanticAI 构建
-- **语义隔离**：业务指标、维度与关联规则直接绑定在对应数据表下方。当不同表含有相同字段名时，仅在当前表的作用域内解析，避免同名字段含义混淆。
-- **数据预检**：导入数据库时会自动检查字段数据类型与离群值，清洗规则单独保存，不修改原始数据文件。
+很多数据工具回答完一个问题就结束了。ReceiptBI 会把问题、使用的数据、采用的业务口径、计算过程和结论留在同一次调查中。你可以回看依据，也可以把已经确认的结果继续整理成一份报表。
 
-### 2.Rust 限制运行SQLite
+## 用示例数据试一遍
 
-- **查询计划预算审查**：运行 SQL 前审查,防止整表查询卡死数据库。
-- **只读防御模式**：对LLM产生的破坏性指令拒绝执行或者清洗。
+1. 安装 [ReceiptBI 桌面版](https://github.com/MoonMao42/ReceiptBI/releases/latest)，或从源码启动。
+2. 下载仓库中的 [咖啡零售订单示例](examples/retail/orders.csv)。
+3. 在设置中选择模型服务，然后把示例文件加入项目。
+4. 输入下面的问题：
 
+> 请分析最近一个月的销售额、毛利和退款，并按地区和渠道比较。
 
-### 3.智能语义层项目理解
+示例只有 12 行，不含姓名、地址、账号或其他个人信息。你可以很快看到一次调查如何变成带指标、图表和依据的多页报表。
 
-- **LLM分析语义层**：高级model（类似gpt或claude前沿模型）分析一次语义层，存储后，可用弱model来进行查询
-- **分层语义层**：在agent探索到具体某个表的时候，表下的语义层信息才会提供给model
+## 下载
 
+当前桌面版本为 [ReceiptBI 1.0.0](https://github.com/MoonMao42/ReceiptBI/releases/tag/v1.0.0)。
 
-## 工作原理
+| 系统 | 安装包 |
+|---|---|
+| macOS，Apple 芯片 | [下载 DMG](https://github.com/MoonMao42/ReceiptBI/releases/download/v1.0.0/ReceiptBI-1.0.0-mac-arm64.dmg) |
+| macOS，Intel 芯片 | [下载 DMG](https://github.com/MoonMao42/ReceiptBI/releases/download/v1.0.0/ReceiptBI-1.0.0-mac-x64.dmg) |
+| Windows x64 | [下载安装程序](https://github.com/MoonMao42/ReceiptBI/releases/download/v1.0.0/ReceiptBI-1.0.0-win-x64.exe) |
+
+安装包校验值见 [SHA256SUMS](https://github.com/MoonMao42/ReceiptBI/releases/download/v1.0.0/SHA256SUMS)。
+
+<details>
+<summary><strong>macOS 首次打开</strong></summary>
+
+1. 打开 DMG，将 ReceiptBI 拖入“应用程序”。
+2. 当前 1.0.0 版本尚未签名。如果 macOS 阻止首次打开，请运行：
+
+```bash
+xattr -cr /Applications/ReceiptBI.app
+```
+
+</details>
+
+## 它解决的不是一次问答
+
+### 一次调查里，问题和依据在一起
+
+每次调查都保留最初的问题、相关数据、发现、图表和后续工作。遇到口径不明确的地方，可以先确认，再继续分析。
+
+![包含核心指标、关键发现和图表的数据调查](docs/images/zh/workspace-analysis.png)
+
+### 业务定义只跟着正确的数据走
+
+表的用途、字段含义、指标和关系按数据来源保存。表级定义只在所属表内生效；跨表分析时，再按照已经确认的关系组合使用。
+
+![按数据表查看和治理业务定义](docs/images/zh/semantic-governance.png)
+
+### 调查结果可以继续成为报表
+
+选择一次调查，核对建议的内容和顺序，再生成报表草稿。报表支持继续编辑、翻页、预览和导出，已经手动调整过的内容不会被直接覆盖。
+
+![将一次调查整理为报表前的内容确认](docs/images/zh/report-organizing.png)
+
+### 导出前就能看到真实分页
+
+预览会显示实际分页位置。指标、图表和来源在打印或导出后仍然保持清楚。
+
+![多页报表的打印预览](docs/images/zh/report-print-preview.png)
+
+<div align="center">
+
+**如果 ReceiptBI 已经帮你少做一次手工拼表，欢迎点个 Star。**
+
+[⭐ Star ReceiptBI](https://github.com/MoonMao42/ReceiptBI)
+
+</div>
+
+## 工作方式
 
 ```mermaid
 flowchart LR
@@ -41,118 +104,73 @@ flowchart LR
     validate --> report["可编辑报表"]
 ```
 
-## 产品一览
+确认过的数据准备步骤和业务定义可以继续使用。数据更新但结构不变时，可以沿用同一套口径重新调查和刷新报表。
 
-### 业务问题调查
+## 支持范围
 
-调查把最初的问题、相关数据、发现、图表和后续工作放在一起。并且模块化提供给报表
+| 内容 | 当前支持 |
+|---|---|
+| 文件 | CSV、XLS、XLSX、Parquet、JSON |
+| 数据库 | SQLite、MySQL、PostgreSQL，只读连接 |
+| 模型服务 | OpenAI 兼容接口、Anthropic、DeepSeek、Ollama、自定义网关 |
+| 报表内容 | 指标、文本、表格、图表、来源和多页预览 |
 
-![包含关键发现和图表的数据调查报告](docs/images/zh/workspace-analysis.png)
+## 从源码运行
 
-### 把调查结果整理成可编辑报表
-
-选择调查内容，再生成草稿。
-
-![将一次调查智能整理为报表前的来源确认](docs/images/zh/report-organizing.png)
-
-### 预览并导出分页报表
-
-页面预览会提前显示分页位置，让指标、图表和来源在打印或导出后仍然清楚。
-
-![多页报表的打印预览](docs/images/zh/report-print-preview.png)
-
-### 项目理解
-
-每条定义都留在它描述的数据来源或表下面。分层而治，节省token，越用越准确
-
-![按数据表分层治理的业务语义](docs/images/zh/semantic-governance.png)
-
-## 快速开始
-
-可以直接下载桌面版使用
-
-### 1. 克隆项目
+macOS 和 Linux 需要 Python 3.11+ 与 Node.js LTS：
 
 ```bash
 git clone https://github.com/MoonMao42/ReceiptBI.git
 cd ReceiptBI
-```
-
-### 2. 运行项目
-
-macOS / Linux 需要 Python 3.11+ 和 Node.js LTS：
-
-```bash
 ./start.sh
 ```
 
-也可以用 Docker 运行：
+也可以使用 Docker：
 
 ```bash
 docker compose up --build
 ```
 
-Windows 推荐使用 Docker Desktop，或在 WSL2 中运行 `./start.sh`。
-
-### 3. 配置使用
-
-打开 `http://localhost:3000`：
-
-1. 在设置中选择模型服务（OpenAI 兼容接口、Anthropic、DeepSeek 或 Ollama）
-2. 添加文件（CSV/XLSX/Parquet/JSON）或只读数据库连接（SQLite/MySQL/PostgreSQL）
-3. 提出第一个希望数据回答的问题
-
-## 技术栈
-
-| 部分 | 技术 |
-|------|------|
-| 前端 | Next.js 15、React 19、TypeScript |
-| 后端 | FastAPI、Python 3.11+、PydanticAI |
-| 桌面端 | Electron、Rust（SQLite 执行 sidecar） |
-| 数据引擎 | DuckDB（文件处理）、原生数据库适配器 |
+打开 `http://localhost:3000`，选择模型服务，然后添加数据。
 
 <details>
-<summary><strong>配置参考</strong></summary>
+<summary><strong>开发说明</strong></summary>
 
-### 支持模型
+### 常用命令
 
-ReceiptBI 支持 OpenAI 兼容格式、Anthropic、DeepSeek、Ollama 以及自定义网关。
-
-### 数据连接
-
-- CSV、XLS、XLSX、Parquet 和 JSON 文件通过本地 DuckDB 处理
-- SQLite、MySQL 和 PostgreSQL 数据库仅支持只读查询
-
-
-</details>
-
-<details>
-<summary><strong>本地开发</strong></summary>
-
-### 工作区管理
-
-使用提供的 `start.sh` 进行标准 Web 开发：
 ```bash
-./start.sh              # 启动前后端服务
+./start.sh              # 启动前后端
 ./start.sh setup        # 安装依赖
 ./start.sh stop         # 停止服务
 ./start.sh test         # 运行测试
 ```
 
-### 桌面端
+### 技术栈
 
-桌面端基于 Electron 构建，并打包了一个 Rust sidecar 用于执行只读 SQLite 查询。
-具体的打包配置请参考 `apps/desktop/electron-builder.yml`。
+| 部分 | 技术 |
+|---|---|
+| 前端 | Next.js 15、React 19、TypeScript |
+| 后端 | FastAPI、Python 3.11+、PydanticAI |
+| 桌面端 | Electron、Rust |
+| 数据处理 | DuckDB、原生数据库适配器 |
 
 </details>
 
-## 开源协议
+## 参与项目
 
-MIT
+- [提交问题](https://github.com/MoonMao42/ReceiptBI/issues/new/choose)
+- [参与讨论](https://github.com/MoonMao42/ReceiptBI/discussions)
+- [贡献指南](CONTRIBUTING.md)
+- [安全策略](SECURITY.md)
+- [行为准则](CODE_OF_CONDUCT.md)
 
 ## 历史版本
 
 | 版本 | 基于 | 分支 |
-|------|------|------|
+|---|---|---|
 | v2 | [gptme](https://github.com/gptme/gptme) | [v2](https://github.com/MoonMao42/ReceiptBI/tree/v2) |
-| v1 | [open interpreter 0.4.3](https://github.com/OpenInterpreter/open-interpreter) | [v1](https://github.com/MoonMao42/ReceiptBI/tree/v1) |
+| v1 | [Open Interpreter 0.4.3](https://github.com/OpenInterpreter/open-interpreter) | [v1](https://github.com/MoonMao42/ReceiptBI/tree/v1) |
+
+## 开源协议
+
+[MIT](LICENSE)

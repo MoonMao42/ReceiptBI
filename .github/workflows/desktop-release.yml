@@ -31,6 +31,25 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: node apps/desktop/scripts/validate-release-version.mjs --event push --tag "$RELEASE_TAG"
+      - name: Prepare release notes
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          cp docs/releases/desktop.md "$RUNNER_TEMP/release-notes.md"
+          if [ -n "$CSC_LINK" ] &&
+             [ -n "$CSC_KEY_PASSWORD" ] &&
+             [ -n "$APPLE_ID" ] &&
+             [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] &&
+             [ -n "$APPLE_TEAM_ID" ]; then
+            printf '\n## macOS 状态 / macOS status\n\n已使用 Developer ID 签名并完成 Apple 公证。Developer ID signed and notarized by Apple.\n' >> "$RUNNER_TEMP/release-notes.md"
+          else
+            printf '\n## macOS 状态 / macOS status\n\n当前构建未签名；首次打开方法见上文。This build is unsigned; see the first-launch steps above.\n' >> "$RUNNER_TEMP/release-notes.md"
+          fi
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -38,41 +57,7 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             --title "ReceiptBI Desktop ${{ github.ref_name }}" \
             --draft \
-            --notes "$(cat <<'NOTES'
-          ## Downloads
-
-          | Platform | File |
-          |----------|------|
-          | macOS (Apple Silicon) | `.dmg` or `.zip` |
-          | macOS (Intel) | `.dmg` or `.zip` |
-          | Windows | `.exe` installer |
-
-          ## Install
-
-          ### macOS
-
-          1. Download and open the `.dmg`, then drag ReceiptBI to Applications
-          2. First launch will show "app is damaged" — run this in Terminal:
-             ```
-             xattr -cr /Applications/ReceiptBI.app
-             ```
-          3. Open ReceiptBI from Applications
-
-          > This happens because the app is not code-signed yet.
-
-          ### Windows
-
-          Run the `.exe` installer and follow the prompts.
-
-          ## Features
-
-          - Investigate business questions across files and read-only databases
-          - Prepare working copies without overwriting original files
-          - Keep project definitions, corrections, and evidence together
-          - Generate traceable reports, tables, and charts
-          - 当前提供中文桌面界面
-          NOTES
-          )"
+            --notes-file "$RUNNER_TEMP/release-notes.md"
 
   build:
     needs: create-release
@@ -171,11 +156,75 @@ jobs:
       - name: Compile TypeScript
         run: cd apps/desktop && npx tsc -p tsconfig.electron.json
 
-      - name: Package
+      - name: Check macOS signing credentials
+        id: mac-signing
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$CSC_LINK" ] &&
+             [ -n "$CSC_KEY_PASSWORD" ] &&
+             [ -n "$APPLE_ID" ] &&
+             [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] &&
+             [ -n "$APPLE_TEAM_ID" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Package macOS (signed and notarized)
+        if: runner.os == 'macOS' && steps.mac-signing.outputs.ready == 'true'
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: >
+          cd apps/desktop &&
+          npx electron-builder ${{ matrix.electron_args }}
+          --publish never
+          --config electron-builder.yml
+          --config.forceCodeSigning=true
+          --config.mac.notarize=true
+        shell: bash
+
+      - name: Package macOS (unsigned)
+        if: runner.os == 'macOS' && steps.mac-signing.outputs.ready != 'true'
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: >
+          cd apps/desktop &&
+          npx electron-builder ${{ matrix.electron_args }}
+          --publish never
+          --config electron-builder.yml
+          --config.mac.hardenedRuntime=false
+          --config.mac.notarize=false
+        shell: bash
+
+      - name: Package Windows
+        if: runner.os == 'Windows'
         run: cd apps/desktop && npx electron-builder ${{ matrix.electron_args }} --publish never --config electron-builder.yml
         shell: bash
+
+      - name: Verify macOS signature and notarization
+        if: runner.os == 'macOS' && steps.mac-signing.outputs.ready == 'true'
+        shell: bash
+        run: |
+          packaged_app=$(find apps/desktop/release -path '*/ReceiptBI.app' -type d -print -quit)
+          [ -n "$packaged_app" ] || {
+            echo "Packaged ReceiptBI.app was not found"
+            exit 1
+          }
+
+          codesign --verify --deep --strict --verbose=2 "$packaged_app"
+          spctl --assess --type execute --verbose=4 "$packaged_app"
+          xcrun stapler validate "$packaged_app"
 
       - name: Verify release artifact set
         shell: bash
@@ -395,7 +444,7 @@ jobs:
             done
 
           declare -A staged_ids
-          for file in release-assets/*.dmg release-assets/*.zip release-assets/*.exe; do
+          for file in release-assets/*.dmg release-assets/*.zip release-assets/*.exe release-assets/SHA256SUMS; do
             [ -f "$file" ] || continue
             filename=$(basename "$file")
             filesize=$(wc -c < "$file" | tr -d ' ')
@@ -495,6 +544,7 @@ jobs:
             "ReceiptBI-$version-mac-x64.dmg"
             "ReceiptBI-$version-mac-x64.zip"
             "ReceiptBI-$version-win-x64.exe"
+            "SHA256SUMS"
           )
 
           [ "$(printf '%s' "$assets_json" | jq 'length')" -eq "${#expected[@]}" ] || {
@@ -515,3 +565,10 @@ jobs:
               exit 1
             }
           done
+
+      - name: Publish verified release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: gh release edit "$RELEASE_TAG" --draft=false --latest

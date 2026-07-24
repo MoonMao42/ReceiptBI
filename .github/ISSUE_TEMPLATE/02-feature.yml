@@ -1,0 +1,62 @@
+name: Feature request / 功能建议
+description: Propose an improvement grounded in a real workflow / 基于真实工作流程提出改进
+title: "[Feature] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the result you need before proposing an implementation.
+        请先说明希望完成什么，再说明可能的做法。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or workflow / 问题或工作流程
+      description: What are you trying to accomplish, and where does the current workflow fall short?
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired result / 期望结果
+      description: What should become easier or possible?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area / 相关功能
+      options:
+        - Data import or connection / 数据导入或连接
+        - Analysis / 数据分析
+        - Semantic governance / 语义治理
+        - Reports or export / 报表或导出
+        - Desktop application / 桌面应用
+        - Documentation or examples / 文档或示例
+        - Other / 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach / 建议做法
+      description: Optional. Include an example, sketch, or similar product if it clarifies the request.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Current workaround / 当前替代办法
+      description: How do you handle this today?
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks / 提交前确认
+      options:
+        - label: I searched existing issues for a similar request. / 我已搜索过类似建议。
+          required: true
+        - label: This request describes one focused outcome. / 这份建议只描述一个明确结果。
+          required: true
