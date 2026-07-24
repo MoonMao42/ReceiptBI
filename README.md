@@ -2,7 +2,7 @@
 
 <img src="docs/images/receiptbi-icon.png" width="200" alt="ReceiptBI logo">
 
-Talk to your data. Local-first analysis for messy files and read-only databases.
+Ask a question, check the evidence, and turn files or read-only databases into a report you can keep working on.
 
 [English](README.md) | [中文](README.zh.md)
 
@@ -10,47 +10,47 @@ Talk to your data. Local-first analysis for messy files and read-only databases.
 
 ## Features
 
-- **Conversational analysis** — ask questions while ReceiptBI safely queries, joins, and analyzes your data
-- **Data prep & cleaning** — visually clean files, fix types, and save non-destructive recipes
-- **Governed business semantics** — organize confirmed context, metrics, dimensions, and relationships under the data where they apply
-- **Editable reports** — turn chat results into durable, verifiable pages with metrics, tables, and charts
+- **Start with a question** — ReceiptBI queries, joins, and analyzes the relevant data while keeping the supporting evidence close at hand
+- **Prepare data without rewriting the source** — fix types, handle inconsistent values, and save the steps as a reusable recipe
+- **Give every number a shared meaning** — keep confirmed metrics, dimensions, relationships, and business context with the data they describe
+- **Build an editable report** — turn an investigation into metrics, tables, charts, and pages that keep their source references
 
 ## How It Works
 
 ```mermaid
 flowchart LR
-    data["Messy Files / DBs"] --> prep["Clean & Profile"]
-    prep --> semantic["Semantic Layer"]
-    semantic --> ask["Ask Question"]
-    ask --> run["Execute SQL / Python"]
-    run --> validate["Validate Results"]
-    validate -->|Repair needed| run
-    validate --> report["Evidence-backed Report"]
+    data["Files / Read-only DBs"] --> prep["Prepare Data"]
+    prep --> semantic["Confirm Business Context"]
+    semantic --> ask["Ask a Question"]
+    ask --> run["Analyze"]
+    run --> validate["Check the Evidence"]
+    validate -->|Needs another pass| run
+    validate --> report["Editable Report"]
 ```
 
 ## Product Tour
 
-### Investigate from a business question
+### Start with a business question
 
-ReceiptBI keeps the question, evidence, findings, charts, and follow-up work together in one investigation.
+Each investigation keeps the original question, supporting data, findings, charts, and follow-up work in one place.
 
 ![An investigation report with key metrics, findings, and charts](docs/images/en/workspace-analysis.png)
 
 ### Organize findings into an editable report
 
-Choose an investigation, review the proposed structure, and generate a draft without overwriting the report you already edited.
+Choose an investigation, review the proposed outline, and create a draft without overwriting your existing edits.
 
 ![Reviewing the source before organizing an investigation into a report](docs/images/en/report-organizing.png)
 
 ### Preview and export a paginated report
 
-Reports use a stable page layout so metrics, charts, and evidence remain readable when printed or exported.
+The preview shows page breaks before printing or export, so metrics, charts, and references stay readable.
 
 ![Multi-page report print preview](docs/images/en/report-print-preview.png)
 
-### Keep definitions inside the data context they belong to
+### Keep business definitions with the data they describe
 
-Business context is organized from project to source and table. Metrics and dimensions become available only within their confirmed scope, so similarly named fields from other tables are not silently mixed.
+Definitions stay with the source or table they describe. ReceiptBI only uses a metric or dimension inside its confirmed scope, so similarly named fields from unrelated tables are not quietly mixed together.
 
 ![Hierarchical business semantics scoped to a selected table](docs/images/en/semantic-governance.png)
 
@@ -83,9 +83,9 @@ docker compose up --build
 
 Open `http://localhost:3000`:
 
-1. Go to Settings and configure your preferred model provider (OpenAI-compatible, Anthropic, DeepSeek, Ollama)
-2. Upload a file (CSV/XLSX/Parquet/JSON) or connect a database (SQLite/MySQL/PostgreSQL)
-3. Start investigating your data
+1. Choose a model provider in Settings (OpenAI-compatible, Anthropic, DeepSeek, or Ollama)
+2. Add a file (CSV/XLSX/Parquet/JSON) or a read-only database connection (SQLite/MySQL/PostgreSQL)
+3. Ask the first question you want the data to answer
 
 ## Tech Stack
 
@@ -124,16 +124,16 @@ Use the provided `start.sh` for standard web development:
 ```
 
 ### Desktop
-The desktop app uses Electron and bundles a Rust sidecar for safe SQLite execution.
+The desktop app uses Electron and bundles a Rust sidecar for read-only SQLite execution.
 Check `apps/desktop/electron-builder.yml` for build configurations.
 
 </details>
 
 ## Known Limitations
 
-- System enforces read-only operations for databases; write statements are blocked
+- Database connections are read-only; write statements are blocked
 - Python execution fallback requires a local environment and is isolated per project
-- Desktop packaging (macOS signing/Windows installer) is still in developer preview
+- Desktop builds are currently unsigned; the first launch on macOS may require manual approval
 
 ## License
 
@@ -143,5 +143,5 @@ MIT
 
 | Version | Based on | Branch |
 |---------|----------|--------|
-| v2 | [gptme](https://github.com/ErikBjare/gptme) | [v2](https://github.com/MoonMao42/ReceiptBI/tree/v2) |
-| v1 | Original architecture | [v1](https://github.com/MoonMao42/ReceiptBI/tree/v1) |
+| v2 | [gptme](https://github.com/gptme/gptme) | [v2](https://github.com/MoonMao42/ReceiptBI/tree/v2) |
+| v1 | [Open Interpreter 0.4.3](https://github.com/OpenInterpreter/open-interpreter) | [v1](https://github.com/MoonMao42/ReceiptBI/tree/v1) |

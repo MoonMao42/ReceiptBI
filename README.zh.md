@@ -2,7 +2,7 @@
 
 <img src="docs/images/receiptbi-icon.png" width="200" alt="ReceiptBI logo">
 
-与你的数据对话。专为凌乱文件和只读数据库打造的本地优先分析工具。
+从一个问题开始，核对数据依据，再把文件或只读数据库里的结果整理成一份可以继续编辑的报表。
 
 [English](README.md) | [中文](README.zh.md)
 
@@ -10,47 +10,47 @@
 
 ## 功能特点
 
-- **对话式分析** — 用自然语言提问，由 ReceiptBI 安全地查询、关联并分析数据
-- **数据清洗与准备** — 提供可视化的文件清洗功能，非破坏性地处理类型和异常值
-- **可治理的业务语义** — 将已确认的业务背景、指标、维度和表关系放在它们真正适用的数据层级下
-- **可编辑报告** — 将对话分析结果转化为持久可验证的图表、指标和报告页面
+- **从问题开始** — ReceiptBI 查询、关联并分析相关数据，结论和依据始终放在一起
+- **保留原始数据** — 修正类型和不规范值时不改写源文件，处理步骤还可以保存下来重复使用
+- **统一业务口径** — 把确认过的指标、维度、表关系和业务背景留在它们真正描述的数据下面
+- **整理成可编辑报表** — 把一次调查变成指标、表格、图表和页面，同时保留来源
 
 ## 工作原理
 
 ```mermaid
 flowchart LR
-    data["凌乱文件 / 数据库"] --> prep["清洗与特征提取"]
-    prep --> semantic["语义层理解"]
-    semantic --> ask["自然语言提问"]
-    ask --> run["执行 SQL / Python"]
-    run --> validate["结果验证"]
-    validate -->|需要修复| run
-    validate --> report["生成带证据支持的报告"]
+    data["文件 / 只读数据库"] --> prep["准备数据"]
+    prep --> semantic["确认业务背景"]
+    semantic --> ask["提出问题"]
+    ask --> run["进行分析"]
+    run --> validate["核查依据"]
+    validate -->|还需调整| run
+    validate --> report["可编辑报表"]
 ```
 
 ## 产品一览
 
 ### 从一个业务问题开始调查
 
-ReceiptBI 把问题、依据、发现、图表和后续调查放在同一个工作区里。
+每次调查都把最初的问题、相关数据、发现、图表和后续工作放在一起。
 
 ![包含核心指标、关键发现和图表的数据调查报告](docs/images/zh/workspace-analysis.png)
 
 ### 把调查结果整理成可编辑报表
 
-先选择调查并核对整理方案，再生成草稿；你已经手动编辑的报表内容不会被直接覆盖。
+选择一次调查，核对建议的结构，再生成草稿；已经手动编辑过的内容不会被直接覆盖。
 
 ![将一次调查智能整理为报表前的来源确认](docs/images/zh/report-organizing.png)
 
 ### 预览并导出分页报表
 
-报表采用稳定的页面布局，让指标、图表和核查依据在打印或导出时仍然清楚。
+页面预览会提前显示分页位置，让指标、图表和来源在打印或导出后仍然清楚。
 
 ![多页报表的打印预览](docs/images/zh/report-print-preview.png)
 
 ### 让业务定义留在它真正适用的数据下面
 
-业务背景按照“项目 → 数据来源 → 表”组织。只有进入已经确认的范围后，模型才能采用该层级的指标与维度，避免把其他表里的同名字段混在一起。
+每条定义都留在它描述的数据来源或表下面。只有进入已经确认的范围，ReceiptBI 才会采用对应的指标和维度，避免把无关表里的同名字段混在一起。
 
 ![按数据表分层治理的业务语义](docs/images/zh/semantic-governance.png)
 
@@ -77,15 +77,15 @@ cd ReceiptBI
 docker compose up --build
 ```
 
-**Windows** — 推荐使用 Docker Desktop，或在 WSL2 环境下执行 `./start.sh`。提供了基于 Electron 的桌面客户端支持。
+**Windows** — 推荐使用 Docker Desktop，或在 WSL2 中运行 `./start.sh`。也可以直接使用桌面版。
 
 ### 3. 配置使用
 
 打开 `http://localhost:3000`：
 
-1. 进入设置页面，配置你偏好的模型服务（支持 OpenAI 兼容接口、Anthropic、DeepSeek、Ollama 等）
-2. 上传文件（CSV/XLSX/Parquet/JSON）或连接数据库（SQLite/MySQL/PostgreSQL）
-3. 开始探索你的数据
+1. 在设置中选择模型服务（OpenAI 兼容接口、Anthropic、DeepSeek 或 Ollama）
+2. 添加文件（CSV/XLSX/Parquet/JSON）或只读数据库连接（SQLite/MySQL/PostgreSQL）
+3. 提出第一个希望数据回答的问题
 
 ## 技术栈
 
@@ -124,16 +124,16 @@ docker compose up --build
 ```
 
 ### 桌面端
-桌面端基于 Electron 构建，并打包了一个 Rust sidecar 用于安全执行 SQLite 查询。
+桌面端基于 Electron 构建，并打包了一个 Rust sidecar 用于执行只读 SQLite 查询。
 具体的打包配置请参考 `apps/desktop/electron-builder.yml`。
 
 </details>
 
 ## 已知限制
 
-- 系统严格限制对数据库进行只读操作，写入语句将被拦截
+- 数据库连接仅支持只读查询；写入语句会被拦截
 - Python 分析执行依赖本地环境，并在项目级别进行隔离
-- 桌面端打包（如 macOS 签名、Windows 安装程序）目前仍处于开发者预览阶段
+- 桌面版目前尚未签名，在 macOS 上首次打开时可能需要手动允许
 
 ## 开源协议
 
@@ -143,5 +143,5 @@ MIT
 
 | 版本 | 基于 | 分支 |
 |------|------|------|
-| v2 | [gptme](https://github.com/ErikBjare/gptme) | [v2](https://github.com/MoonMao42/ReceiptBI/tree/v2) |
-| v1 | 初代架构 | [v1](https://github.com/MoonMao42/ReceiptBI/tree/v1) |
+| v2 | [gptme](https://github.com/gptme/gptme) | [v2](https://github.com/MoonMao42/ReceiptBI/tree/v2) |
+| v1 | [Open Interpreter 0.4.3](https://github.com/OpenInterpreter/open-interpreter) | [v1](https://github.com/MoonMao42/ReceiptBI/tree/v1) |
